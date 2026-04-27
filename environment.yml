@@ -1,0 +1,36 @@
+name: carla-env
+
+channels:
+  - conda-forge
+
+dependencies:
+  # Python version (matches CARLA support)
+  - python=3.12
+
+  # Core scientific stack
+  - numpy
+  - scipy
+  - pandas
+
+  # Visualization
+  - matplotlib
+  - seaborn
+
+  # Jupyter
+  - jupyterlab
+  - ipykernel
+
+  # Utilities
+  - tqdm
+  - rich
+
+  # Graphs (useful for routing / road logic)
+  - networkx
+
+  # YAML config
+  - pyyaml
+
+  # Pip section for things not in conda
+  - pip
+  - pip:
+      - carla==0.9.16

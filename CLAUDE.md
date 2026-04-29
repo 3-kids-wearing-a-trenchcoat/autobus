@@ -21,6 +21,7 @@ If you get this permission, make sure to also update `environment.yml` to reflec
 * When editing, make the smallest change that solves the request.
 * Do not rename files or reorganize directories unless asked.
 * Commit changes you've made according to the Git Usage Rules outlined below.
+* If you create new files under `/src`, `/tests` or `/docs`, add them to git.
 * If something is ambiguous, inspect the existing code and follow its current patterns.
 * If there is more than one sensible way to accomplish a task, offer both as options, list pros and cons for each approach, recommend one of these approaches and ask me which one to go with.
 * Type hints required on all functions

@@ -1,0 +1,23 @@
+site_name: Autobus
+site_description: Autonomous bus routing on a planar street graph
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - search.suggest
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [..]  # project root, so src.map.graph resolves
+
+nav:
+  - Home: index.md
+  - Concepts:
+      - Map: concepts/map.md
+  - API Reference:
+      - Map: api/map.md

@@ -1,0 +1,299 @@
+"""Planar street graph built from a Voronoi diagram, used as a map for bus routing."""
+
+import enum
+
+import networkx as nx
+import numpy as np
+from scipy.spatial import Voronoi
+
+
+class NodeType(enum.Enum):
+    """Structural role of a node in the street graph."""
+
+    INTERSECTION = "intersection"
+    BUS_STOP = "bus_stop"
+
+
+class Zone(enum.Enum):
+    """Demand zone associated with a bus stop, used to model passenger demand."""
+
+    RESIDENTIAL = "residential"
+    COMMERCIAL = "commercial"
+    HOSPITAL = "hospital"
+
+
+# Speed limit options (km/h) randomly assigned per road segment
+_SPEED_OPTIONS: list[float] = [20.0, 30.0, 60.0]
+
+
+class PlanarStreetGraph:
+    """Randomly generated planar street graph backed by a networkx DiGraph."""
+
+    def __init__(self, graph: nx.DiGraph) -> None:
+        """Wrap a pre-built DiGraph as a PlanarStreetGraph."""
+        self._graph = graph
+
+    @classmethod
+    def generate(
+        cls,
+        n_seeds: int,
+        bounds: tuple[float, float, float, float],
+        seed: int | None = None,
+        one_way_probability: float = 0.3,
+        stop_density: float = 0.15,
+    ) -> "PlanarStreetGraph":
+        """Generate a random planar street graph using a clipped Voronoi diagram."""
+        rng = np.random.default_rng(seed)
+        xmin, ymin, xmax, ymax = bounds
+
+        interior_seeds = rng.uniform(
+            low=[xmin, ymin],
+            high=[xmax, ymax],
+            size=(n_seeds, 2)
+        )
+
+        # Exterior seeds placed far outside the bbox cause scipy to treat
+        # all within-bbox Voronoi ridges as finite — no infinite rays to clip
+        margin = max(xmax - xmin, ymax - ymin) * 2
+        exterior_seeds = np.array([
+            [xmin - margin, ymin - margin],
+            [xmax + margin, ymin - margin],
+            [xmin - margin, ymax + margin],
+            [xmax + margin, ymax + margin],
+        ])
+        all_seeds = np.vstack([interior_seeds, exterior_seeds])
+
+        vor = Voronoi(all_seeds)
+
+        graph = _build_intersection_graph(
+            vor, bounds, one_way_probability, rng
+        )
+        graph = _ensure_strongly_connected(graph, rng)
+
+        next_node_id = max(graph.nodes()) + 1
+        graph = _insert_bus_stops(graph, stop_density, rng, next_node_id)
+
+        return cls(graph)
+
+    def neighbors(self, node_id: int) -> list[int]:
+        """Return node IDs directly reachable from node_id in one hop."""
+        return list(self._graph.successors(node_id))
+
+    def edge_distance(self, u: int, v: int) -> float:
+        """Road length of the directed edge u → v in the same units as bounds."""
+        return self._graph[u][v]['distance']
+
+    def edge_travel_time(self, u: int, v: int) -> float:
+        """Effective travel time (distance / speed_limit) for the edge u → v."""
+        return self._graph[u][v]['travel_time']
+
+    def node_type(self, node_id: int) -> NodeType:
+        """Return the NodeType of the given node."""
+        return self._graph.nodes[node_id]['type']
+
+    def node_position(self, node_id: int) -> tuple[float, float]:
+        """Return the (x, y) position of the given node."""
+        node = self._graph.nodes[node_id]
+        return (node['x'], node['y'])
+
+    def bus_stops(self) -> list[int]:
+        """Return the node IDs of all BUS_STOP nodes."""
+        return [
+            n for n, data in self._graph.nodes(data=True)
+            if data['type'] == NodeType.BUS_STOP
+        ]
+
+    def shortest_path(self, source: int, target: int) -> list[int]:
+        """Return the minimum travel-time path from source to target as a node list."""
+        return nx.shortest_path(
+            self._graph, source, target, weight='travel_time'
+        )
+
+
+def _build_intersection_graph(
+    vor: Voronoi,
+    bounds: tuple[float, float, float, float],
+    one_way_probability: float,
+    rng: np.random.Generator,
+) -> nx.DiGraph:
+    """Build a DiGraph of INTERSECTION nodes from in-bounds Voronoi geometry."""
+    xmin, ymin, xmax, ymax = bounds
+    graph = nx.DiGraph()
+
+    # Map Voronoi vertex indices to graph node IDs for edge construction below
+    vertex_to_node: dict[int, int] = {}
+    node_id = 0
+
+    for i, (vx, vy) in enumerate(vor.vertices):
+        if xmin <= vx <= xmax and ymin <= vy <= ymax:
+            graph.add_node(
+                node_id,
+                type=NodeType.INTERSECTION,
+                x=float(vx),
+                y=float(vy),
+                zone=None
+            )
+            vertex_to_node[i] = node_id
+            node_id += 1
+
+    for ridge_vertices in vor.ridge_vertices:
+        v1_idx, v2_idx = ridge_vertices
+        # Ridges where either endpoint falls outside the bbox (or is the
+        # sentinel value -1 for an infinite ray) are skipped
+        if v1_idx not in vertex_to_node or v2_idx not in vertex_to_node:
+            continue
+
+        n1 = vertex_to_node[v1_idx]
+        n2 = vertex_to_node[v2_idx]
+
+        x1, y1 = graph.nodes[n1]['x'], graph.nodes[n1]['y']
+        x2, y2 = graph.nodes[n2]['x'], graph.nodes[n2]['y']
+        distance = float(np.hypot(x2 - x1, y2 - y1))
+        speed_limit = float(rng.choice(_SPEED_OPTIONS))
+        travel_time = distance / speed_limit
+
+        if rng.random() < one_way_probability:
+            src, dst = (n1, n2) if rng.random() < 0.5 else (n2, n1)
+            graph.add_edge(
+                src, dst,
+                distance=distance,
+                speed_limit=speed_limit,
+                travel_time=travel_time
+            )
+        else:
+            for src, dst in [(n1, n2), (n2, n1)]:
+                graph.add_edge(
+                    src, dst,
+                    distance=distance,
+                    speed_limit=speed_limit,
+                    travel_time=travel_time
+                )
+
+    # Nodes with no edges cannot participate in routing
+    isolated = [n for n in graph.nodes() if graph.degree(n) == 0]
+    graph.remove_nodes_from(isolated)
+
+    return graph
+
+
+def _euclidean_distance(graph: nx.DiGraph, u: int, v: int) -> float:
+    """Euclidean distance between nodes u and v."""
+    return float(np.hypot(
+        graph.nodes[u]['x'] - graph.nodes[v]['x'],
+        graph.nodes[u]['y'] - graph.nodes[v]['y']
+    ))
+
+
+def _ensure_strongly_connected(
+    graph: nx.DiGraph,
+    rng: np.random.Generator,
+) -> nx.DiGraph:
+    """Connect the closest SCC pairs until the whole graph is strongly connected."""
+    while not nx.is_strongly_connected(graph):
+        # Largest SCC first so we grow the main component on every iteration
+        components = sorted(
+            nx.strongly_connected_components(graph),
+            key=len,
+            reverse=True
+        )
+        main_component = components[0]
+
+        min_dist = float('inf')
+        closest_pair: tuple[int, int] | None = None
+
+        for other in components[1:]:
+            for u in main_component:
+                for v in other:
+                    dist = _euclidean_distance(graph, u, v)
+                    if dist < min_dist:
+                        min_dist = dist
+                        closest_pair = (u, v)
+
+        if closest_pair is None:
+            break
+
+        u, v = closest_pair
+        speed_limit = 30.0
+        graph.add_edge(
+            u, v,
+            distance=min_dist,
+            speed_limit=speed_limit,
+            travel_time=min_dist / speed_limit
+        )
+        graph.add_edge(
+            v, u,
+            distance=min_dist,
+            speed_limit=speed_limit,
+            travel_time=min_dist / speed_limit
+        )
+
+    return graph
+
+
+def _insert_bus_stops(
+    graph: nx.DiGraph,
+    stop_density: float,
+    rng: np.random.Generator,
+    next_node_id: int,
+) -> nx.DiGraph:
+    """Split a fraction of edges with a BUS_STOP node at their midpoint."""
+    # Collect undirected pairs so a two-way street gets one shared stop node
+    # rather than two separate stops at the same location
+    undirected_pairs: set[tuple[int, int]] = set()
+    for u, v in graph.edges():
+        if (
+            graph.nodes[u]['type'] == NodeType.INTERSECTION
+            and graph.nodes[v]['type'] == NodeType.INTERSECTION
+        ):
+            undirected_pairs.add((min(u, v), max(u, v)))
+
+    pair_list = list(undirected_pairs)
+    n_stops = min(
+        max(1, int(len(pair_list) * stop_density)),
+        len(pair_list)
+    )
+    selected_indices = rng.choice(
+        len(pair_list), size=n_stops, replace=False
+    )
+    selected_pairs = [pair_list[i] for i in selected_indices]
+
+    zones = list(Zone)
+
+    for u, v in selected_pairs:
+        sx = (graph.nodes[u]['x'] + graph.nodes[v]['x']) / 2
+        sy = (graph.nodes[u]['y'] + graph.nodes[v]['y']) / 2
+        stop_zone = zones[int(rng.integers(len(zones)))]
+
+        stop_id = next_node_id
+        next_node_id += 1
+        graph.add_node(
+            stop_id,
+            type=NodeType.BUS_STOP,
+            x=sx,
+            y=sy,
+            zone=stop_zone
+        )
+
+        # Split whichever directed edges exist between u and v.
+        # If both u->v and v->u exist, S ends up with 4 edges and serves
+        # passengers travelling in either direction.
+        for src, dst in [(u, v), (v, u)]:
+            if not graph.has_edge(src, dst):
+                continue
+            half_dist = graph[src][dst]['distance'] / 2
+            speed_limit = graph[src][dst]['speed_limit']
+            graph.remove_edge(src, dst)
+            graph.add_edge(
+                src, stop_id,
+                distance=half_dist,
+                speed_limit=speed_limit,
+                travel_time=half_dist / speed_limit
+            )
+            graph.add_edge(
+                stop_id, dst,
+                distance=half_dist,
+                speed_limit=speed_limit,
+                travel_time=half_dist / speed_limit
+            )
+
+    return graph

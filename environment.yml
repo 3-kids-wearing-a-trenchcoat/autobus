@@ -34,3 +34,5 @@ dependencies:
   - pip
   - pip:
       - carla==0.9.16
+      - mkdocs==1.6.1
+      - mkdocs-material==9.7.6

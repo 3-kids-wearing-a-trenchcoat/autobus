@@ -99,7 +99,7 @@ class PlanarStreetGraph:
     def bus_stops(self) -> list[int]:
         """Return the node IDs of all BUS_STOP nodes."""
         return [
-            n for n, data in self._graph.nodes(data=True)
+            int(n) for n, data in self._graph.nodes(data=True)
             if data['type'] == NodeType.BUS_STOP
         ]
 

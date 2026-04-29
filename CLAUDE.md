@@ -20,6 +20,7 @@ If you get this permission, make sure to also update `environment.yml` to reflec
 * Each modification to the code (be it changing, adding or deleting) must be briefly explained and applied only after my explicit permission.
 * When editing, make the smallest change that solves the request.
 * Do not rename files or reorganize directories unless asked.
+* Commit changes you've made according to the Git Usage Rules outlined below.
 * If something is ambiguous, inspect the existing code and follow its current patterns.
 * If there is more than one sensible way to accomplish a task, offer both as options, list pros and cons for each approach, recommend one of these approaches and ask me which one to go with.
 * Type hints required on all functions
@@ -31,6 +32,7 @@ If you get this permission, make sure to also update `environment.yml` to reflec
   * Add annotations at any point in which the code is not simple to understand
 * Code should be split into sensible packages according to their domain and in a way that keeps dependency "flowing in one direction.  
   Ask me before creating a new package, moving a piece of logic from one package to another and justify your request.
+* Include docstrings
 
 ## How to run
 Use `run.sh` to execute code. This is to make sure the correct Conda environment is used.

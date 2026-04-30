@@ -5,6 +5,7 @@ from typing import Optional
 
 @dataclass(frozen=True)
 class StopRecord:
+    """Bus stop data"""
     id: str
     x: float
     y: float
@@ -13,6 +14,9 @@ class StopRecord:
 
 @dataclass(frozen=True)
 class RoadNodeRecord:
+    """Road node data.
+    A road node is any point on the map where the bus has a decision to make regarding routes
+    or otherwise needs to change its behavior. (speed limit change, intersections, map entry/exit, etc.)"""
     id: str
     x: float
     y: float
@@ -20,6 +24,8 @@ class RoadNodeRecord:
 
 @dataclass(frozen=True)
 class RoadEdgeRecord:
+    """Road edge data.
+    A road edge is an uninterrupted stretch of road where the bus's behavior doesn't change."""
     id: str
     from_node_id: str
     to_node_id: str

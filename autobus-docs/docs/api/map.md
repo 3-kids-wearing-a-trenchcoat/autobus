@@ -9,6 +9,6 @@
 
 ::: src.map.graph.PlanarStreetGraph
 
-::: src.map.MapProvider.MapProvider
+::: src.map.MapProvider
 
-::: src.map.PlanarMapProvider.PlanarMapProvider
+::: src.map.PlanarMapProvider

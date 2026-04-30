@@ -1,6 +1,6 @@
 1. [ ] Proof of Concept phase
    1. [X] Implement `PlanarStreetGraph` which generates a random planar street graph to be used in place of Carla
-   2. [ ] Implement `MapProvider` and its subclass (only one for now)
+   2. [X] Implement `MapProvider` and its subclass (only one for now)
       1. [X] Implement `MapProvider` as an abstract class that provides an API that separates between the source of the 
       map (`PlanarStreetGraph` or Carla) and whatever method or object wants to use it to generate the graph that will be used by the algorithm
       2. [X] Implement `PlanarMapProvider` as a subclass of `MapProvider` that draws from `PlanarStreetGraph`

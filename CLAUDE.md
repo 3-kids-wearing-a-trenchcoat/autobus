@@ -34,6 +34,10 @@ If you get this permission, make sure to also update `environment.yml` to reflec
 * Code should be split into sensible packages according to their domain and in a way that keeps dependency "flowing in one direction.  
   Ask me before creating a new package, moving a piece of logic from one package to another and justify your request.
 * Include docstrings
+* Docs should be kept updated to make sure they faithfully reflect the project at its current state.
+  * API references are automatically generated in docs from docstrings
+  * When new "concepts" are added (new classes, new logic, etc), those need to be described and added to the docs manually.  
+    This can be postponed until after some implementation has been made, verified and approved, but it's important not to forget about it.
 
 ## How to run
 Use `run.sh` to execute code. This is to make sure the correct Conda environment is used.

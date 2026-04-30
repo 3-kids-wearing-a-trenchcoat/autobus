@@ -10,3 +10,5 @@
 ::: src.map.graph.PlanarStreetGraph
 
 ::: src.map.MapProvider
+
+::: src.map.PlanarMapProvider

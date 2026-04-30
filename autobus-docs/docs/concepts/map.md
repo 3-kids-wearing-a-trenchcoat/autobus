@@ -55,3 +55,57 @@ perturbed grid, and simpler to implement than a full procedural growth model.
 
 The main limitation is that all interior intersections have degree 3
 (T-junctions) rather than the degree-4 crossroads common in real cities.
+
+---
+
+## Map Provider
+
+### The abstraction layer
+
+The bus routing algorithm should not need to know whether its map data comes
+from a `PlanarStreetGraph`, from a CARLA simulation, or from any other source.
+`MapProvider` is the abstract class that enforces this separation.
+
+It defines three methods:
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `get_stops()` | `list[StopRecord]` | All bus stops on the map |
+| `get_road_nodes()` | `list[RoadNodeRecord]` | All navigational nodes (intersections) |
+| `get_road_edges()` | `list[RoadEdgeRecord]` | All directed road segments |
+
+Anything that needs map data — most importantly `TransitGraphBuilder` — depends
+only on this interface. The concrete source of the data is invisible to it.
+
+### Data records
+
+The three return types are plain frozen dataclasses defined in `map_data`:
+
+- **`StopRecord`** — a bus stop with a string ID, a position `(x, y, z)`, and an
+  optional human-readable name.
+- **`RoadNodeRecord`** — an intersection or other navigational decision point with
+  a string ID and a position `(x, y, z)`.
+- **`RoadEdgeRecord`** — a directed road segment between two nodes, carrying
+  `length_m` and an optional `speed_limit_kph`.
+
+All IDs are strings so that implementations backed by different sources (integer
+node IDs from networkx, string actor IDs from CARLA, etc.) can be accommodated
+without changing the interface.
+
+Stops and road nodes are kept as **separate record types** because they play
+different roles: road nodes form the navigational graph that describes how the
+bus can move, while stops are the points at which passengers board or alight.
+How the two are combined into a single routing structure is left entirely to
+`TransitGraphBuilder`.
+
+### PlanarMapProvider
+
+`PlanarMapProvider` is the concrete `MapProvider` implementation for the
+proof-of-concept phase. It wraps a `PlanarStreetGraph` and translates its
+internal data into the provider interface:
+
+- `get_stops()` — one `StopRecord` per `BUS_STOP` node, preserving position.
+- `get_road_nodes()` — one `RoadNodeRecord` per `INTERSECTION` node. Bus stop
+  nodes are intentionally excluded; they are exposed through `get_stops()` only.
+- `get_road_edges()` — one `RoadEdgeRecord` per directed edge in the graph,
+  preserving distance and speed limit.

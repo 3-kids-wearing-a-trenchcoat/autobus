@@ -1,9 +1,9 @@
 1. [ ] Proof of Concept phase
    1. [X] Implement `PlanarStreetGraph` which generates a random planar street graph to be used in place of Carla
-   2. [ ] Implement `MapProvider` and its sub-class (only one for now)
-      1. [ ] Implement `MapProvider` as an abstract class that provides an API that separates between the source of the 
+   2. [ ] Implement `MapProvider` and its subclass (only one for now)
+      1. [X] Implement `MapProvider` as an abstract class that provides an API that separates between the source of the 
       map (`PlanarStreetGraph` or Carla) and whatever method or object wants to use it to generate the graph that will be used by the algorithm
-      2. [ ] Implement `PlanarMapProvider` as a sub-class of `MapProvider` that draws from `PlanarStreetGraph`
+      2. [ ] Implement `PlanarMapProvider` as a subclass of `MapProvider` that draws from `PlanarStreetGraph`
    3. [ ] Implement `TransitGraph`, the map graph that will be used by the bus algorithm as part of its run.
    4. [ ] Implement `TransitGraphBuilder` which generates `TransitGraph` from `MapProvider`
    5. [ ] Implement `RequestPool` which stores active passenger requests waiting to be handled.

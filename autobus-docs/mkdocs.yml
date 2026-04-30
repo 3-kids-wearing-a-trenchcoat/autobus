@@ -14,6 +14,8 @@ plugins:
       handlers:
         python:
           paths: [..]  # project root, so src.map.graph resolves
+          options:
+            show_root_heading: true
 
 nav:
   - Home: index.md

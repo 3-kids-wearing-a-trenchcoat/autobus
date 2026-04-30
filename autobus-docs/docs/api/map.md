@@ -4,6 +4,6 @@
 
 ::: src.map.graph
 
-::: src.map.MapProvider
+::: src.map.MapProvider.MapProvider
 
-::: src.map.PlanarMapProvider
+::: src.map.PlanarMapProvider.PlanarMapProvider

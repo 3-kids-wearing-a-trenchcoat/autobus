@@ -1,7 +1,7 @@
 """map data objects"""
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Any
 
 @dataclass(frozen=True)
 class StopRecord:
@@ -21,6 +21,7 @@ class RoadNodeRecord:
     x: float
     y: float
     z: float = 0.0
+    metadata: Optional[dict[str, Any]] = None
 
 @dataclass(frozen=True)
 class RoadEdgeRecord:
@@ -31,3 +32,4 @@ class RoadEdgeRecord:
     to_node_id: str
     length_m: float
     speed_limit_kph: Optional[float] = None
+    metadata: Optional[dict[str, Any]] = None

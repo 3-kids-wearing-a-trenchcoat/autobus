@@ -7,3 +7,5 @@
 ::: src.map.MapProvider.MapProvider
 
 ::: src.map.PlanarMapProvider.PlanarMapProvider
+
+::: src.map.TransitGraph.TransitGraph

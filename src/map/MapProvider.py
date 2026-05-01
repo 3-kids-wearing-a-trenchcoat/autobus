@@ -16,3 +16,5 @@ class MapProvider(ABC):
     @abstractmethod
     def get_road_edges(self) -> list[RoadEdgeRecord]:
         pass
+
+    # TODO: some kind of update method

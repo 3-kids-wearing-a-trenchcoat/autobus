@@ -2,8 +2,8 @@
 
 import unittest
 
-from map.StaticMapProvider import StaticMapProvider
-from map.map_data import StopRecord, RoadNodeRecord
+from map.StaticMapProvider import StaticMapProvider, StopInput
+from map.map_data import RoadNodeRecord
 
 
 # Hand-authored test map (all edges directed, lengths in metres):
@@ -16,12 +16,15 @@ from map.map_data import StopRecord, RoadNodeRecord
 #                (len 4.0)
 #
 #   Diagonal n1→n3: sqrt(4²+3²) = 5.0  (3–4–5 Pythagorean triple)
-#   Stops: s1 at (2,0) along n1→n2,  s2 at (2,3) along n3→n4
+#
+#   Stops (coordinates auto-computed from edge + pos_on_edge):
+#     s1 at 0.5 along n1→n2  →  (2.0, 0.0)
+#     s2 at 0.5 along n3→n4  →  (2.0, 3.0)
 
 _PROVIDER = StaticMapProvider(
     stops=[
-        StopRecord(id="s1", x=2.0, y=0.0),
-        StopRecord(id="s2", x=2.0, y=3.0),
+        StopInput(id="s1", from_node_id="n1", to_node_id="n2", pos_on_edge=0.5),
+        StopInput(id="s2", from_node_id="n3", to_node_id="n4", pos_on_edge=0.5),
     ],
     nodes=[
         RoadNodeRecord(id="n1", x=0.0, y=0.0),

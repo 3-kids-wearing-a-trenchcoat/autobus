@@ -104,23 +104,31 @@ How the two are combined into a single routing structure is left entirely to
 proof-of-concept phase. It wraps a `PlanarStreetGraph` and translates its
 internal data into the provider interface:
 
-- `get_stops()` — one `StopRecord` per `BUS_STOP` node, preserving position.
-- `get_road_nodes()` — one `RoadNodeRecord` per `INTERSECTION` node. Bus stop
-  nodes are intentionally excluded; they are exposed through `get_stops()` only.
-- `get_road_edges()` — one `RoadEdgeRecord` per directed edge in the graph,
-  preserving distance and speed limit.
+- `get_road_nodes()` — one `RoadNodeRecord` per `INTERSECTION` node.
+- `get_road_edges()` — one `RoadEdgeRecord` per directed road between
+  intersections.  Because `PlanarStreetGraph` inserts bus stops by splitting
+  an edge A → B into A → S → B, `get_road_edges()` **reconstructs** the
+  original A → B edge (summing the two half-distances) and omits the split
+  half-edges.  The result contains only intersection-to-intersection roads.
+- `get_stops()` — one `StopRecord` per directed route through each `BUS_STOP`
+  node.  Each record carries a reference to the reconstructed edge the stop
+  sits on and a `pos_on_edge` value (always `0.5`, because stops are inserted
+  at the midpoint by construction).  A stop on a two-way road produces two
+  records — one per direction — with IDs of the form
+  `"{stop_node_id}_{from_id}_{to_id}"`.
 
 ### StaticMapProvider
 
 `StaticMapProvider` is a hand-authored `MapProvider` intended for unit tests
 and debugging. Rather than wrapping a generated or simulation-backed graph, it
-accepts stops and road nodes as plain records and directed edges as
-`(from_id, to_id)` string pairs.
+accepts road nodes as plain records, directed edges as `(from_id, to_id)`
+string pairs, and stops as `StopInput` records.
 
 Edge lengths are computed automatically from the node coordinates using
-Euclidean distance, so callers never have to calculate lengths by hand — they
-only need to specify positions and connectivity. All z-values are fixed at
-`0.0`.
+Euclidean distance.  Stop coordinates are interpolated from the referenced
+edge's endpoints and the supplied `pos_on_edge` value, so callers only need
+to specify connectivity and fractional position — no manual coordinate or
+length arithmetic required.  All z-values are fixed at `0.0`.
 
 Because the resulting map is fully deterministic and human-readable, it is
 easy to reason about expected `TransitGraph` outputs by hand and use them as

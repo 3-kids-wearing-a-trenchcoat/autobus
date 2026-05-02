@@ -1,25 +1,8 @@
 """Planar street graph built from a Voronoi diagram, used as a map for bus routing."""
 
-import enum
-
 import networkx as nx
 import numpy as np
 from scipy.spatial import Voronoi
-
-
-class NodeType(enum.Enum):
-    """Structural role of a node in the street graph."""
-
-    INTERSECTION = "intersection"
-    BUS_STOP = "bus_stop"
-
-
-class Zone(enum.Enum):
-    """Demand zone associated with a bus stop, used to model passenger demand."""
-
-    RESIDENTIAL = "residential"
-    COMMERCIAL = "commercial"
-    HOSPITAL = "hospital"
 
 
 # Speed limit options (km/h) randomly assigned per road segment
@@ -27,7 +10,13 @@ _SPEED_OPTIONS: list[float] = [20.0, 30.0, 60.0]
 
 
 class PlanarStreetGraph:
-    """Randomly generated planar street graph backed by a networkx DiGraph."""
+    """Randomly generated planar street graph backed by a networkx DiGraph.
+
+    Every node is a road intersection carrying a position ``(x, y)``.  Every
+    directed edge carries a ``distance``, ``speed_limit``, and derived
+    ``travel_time``.  Edges that have a bus stop at their midpoint also carry
+    a ``stop`` attribute; use :meth:`edge_stop` to query it.
+    """
 
     def __init__(self, graph: nx.DiGraph) -> None:
         """Wrap a pre-built DiGraph as a PlanarStreetGraph."""
@@ -70,8 +59,8 @@ class PlanarStreetGraph:
         )
         graph = _ensure_strongly_connected(graph, rng)
 
-        next_node_id = max(graph.nodes()) + 1
-        graph = _insert_bus_stops(graph, stop_density, rng, next_node_id)
+        next_stop_id = max(graph.nodes()) + 1
+        graph = _insert_bus_stops(graph, stop_density, rng, next_stop_id)
 
         return cls(graph)
 
@@ -87,21 +76,21 @@ class PlanarStreetGraph:
         """Effective travel time (distance / speed_limit) for the edge u → v."""
         return self._graph[u][v]['travel_time']
 
-    def node_type(self, node_id: int) -> NodeType:
-        """Return the NodeType of the given node."""
-        return self._graph.nodes[node_id]['type']
+    def edge_stop(self, u: int, v: int) -> dict | None:
+        """Return stop metadata for edge u → v, or None if there is no stop.
+
+        The returned dict contains:
+        - ``'id'``: unique integer identifying the stop location
+        - ``'x'``, ``'y'``: stop coordinates (midpoint of the edge)
+        - ``'pos'``: fractional position along the edge (always ``0.5``
+          for generated graphs)
+        """
+        return self._graph[u][v].get('stop')
 
     def node_position(self, node_id: int) -> tuple[float, float]:
         """Return the (x, y) position of the given node."""
         node = self._graph.nodes[node_id]
         return (node['x'], node['y'])
-
-    def bus_stops(self) -> list[int]:
-        """Return the node IDs of all BUS_STOP nodes."""
-        return [
-            int(n) for n, data in self._graph.nodes(data=True)
-            if data['type'] == NodeType.BUS_STOP
-        ]
 
     def shortest_path(self, source: int, target: int) -> list[int]:
         """Return the minimum travel-time path from source to target as a node list."""
@@ -116,7 +105,7 @@ def _build_intersection_graph(
     one_way_probability: float,
     rng: np.random.Generator,
 ) -> nx.DiGraph:
-    """Build a DiGraph of INTERSECTION nodes from in-bounds Voronoi geometry."""
+    """Build a DiGraph of intersection nodes from in-bounds Voronoi geometry."""
     xmin, ymin, xmax, ymax = bounds
     graph = nx.DiGraph()
 
@@ -128,10 +117,8 @@ def _build_intersection_graph(
         if xmin <= vx <= xmax and ymin <= vy <= ymax:
             graph.add_node(
                 node_id,
-                type=NodeType.INTERSECTION,
                 x=float(vx),
                 y=float(vy),
-                zone=None
             )
             vertex_to_node[i] = node_id
             node_id += 1
@@ -234,18 +221,19 @@ def _insert_bus_stops(
     graph: nx.DiGraph,
     stop_density: float,
     rng: np.random.Generator,
-    next_node_id: int,
+    next_stop_id: int,
 ) -> nx.DiGraph:
-    """Split a fraction of edges with a BUS_STOP node at their midpoint."""
-    # Collect undirected pairs so a two-way street gets one shared stop node
-    # rather than two separate stops at the same location
+    """Annotate a fraction of edge pairs with a bus stop at their midpoint.
+
+    Each selected undirected pair gets one stop, shared by both travel
+    directions. The stop is stored as a ``'stop'`` attribute on each relevant
+    directed edge rather than as a separate node.
+    """
+    # Collect undirected pairs so a two-way street gets one shared stop
+    # rather than separate stops at the same location
     undirected_pairs: set[tuple[int, int]] = set()
     for u, v in graph.edges():
-        if (
-            graph.nodes[u]['type'] == NodeType.INTERSECTION
-            and graph.nodes[v]['type'] == NodeType.INTERSECTION
-        ):
-            undirected_pairs.add((min(u, v), max(u, v)))
+        undirected_pairs.add((min(u, v), max(u, v)))
 
     pair_list = list(undirected_pairs)
     n_stops = min(
@@ -257,43 +245,15 @@ def _insert_bus_stops(
     )
     selected_pairs = [pair_list[i] for i in selected_indices]
 
-    zones = list(Zone)
-
     for u, v in selected_pairs:
         sx = (graph.nodes[u]['x'] + graph.nodes[v]['x']) / 2
         sy = (graph.nodes[u]['y'] + graph.nodes[v]['y']) / 2
-        stop_zone = zones[int(rng.integers(len(zones)))]
+        stop_data = {'id': next_stop_id, 'x': sx, 'y': sy, 'pos': 0.5}
+        next_stop_id += 1
 
-        stop_id = next_node_id
-        next_node_id += 1
-        graph.add_node(
-            stop_id,
-            type=NodeType.BUS_STOP,
-            x=sx,
-            y=sy,
-            zone=stop_zone
-        )
-
-        # Split whichever directed edges exist between u and v.
-        # If both u->v and v->u exist, S ends up with 4 edges and serves
-        # passengers travelling in either direction.
+        # Annotate whichever directed edges exist between u and v
         for src, dst in [(u, v), (v, u)]:
-            if not graph.has_edge(src, dst):
-                continue
-            half_dist = graph[src][dst]['distance'] / 2
-            speed_limit = graph[src][dst]['speed_limit']
-            graph.remove_edge(src, dst)
-            graph.add_edge(
-                src, stop_id,
-                distance=half_dist,
-                speed_limit=speed_limit,
-                travel_time=half_dist / speed_limit
-            )
-            graph.add_edge(
-                stop_id, dst,
-                distance=half_dist,
-                speed_limit=speed_limit,
-                travel_time=half_dist / speed_limit
-            )
+            if graph.has_edge(src, dst):
+                graph[src][dst]['stop'] = stop_data
 
     return graph

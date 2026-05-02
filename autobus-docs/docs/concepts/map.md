@@ -9,23 +9,10 @@ the bus routing algorithm, without requiring the full CARLA simulation stack.
 
 ## Graph structure
 
-The graph is a `networkx.DiGraph`. Every node carries a position `(x, y)` and
-a `NodeType`; every directed edge carries a `distance`, `speed_limit`, and
-derived `travel_time`.
-
-### Node types
-
-| Type | Role |
-|------|------|
-| `INTERSECTION` | Road junction — where the bus chooses its next direction |
-| `BUS_STOP` | Passenger boarding/alighting point — mid-block on a road segment |
-
-Bus stops are placed at the midpoint of selected road segments, so they always
-sit between two intersections rather than at a junction. A stop on a two-way
-street is shared by both travel directions.
-
-Each bus stop carries a `Zone` label (residential, commercial, or hospital)
-intended to drive demand modelling in later phases.
+The graph is a `networkx.DiGraph`. Every node is a road intersection carrying
+a position `(x, y)`. Every directed edge carries a `distance`, `speed_limit`,
+and derived `travel_time`. Edges that have a bus stop at their midpoint also
+carry a `stop` attribute with the stop's coordinates and a unique integer ID.
 
 ## Generation algorithm
 
@@ -42,9 +29,10 @@ The graph is generated from a [Voronoi diagram](https://en.wikipedia.org/wiki/Vo
 4. **Connectivity** — if the graph is not strongly connected, the closest pair
    of disconnected components is bridged with a bidirectional edge, and this
    is repeated until the whole graph is one strongly connected component.
-5. **Bus stop insertion** — a fraction (`stop_density`) of intersection-to-intersection
-   edges are split: edge `A → B` becomes `A → S → B` where `S` is a new
-   `BUS_STOP` node at the midpoint.
+5. **Bus stop insertion** — a fraction (`stop_density`) of edge pairs are
+   annotated with a bus stop at their midpoint. On a two-way street both
+   directed edges share the same stop. The stop is stored as metadata on the
+   edge, not as a separate node.
 
 ### Why Voronoi?
 
@@ -74,17 +62,18 @@ It defines three methods:
 | `get_road_nodes()` | `list[RoadNodeRecord]` | All navigational nodes (intersections) |
 | `get_road_edges()` | `list[RoadEdgeRecord]` | All directed road segments |
 
-Anything that needs map data — most importantly `TransitGraphBuilder` — depends
+Anything that needs map data — most importantly `TransitGraph` — depends
 only on this interface. The concrete source of the data is invisible to it.
 
 ### Data records
 
 The three return types are plain frozen dataclasses defined in `map_data`:
 
-- **`StopRecord`** — a bus stop with a string ID, a position `(x, y, z)`, and an
-  optional human-readable name.
-- **`RoadNodeRecord`** — an intersection or other navigational decision point with
-  a string ID and a position `(x, y, z)`.
+- **`StopRecord`** — a bus stop with a string ID, a position `(x, y, z)`, a
+  reference to the `RoadEdgeRecord` it sits on, and a `pos_on_edge` value
+  (0 = at the from-node, 1 = at the to-node).
+- **`RoadNodeRecord`** — a road intersection with a string ID and a position
+  `(x, y, z)`.
 - **`RoadEdgeRecord`** — a directed road segment between two nodes, carrying
   `length_m` and an optional `speed_limit_kph`.
 
@@ -96,7 +85,7 @@ Stops and road nodes are kept as **separate record types** because they play
 different roles: road nodes form the navigational graph that describes how the
 bus can move, while stops are the points at which passengers board or alight.
 How the two are combined into a single routing structure is left entirely to
-`TransitGraphBuilder`.
+`TransitGraph`.
 
 ### PlanarMapProvider
 
@@ -104,18 +93,13 @@ How the two are combined into a single routing structure is left entirely to
 proof-of-concept phase. It wraps a `PlanarStreetGraph` and translates its
 internal data into the provider interface:
 
-- `get_road_nodes()` — one `RoadNodeRecord` per `INTERSECTION` node.
-- `get_road_edges()` — one `RoadEdgeRecord` per directed road between
-  intersections.  Because `PlanarStreetGraph` inserts bus stops by splitting
-  an edge A → B into A → S → B, `get_road_edges()` **reconstructs** the
-  original A → B edge (summing the two half-distances) and omits the split
-  half-edges.  The result contains only intersection-to-intersection roads.
-- `get_stops()` — one `StopRecord` per directed route through each `BUS_STOP`
-  node.  Each record carries a reference to the reconstructed edge the stop
-  sits on and a `pos_on_edge` value (always `0.5`, because stops are inserted
-  at the midpoint by construction).  A stop on a two-way road produces two
-  records — one per direction — with IDs of the form
-  `"{stop_node_id}_{from_id}_{to_id}"`.
+- `get_road_nodes()` — one `RoadNodeRecord` per node in the graph.
+- `get_road_edges()` — one `RoadEdgeRecord` per directed edge, preserving
+  distance and speed limit.
+- `get_stops()` — one `StopRecord` per directed edge that carries a stop.  A
+  stop on a two-way road produces two records — one per direction — with IDs
+  of the form `"{stop_id}_{from_node_id}_{to_node_id}"`.  `pos_on_edge` is
+  always `0.5` because stops are placed at the midpoint by construction.
 
 ### StaticMapProvider
 

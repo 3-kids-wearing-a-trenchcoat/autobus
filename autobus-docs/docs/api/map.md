@@ -8,4 +8,6 @@
 
 ::: src.map.PlanarMapProvider.PlanarMapProvider
 
+::: src.map.StaticMapProvider.StaticMapProvider
+
 ::: src.map.TransitGraph.TransitGraph

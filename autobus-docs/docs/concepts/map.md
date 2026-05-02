@@ -109,3 +109,19 @@ internal data into the provider interface:
   nodes are intentionally excluded; they are exposed through `get_stops()` only.
 - `get_road_edges()` — one `RoadEdgeRecord` per directed edge in the graph,
   preserving distance and speed limit.
+
+### StaticMapProvider
+
+`StaticMapProvider` is a hand-authored `MapProvider` intended for unit tests
+and debugging. Rather than wrapping a generated or simulation-backed graph, it
+accepts stops and road nodes as plain records and directed edges as
+`(from_id, to_id)` string pairs.
+
+Edge lengths are computed automatically from the node coordinates using
+Euclidean distance, so callers never have to calculate lengths by hand — they
+only need to specify positions and connectivity. All z-values are fixed at
+`0.0`.
+
+Because the resulting map is fully deterministic and human-readable, it is
+easy to reason about expected `TransitGraph` outputs by hand and use them as
+the basis for assertions in tests.

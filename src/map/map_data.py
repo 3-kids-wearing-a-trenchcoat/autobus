@@ -4,15 +4,6 @@ from dataclasses import dataclass
 from typing import Optional, Any
 
 @dataclass(frozen=True)
-class StopRecord:
-    """Bus stop data"""
-    id: str
-    x: float
-    y: float
-    z: float = 0.0
-    name: Optional[str] = None
-
-@dataclass(frozen=True)
 class RoadNodeRecord:
     """Road node data.
     A road node is any point on the map where the bus has a decision to make regarding routes
@@ -33,3 +24,14 @@ class RoadEdgeRecord:
     length_m: float
     speed_limit_kph: Optional[float] = None
     metadata: Optional[dict[str, Any]] = None
+
+@dataclass(frozen=True)
+class StopRecord:
+    """Bus stop data"""
+    id: str
+    x: float
+    y: float
+    edge: RoadEdgeRecord
+    pos_on_edge: float
+    z: float = 0.0
+    name: Optional[str] = None

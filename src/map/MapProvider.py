@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from map_data import StopRecord, RoadNodeRecord, RoadEdgeRecord
+from map.map_data import StopRecord, RoadNodeRecord, RoadEdgeRecord
 
 class MapProvider(ABC):
     """Abstraction layer used to extract and reduce information from the road map into data

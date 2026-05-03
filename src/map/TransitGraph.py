@@ -25,12 +25,33 @@ def _dict_edge_by_origin_node(road_nodes: list[RoadNodeRecord],
     return output
 
 def _build_map(provider: MapProvider) -> nx.DiGraph:
-    """Generate the map graph from a given MapProvider"""
+    """
+    Generate an edge-node graph representing the road map, where each directed edge A -> B from the world map
+    becomes its own node.
+    :param provider: A MapProvider subclass which abstracts the data given by the map source. (Carla, Planar, Static)
+    :return: networkx DiGraph Object
+    """
     stops, road_nodes, road_edges = provider.get_stops(), provider.get_road_nodes(), provider.get_road_edges()
     output = nx.DiGraph()
     edge_by_origin = _dict_edge_by_origin_node(road_nodes, road_edges)
-    # TODO: added edges as nodes to output and create edges between these nodes to represent legal transitions
-    # bus stops should be associated with edges
+    stops_by_edge: dict[RoadEdgeRecord, StopRecord] = {stop.edge: stop for stop in stops}
+
+    # Create all edge-nodes
+    for edge in road_edges:
+        associated_stop = stops_by_edge.get(edge)   # get associated stop if it exists, 'None' otherwise
+        associated_stop_pos = 0.0 if associated_stop is None else associated_stop.pos_on_edge
+        associated_stop_name = None if associated_stop is None else associated_stop.name
+        # TODO: the nodes will almost certainly need more data than I'm giving it now
+        output.add_node(edge.id, stop=associated_stop, stop_pos=associated_stop_pos, stop_name=associated_stop_name,
+                        length=edge.length_m, speed_limit=edge.speed_limit_kph,
+                        start_node=edge.from_node_id, stop_node=edge.to_node_id, metadata=edge.metadata)
+    # Create edges between edge-nodes, representing the ability to transition from one route to another
+    for edge in road_edges:
+        origin_edge_id = edge.id
+        # TODO: add a way to filter illegal road transitions. (probably via metadata)
+        destination_edges = edge_by_origin[edge.to_node_id] # edges whose from_node are this edge's to_node
+        for dest in destination_edges:
+            output.add_edge(origin_edge_id, dest.id) # TODO: should add weights
 
     return output
 

@@ -3,7 +3,11 @@ Autobus is an autonomous bus routing program which determines which bus stops to
 The final program is meant to run on top of the Carla autonomous driving simulation, but for now the implementation will be limited to a proof-of-concept where the world on which the bus moves is reduced to a directed graph.
 
 ## Internal Logic
-To be determined
+* `MapProvider` is used as an abstraction layer between this project and the map source
+* Inside the algorithm, the map is represented by `TransitGraph`, which is a directed graph whose nodes represent edges in the "real" map.
+* Everything else to be determined later 
+
+The docs _should_ be accurate and may be consulted when in doubt. But be wary that we may slip up and forget to update them.
 
 ## Stack
 The program should be written in Python 3.12.  
@@ -31,7 +35,7 @@ If you get this permission, make sure to also update `environment.yml` to reflec
   * Give variables meaningful names
   * Split long functions into smaller functions whenever practical
   * Add annotations at any point in which the code is not simple to understand
-* Code should be split into sensible packages according to their domain and in a way that keeps dependency "flowing in one direction.  
+* Code should be split into sensible packages according to their domain and in a way that keeps dependency "flowing" in one direction.  
   Ask me before creating a new package, moving a piece of logic from one package to another and justify your request.
 * Include docstrings
 * Leave TODO comments alone unless they're directly relevant to the task at hand.

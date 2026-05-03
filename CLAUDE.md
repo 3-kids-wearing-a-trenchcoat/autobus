@@ -37,7 +37,16 @@ If you get this permission, make sure to also update `environment.yml` to reflec
   * Add annotations at any point in which the code is not simple to understand
 * Code should be split into sensible packages according to their domain and in a way that keeps dependency "flowing" in one direction.  
   Ask me before creating a new package, moving a piece of logic from one package to another and justify your request.
-* Include docstrings
+* Include docstrings. For simple functions and classes, one-line docstrings are enough. 
+  For non-trivial functions, docstrings should be of the following format:  
+  ```
+  """
+  Short description of the function
+  :param x: specify what input parameter x is and what's its type
+  (there should be one param line for each input parameter)
+  :return: what this function returns
+  """
+  ```
 * Leave TODO comments alone unless they're directly relevant to the task at hand.
 * Docs should be kept updated to make sure they faithfully reflect the project at its current state.
   * API references are automatically generated in docs from docstrings

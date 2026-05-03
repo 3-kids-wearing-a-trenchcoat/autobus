@@ -62,7 +62,7 @@ It defines three methods:
 | `get_road_nodes()` | `list[RoadNodeRecord]` | All navigational nodes (intersections) |
 | `get_road_edges()` | `list[RoadEdgeRecord]` | All directed road segments |
 
-Anything that needs map data — most importantly `TransitGraph` — depends
+Anything that needs map data — most importantly [TransitGraph](#transitgraph) — depends
 only on this interface. The concrete source of the data is invisible to it.
 
 ### Data records
@@ -117,3 +117,46 @@ length arithmetic required.  All z-values are fixed at `0.0`.
 Because the resulting map is fully deterministic and human-readable, it is
 easy to reason about expected `TransitGraph` outputs by hand and use them as
 the basis for assertions in tests.
+
+## TransitGraph
+
+`TransitGraph` is a representation of the world map used to make routing decision in real time.  
+This representation reduces the world data (as provided by [MapProvider](#map-provider)) into a simple directed graph 
+where each node represents an **edge** in the real world (that is, a route from one road node to another) and each edge 
+represents a possible transition from one route to another.  
+For example, the following graph
+```
+A  ←  B
+  ↘  ↗
+   C
+```
+could be converted into the following _edge-node_ graph
+```
+(A -> C) → (C -> B)
+    ↖       ↙
+     (B -> A)
+```
+This representation fits our use-case, as the location and identity of road nodes is only needed to determine 
+which edges are reachable after any given edge.  
+This representation makes it easier to discriminate illegal moves (for example, U-turns in a T intersection).
+
+The graph is build on top of [networkx](https://networkx.org/en/), and each node has certain data associated with it:  
+1. **id** -- matching the edge id in the `RoadEdgeRecord` provided by `MapProvider`  
+2. **stop** -- The id of a bus stop that sits on this edge (if it exists)  
+3. **stop_pos** -- position of the stop (if it exists) along the route.  
+    Gets a value in [0.0, 1.0], where `0.0` represents the stop is at the very start, `1.0` represents the stop is at the very end, and so on.  
+4. **stop_name** -- The name of the bus stop (if the bus stop exists and it has the optional name property)  
+5. **length** -- length of the route in meters  
+6. **speed_limit** -- The speed limit in this route in km/h  
+7. **start_node** -- id of start road node (matching `from_node_id` in `RoadEdgeRecord`)  
+8. **stop_node** -- if of end node (matching `to_node_id` in `RoadEdgeRecord`)  
+9. **metadata** -- dictionary of additional data (matching `metadata` in `RoadEdgeRecord`)  
+
+Additionally, each edge in `TransitGraph` also has certain data associated with them:  
+1. **weight** -- (NOT YET IMPLEMENTED, **TODO**)  
+
+
+`TransitGraph` defines the following methods:  
+| Method | Returns | Description |  
+|--------|---------|-------------|  
+**TODO**  

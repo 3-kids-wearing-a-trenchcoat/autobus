@@ -61,4 +61,11 @@ class TransitGraph:
         self.provider: MapProvider = provider
         self.map: nx.DiGraph = _build_map(self.provider)
 
-    # TODO: methods
+    # TODO: get_stop_nodes
+    # TODO: successors (with node-id as input)
+    # TODO: best_path (return a sequence of nodes representing the cheapest route from start position to end)
+    # Would probably need to decide how to represent them, is it from route to route? if so, do I include the entire weight?
+    # May also be a good idea to make it so best_path can receive an arbitrary number of positions and would plot out
+    # the best route that visits them in this sequence (I imagine this could be easily done
+    # with recursion, but is it a smart way to go about it?)
+    # TODO: Later (after PoC phase) it's worth considering congestion and road-blocks influencing routing.

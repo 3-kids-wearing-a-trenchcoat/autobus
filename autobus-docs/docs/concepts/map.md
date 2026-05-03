@@ -2,49 +2,19 @@
 
 ## Overview
 
-`PlanarStreetGraph` is a randomly generated directed graph that stands in for
-a real city map during the proof-of-concept phase. It is designed to be a
-close enough approximation of urban street topology to meaningfully exercise
-the bus routing algorithm, without requiring the full CARLA simulation stack.
+The `map` package is responsible for representing the world in a form the bus
+routing algorithm can use. It has three main concerns:
 
-## Graph structure
-
-The graph is a `networkx.DiGraph`. Every node is a road intersection carrying
-a position `(x, y)`. Every directed edge carries a `distance`, `speed_limit`,
-and derived `travel_time`. Edges that have a bus stop at their midpoint also
-carry a `stop` attribute with the stop's coordinates and a unique integer ID.
-
-## Generation algorithm
-
-The graph is generated from a [Voronoi diagram](https://en.wikipedia.org/wiki/Voronoi_diagram):
-
-1. **Seed placement** — `n_seeds` random points are scattered inside the
-   bounding box. Four extra seeds are placed far outside the box so that all
-   Voronoi ridges within the box are finite.
-2. **Intersection nodes** — each Voronoi vertex that falls inside the bounding
-   box becomes an `INTERSECTION` node.
-3. **Road edges** — each Voronoi ridge with both endpoints inside the box
-   becomes a road. A random `speed_limit` is assigned; some roads are made
-   one-way.
-4. **Connectivity** — if the graph is not strongly connected, the closest pair
-   of disconnected components is bridged with a bidirectional edge, and this
-   is repeated until the whole graph is one strongly connected component.
-5. **Bus stop insertion** — a fraction (`stop_density`) of edge pairs are
-   annotated with a bus stop at their midpoint. On a two-way street both
-   directed edges share the same stop. The stop is stored as metadata on the
-   edge, not as a separate node.
-
-### Why Voronoi?
-
-Voronoi cells correspond naturally to city blocks, and the ridges between them
-correspond to streets. This gives the generated map an organic, non-grid
-topology with irregular block sizes — closer to a real city than a simple
-perturbed grid, and simpler to implement than a full procedural growth model.
-
-The main limitation is that all interior intersections have degree 3
-(T-junctions) rather than the degree-4 crossroads common in real cities.
-
----
+1. **Abstracting the map source** — `MapProvider` defines a common interface
+   for road data, so the rest of the system is decoupled from whether that
+   data comes from a generated graph, the CARLA simulation, or any other source.
+2. **Providing map data** — Concrete `MapProvider` implementations translate
+   from a specific source into the common interface. During the proof-of-concept
+   phase, `PlanarMapProvider` wraps `PlanarStreetGraph`, a randomly generated
+   planar road network.
+3. **Representing the world for routing** — `TransitGraph` consumes
+   `MapProvider` output and converts it into the directed graph used by the
+   bus routing algorithm at runtime.
 
 ## Map Provider
 
@@ -100,6 +70,50 @@ internal data into the provider interface:
   stop on a two-way road produces two records — one per direction — with IDs
   of the form `"{stop_id}_{from_node_id}_{to_node_id}"`.  `pos_on_edge` is
   always `0.5` because stops are placed at the midpoint by construction.
+
+#### PlanarStreetGraph
+
+`PlanarStreetGraph` is a randomly generated directed graph that stands in for
+a real city map during the proof-of-concept phase. It is designed to be a
+close enough approximation of urban street topology to meaningfully exercise
+the bus routing algorithm, without requiring the full CARLA simulation stack.
+
+##### Graph structure
+
+The graph is a `networkx.DiGraph`. Every node is a road intersection carrying
+a position `(x, y)`. Every directed edge carries a `distance`, `speed_limit`,
+and derived `travel_time`. Edges that have a bus stop at their midpoint also
+carry a `stop` attribute with the stop's coordinates and a unique integer ID.
+
+##### Generation algorithm
+
+The graph is generated from a [Voronoi diagram](https://en.wikipedia.org/wiki/Voronoi_diagram):
+
+1. **Seed placement** — `n_seeds` random points are scattered inside the
+   bounding box. Four extra seeds are placed far outside the box so that all
+   Voronoi ridges within the box are finite.
+2. **Intersection nodes** — each Voronoi vertex that falls inside the bounding
+   box becomes an `INTERSECTION` node.
+3. **Road edges** — each Voronoi ridge with both endpoints inside the box
+   becomes a road. A random `speed_limit` is assigned; some roads are made
+   one-way.
+4. **Connectivity** — if the graph is not strongly connected, the closest pair
+   of disconnected components is bridged with a bidirectional edge, and this
+   is repeated until the whole graph is one strongly connected component.
+5. **Bus stop insertion** — a fraction (`stop_density`) of edge pairs are
+   annotated with a bus stop at their midpoint. On a two-way street both
+   directed edges share the same stop. The stop is stored as metadata on the
+   edge, not as a separate node.
+
+###### Why Voronoi?
+
+Voronoi cells correspond naturally to city blocks, and the ridges between them
+correspond to streets. This gives the generated map an organic, non-grid
+topology with irregular block sizes — closer to a real city than a simple
+perturbed grid, and simpler to implement than a full procedural growth model.
+
+The main limitation is that all interior intersections have degree 3
+(T-junctions) rather than the degree-4 crossroads common in real cities.
 
 ### StaticMapProvider
 

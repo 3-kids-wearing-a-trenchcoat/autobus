@@ -34,6 +34,7 @@ If you get this permission, make sure to also update `environment.yml` to reflec
 * Code should be split into sensible packages according to their domain and in a way that keeps dependency "flowing in one direction.  
   Ask me before creating a new package, moving a piece of logic from one package to another and justify your request.
 * Include docstrings
+* Leave TODO comments alone unless they're directly relevant to the task at hand.
 * Docs should be kept updated to make sure they faithfully reflect the project at its current state.
   * API references are automatically generated in docs from docstrings
   * When new "concepts" are added (new classes, new logic, etc), those need to be described and added to the docs manually.  
@@ -50,6 +51,8 @@ When working on this repository, you MUST follow these rules:
 * If the branch does not exist, create it from `main`.
 * If the branch already exists, switch to it.
 * If a branch exists and you are not sure whether you should use it or not, ask before continuing.
+* Before applying git operation, make sure you're on the intended branch. As I may merge and delete branches and forget to notify you.
+  If that happens, you may recreate the branch.
 * NEVER work directly on `main`.
 
 ### Allowed Git Operations

@@ -1,4 +1,5 @@
 import networkx as nx
+from itertools import permutations
 from map.map_data import StopRecord, RoadNodeRecord, RoadEdgeRecord
 from map.MapProvider import MapProvider
 
@@ -99,6 +100,39 @@ class TransitGraph:
         """
         return nx.dijkstra_path(self.map, origin_id, destination_id, weight="weight")
 
+    def best_path_cost(self, origin_id: str, destination_id: str) -> float:
+        """
+        Calculate the cost of the best route from origin to destination.
+        :param origin_id: ID of the start node
+        :param destination_id: ID of the target node
+        :return: total weight of the most efficient path from origin to destination
+        """
+        return nx.dijkstra_path_length(self.map, origin_id, destination_id, weight="weight")
 
+    def best_tour(self, start_id: str, stop_ids: list[str]) -> list[str]:
+        """
+        Find the cheapest tour starting at start_id that visits all nodes in stop_ids.
+        :param start_id: ID of the starting node
+        :param stop_ids: list of node IDs to visit
+        :return: ordered list of node IDs starting with start_id,
+                 representing the cheapest visitation order
+        """
+        # TODO: brute-force O(n!) — consider replacing with a more efficient algorithm
+        # (e.g. nearest-neighbor, dynamic programming) for larger inputs.
+        all_nodes = [start_id] + stop_ids
+        costs: dict[tuple[str, str], float] = {
+            (a, b): self.best_path_cost(a, b)
+            for a in all_nodes for b in all_nodes if a != b
+        }
+        best_order: list[str] = []
+        best_cost = float("inf")
+        for perm in permutations(stop_ids):
+            tour = [start_id] + list(perm)
+            cost = sum(costs[(tour[i], tour[i + 1])]
+                       for i in range(len(tour) - 1))
+            if cost < best_cost:
+                best_cost = cost
+                best_order = tour
+        return best_order
 
     # TODO: Later (after PoC phase) it's worth considering congestion and road-blocks influencing routing.

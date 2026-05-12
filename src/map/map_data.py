@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from typing import Optional, Any
 
+DEFAULT_SPEED_LIMIT = 130.0 # if speed limit is unspecified, use this value as the speed limit
+
 @dataclass(frozen=True)
 class RoadNodeRecord:
     """Road node data.
@@ -22,7 +24,7 @@ class RoadEdgeRecord:
     from_node_id: str
     to_node_id: str
     length_m: float
-    speed_limit_kph: Optional[float] = None
+    speed_limit_kph: float = DEFAULT_SPEED_LIMIT
     metadata: Optional[dict[str, Any]] = None
 
 @dataclass(frozen=True)

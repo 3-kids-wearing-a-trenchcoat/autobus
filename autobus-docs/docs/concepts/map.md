@@ -45,7 +45,7 @@ The three return types are plain frozen dataclasses defined in `map_data`:
 - **`RoadNodeRecord`** — a road intersection with a string ID and a position
   `(x, y, z)`.
 - **`RoadEdgeRecord`** — a directed road segment between two nodes, carrying
-  `length_m` and an optional `speed_limit_kph`.
+  `length_m` and `speed_limit_kph` (defaults to 130 kph).
 
 All IDs are strings so that implementations backed by different sources (integer
 node IDs from networkx, string actor IDs from CARLA, etc.) can be accommodated
@@ -167,10 +167,13 @@ The graph is build on top of [networkx](https://networkx.org/en/), and each node
 9. **metadata** -- dictionary of additional data (matching `metadata` in `RoadEdgeRecord`)  
 
 Additionally, each edge in `TransitGraph` also has certain data associated with them:  
-1. **weight** -- (NOT YET IMPLEMENTED, **TODO**)  
-
+1. **weight** -- expected travel time in seconds, calculated as `length / speed_limit`  
 
 `TransitGraph` defines the following methods:  
 | Method | Returns | Description |  
 |--------|---------|-------------|  
-**TODO**  
+| `get_stops()` | `list[StopRecord]` | All bus stops present in the graph |  
+| `successors(node_id)` | `list[str]` | Immediate successor node IDs of the given node |  
+| `best_path(origin_id, destination_id)` | `list[str]` | Ordered list of node IDs for the most efficient route from origin to destination |  
+| `best_path_cost(origin_id, destination_id)` | `float` | Total travel time in seconds for the most efficient route from origin to destination |  
+| `best_tour(start_id, stop_ids)` | `list[str]` | Ordered list of node IDs (starting with `start_id`) representing the cheapest tour that visits all nodes in `stop_ids` |  

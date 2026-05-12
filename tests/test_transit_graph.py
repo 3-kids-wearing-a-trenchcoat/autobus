@@ -2,8 +2,10 @@
 
 import unittest
 
+import networkx as nx
+
 from map.StaticMapProvider import StaticMapProvider, StopInput
-from map.map_data import RoadNodeRecord
+from map.map_data import RoadNodeRecord, RoadEdgeRecord, StopRecord
 
 
 # Hand-authored test map (all edges directed, lengths in metres):
@@ -49,7 +51,60 @@ class TestTransitGraphConstructor(unittest.TestCase):
         from map.TransitGraph import TransitGraph
         self.graph = TransitGraph(_PROVIDER)
 
-    # TODO: add assertions once TransitGraph is implemented
+    def test_map_structure(self) -> None:
+        """TransitGraph.map has the correct nodes, attributes, and edges."""
+        s1_edge = RoadEdgeRecord(
+            id="n1_n2", from_node_id="n1", to_node_id="n2", length_m=4.0
+        )
+        s1 = StopRecord(
+            id="s1", x=2.0, y=0.0, edge=s1_edge, pos_on_edge=0.5
+        )
+        s2_edge = RoadEdgeRecord(
+            id="n3_n4", from_node_id="n3", to_node_id="n4", length_m=4.0
+        )
+        s2 = StopRecord(
+            id="s2", x=2.0, y=3.0, edge=s2_edge, pos_on_edge=0.5
+        )
+
+        expected = nx.DiGraph()
+        expected.add_node(
+            "n1_n2", stop=s1, stop_pos=0.5, stop_name=None,
+            length=4.0, speed_limit=None,
+            start_node="n1", stop_node="n2", metadata=None,
+        )
+        expected.add_node(
+            "n2_n3", stop=None, stop_pos=0.0, stop_name=None,
+            length=3.0, speed_limit=None,
+            start_node="n2", stop_node="n3", metadata=None,
+        )
+        expected.add_node(
+            "n3_n4", stop=s2, stop_pos=0.5, stop_name=None,
+            length=4.0, speed_limit=None,
+            start_node="n3", stop_node="n4", metadata=None,
+        )
+        expected.add_node(
+            "n4_n1", stop=None, stop_pos=0.0, stop_name=None,
+            length=3.0, speed_limit=None,
+            start_node="n4", stop_node="n1", metadata=None,
+        )
+        expected.add_node(
+            "n1_n3", stop=None, stop_pos=0.0, stop_name=None,
+            length=5.0, speed_limit=None,
+            start_node="n1", stop_node="n3", metadata=None,
+        )
+
+        expected.add_edge("n1_n2", "n2_n3")
+        expected.add_edge("n2_n3", "n3_n4")
+        expected.add_edge("n3_n4", "n4_n1")
+        expected.add_edge("n4_n1", "n1_n2")
+        expected.add_edge("n4_n1", "n1_n3")
+        expected.add_edge("n1_n3", "n3_n4")
+
+        actual = self.graph.map
+        self.assertEqual(set(expected.nodes), set(actual.nodes))
+        for node in expected.nodes:
+            self.assertEqual(expected.nodes[node], actual.nodes[node])
+        self.assertEqual(set(expected.edges), set(actual.edges))
 
 
 if __name__ == "__main__":

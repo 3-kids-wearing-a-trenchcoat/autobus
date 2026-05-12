@@ -23,6 +23,7 @@ dependencies:
   # Utilities
   - tqdm
   - rich
+  - pytest=9.0.3
 
   # Graphs (useful for routing / road logic)
   - networkx

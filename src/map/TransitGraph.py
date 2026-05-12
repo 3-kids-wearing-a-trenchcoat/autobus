@@ -61,8 +61,20 @@ class TransitGraph:
         self.provider: MapProvider = provider
         self.map: nx.DiGraph = _build_map(self.provider)
 
-    # TODO: get_stop_nodes
-    # TODO: successors (with node-id as input)
+    def get_stops(self) -> list[StopRecord]:
+        """Get a list of all bus stops"""
+        return [data.get("stop")
+                for _, data in self.map.nodes(data=True)
+                if data.get("stop") is not None]
+
+    def successors(self, node_id: str) -> list[str]:
+        """
+        Get list of successor nodes
+        :param node_id: ID of origin node
+        :return: List of IDs corresponding to nodes that are immediate successors of the input node
+        """
+        return list(self.map.successors(node_id))
+
     # TODO: best_path (return a sequence of nodes representing the cheapest route from start position to end)
     # Would probably need to decide how to represent them, is it from route to route? if so, do I include the entire weight?
     # May also be a good idea to make it so best_path can receive an arbitrary number of positions and would plot out

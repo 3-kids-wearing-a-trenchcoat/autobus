@@ -24,6 +24,18 @@ def _dict_edge_by_origin_node(road_nodes: list[RoadNodeRecord],
         output[from_id].append(edge)
     return output
 
+def _calc_weights(graph: nx.DiGraph) -> None:
+    """Calculate edge weights according to their nodes"""
+    # Currently, this just sets each edge's weight to the expected travel time on its parent node.
+    # Which is very simple, but would probably need to be updated later to account for things like congestion
+    for origin_id, dest_id in graph.edges():
+        origin_data = graph.nodes[origin_id]
+        length_m: float = origin_data.get("length")
+        speed_limit_kph: float = origin_data.get("speed_limit")
+        speed_limit_mps = speed_limit_kph * 1000 / 3600
+        travel_time_s = length_m / speed_limit_mps
+        graph[origin_id][dest_id]["weight"] = travel_time_s
+
 def _build_map(provider: MapProvider) -> nx.DiGraph:
     """
     Generate an edge-node graph representing the road map, where each directed edge A -> B from the world map
@@ -51,7 +63,9 @@ def _build_map(provider: MapProvider) -> nx.DiGraph:
         # TODO: add a way to filter illegal road transitions. (probably via metadata)
         destination_edges = edge_by_origin[edge.to_node_id] # edges whose from_node are this edge's to_node
         for dest in destination_edges:
-            output.add_edge(origin_edge_id, dest.id) # TODO: should add weights
+            output.add_edge(origin_edge_id, dest.id)
+    # Give edges weights, that they may be used with built-in networkx algorithms
+    _calc_weights(output)
 
     return output
 
@@ -75,9 +89,16 @@ class TransitGraph:
         """
         return list(self.map.successors(node_id))
 
-    # TODO: best_path (return a sequence of nodes representing the cheapest route from start position to end)
-    # Would probably need to decide how to represent them, is it from route to route? if so, do I include the entire weight?
-    # May also be a good idea to make it so best_path can receive an arbitrary number of positions and would plot out
-    # the best route that visits them in this sequence (I imagine this could be easily done
-    # with recursion, but is it a smart way to go about it?)
+    def best_path(self, origin_id: str, destination_id: str) -> list[str]:
+        """
+        Find the best route from the origin to the destination.
+        :param origin_id: ID of the start node
+        :param destination_id: ID of the target node
+        :return: ordered list of node IDs representing the most efficient path from origin to destination
+                 (including start and destination)
+        """
+        return nx.dijkstra_path(self.map, origin_id, destination_id, weight="weight")
+
+
+
     # TODO: Later (after PoC phase) it's worth considering congestion and road-blocks influencing routing.

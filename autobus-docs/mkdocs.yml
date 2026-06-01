@@ -22,6 +22,8 @@ nav:
   - Concepts:
       - Map: concepts/map.md
       - Requests: concepts/requests.md
+      - Demand Generation: concepts/demand_generation.md
   - API Reference:
       - Map: api/map.md
       - Requests: api/requests.md
+      - Simulation: api/simulation.md

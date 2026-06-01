@@ -19,8 +19,10 @@ src/
 │   ├── TransitGraph.py        # Routing graph
 │   ├── graph.py               # PlanarStreetGraph and supporting types
 │   └── map_data.py            # Data records: StopRecord, RoadNodeRecord, RoadEdgeRecord
-└── algorithm/
-    └── RequestPool.py         # Passenger request data model and pool
+├── algorithm/
+│   └── RequestPool.py         # Passenger request data model and pool
+└── simulation/
+    └── DemandGenerator.py     # Synthetic demand: GenerationPolicy and DemandGenerator
 ```
 
 ## Running the project

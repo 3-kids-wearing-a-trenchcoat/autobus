@@ -12,13 +12,15 @@ tested independently of the simulation environment.
 
 ```
 src/
-└── map/
-    ├── MapProvider.py         # Abstract MapProvider interface
-    ├── PlanarMapProvider.py   # MapProvider backed by PlanarStreetGraph
-    ├── StaticMapProvider.py   # Hand-authored MapProvider for tests/debugging
-    ├── TransitGraph.py        # Routing graph
-    ├── graph.py               # PlanarStreetGraph and supporting types
-    └── map_data.py            # Data records: StopRecord, RoadNodeRecord, RoadEdgeRecord
+├── map/
+│   ├── MapProvider.py         # Abstract MapProvider interface
+│   ├── PlanarMapProvider.py   # MapProvider backed by PlanarStreetGraph
+│   ├── StaticMapProvider.py   # Hand-authored MapProvider for tests/debugging
+│   ├── TransitGraph.py        # Routing graph
+│   ├── graph.py               # PlanarStreetGraph and supporting types
+│   └── map_data.py            # Data records: StopRecord, RoadNodeRecord, RoadEdgeRecord
+└── algorithm/
+    └── RequestPool.py         # Passenger request data model and pool
 ```
 
 ## Running the project

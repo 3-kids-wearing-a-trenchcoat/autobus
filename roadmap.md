@@ -4,10 +4,10 @@
       1. [X] Implement `MapProvider` as an abstract class that provides an API that separates between the source of the 
       map (`PlanarStreetGraph` or Carla) and whatever method or object wants to use it to generate the graph that will be used by the algorithm
       2. [X] Implement `PlanarMapProvider` as a subclass of `MapProvider` that draws from `PlanarStreetGraph`
-   3. [ ] Implement `TransitGraph`, the map graph that will be used by the bus algorithm as part of its run.
+   3. [X] Implement `TransitGraph`, the map graph that will be used by the bus algorithm as part of its run.
       1. [X] `TransitGraph`'s constructor should create an edge-node directed graph from `MapProvider` data.
-      2. [ ] `TransitGraph` methods (to be determined)
-   4. [ ] Implement `RequestPool` which stores active passenger requests waiting to be handled.
+      2. [X] `TransitGraph` methods (to be determined)
+   4. [X] Implement `RequestPool` which stores active passenger requests waiting to be handled.
    5. [ ] Implement `DemandGenerator` which generates passenger requests in real time.
    6. [ ] Implement `DispatchPolicy`, which determines which passenger requests to serve and how to prioritize them,
       depending on `RequestPool`, `TransitGraph` and the bus's current position.

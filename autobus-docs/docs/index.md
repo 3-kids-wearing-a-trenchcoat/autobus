@@ -20,7 +20,8 @@ src/
 │   ├── graph.py               # PlanarStreetGraph and supporting types
 │   └── map_data.py            # Data records: StopRecord, RoadNodeRecord, RoadEdgeRecord
 ├── algorithm/
-│   └── RequestPool.py         # Passenger request data model and pool
+│   ├── RequestPool.py         # Passenger request data model and pool
+│   └── DispatchPolicy.py      # Dispatch policy interface and bus state
 └── simulation/
     └── DemandGenerator.py     # Synthetic demand: GenerationPolicy and DemandGenerator
 ```

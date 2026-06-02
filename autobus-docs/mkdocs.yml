@@ -23,7 +23,9 @@ nav:
       - Map: concepts/map.md
       - Requests: concepts/requests.md
       - Demand Generation: concepts/demand_generation.md
+      - Dispatch Policy: concepts/dispatch_policy.md
   - API Reference:
       - Map: api/map.md
       - Requests: api/requests.md
       - Simulation: api/simulation.md
+      - Algorithm: api/algorithm.md

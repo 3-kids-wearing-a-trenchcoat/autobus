@@ -8,7 +8,7 @@
       1. [X] `TransitGraph`'s constructor should create an edge-node directed graph from `MapProvider` data.
       2. [X] `TransitGraph` methods (to be determined)
    4. [X] Implement `RequestPool` which stores active passenger requests waiting to be handled.
-   5. [ ] Implement `DemandGenerator` which generates passenger requests in real time.
+   5. [X] Implement `DemandGenerator` which generates passenger requests in real time.
    6. [ ] Implement `DispatchPolicy`, which determines which passenger requests to serve and how to prioritize them,
       depending on `RequestPool`, `TransitGraph` and the bus's current position.
    7. [ ] Implement `RoutePlanner` which turns demand and `DispatchPolicy` into a sequence of stops.

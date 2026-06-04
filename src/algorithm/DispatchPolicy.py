@@ -42,3 +42,11 @@ class DispatchPolicy(ABC):
         :param n_stops: Number of stops to include in the route.
         :return: Ordered list of stop IDs to visit.
         """
+
+class PlaceholderPolicy(DispatchPolicy):
+    """placeholder policy, just so I can continue development without implementing a proper policy first"""
+
+    def plan(self, state: BusState, n_stops: int) -> list[str]:
+        if state.onboard:
+            return self._graph.best_path(state.position, state.onboard[0].dropoff_stop_id)
+        return self._graph.best_path(state.position, state.pending_requests[0].pickup_stop_id)

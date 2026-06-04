@@ -3,11 +3,33 @@ Autobus is an autonomous bus routing program which determines which bus stops to
 The final program is meant to run on top of the Carla autonomous driving simulation, but for now the implementation will be limited to a proof-of-concept where the world on which the bus moves is reduced to a directed graph.
 
 ## Internal Logic
-* `MapProvider` is used as an abstraction layer between this project and the map source
-* Inside the algorithm, the map is represented by `TransitGraph`, which is a directed graph whose nodes represent edges in the "real" map.
-* Everything else to be determined later 
-
+Anything not mentioned in this section has yet to be decided on, this covers only the approaches we've settled on so far.
 The docs _should_ be accurate and may be consulted when in doubt. But be wary that we may slip up and forget to update them.
+
+  ### Map layer
+  * `MapProvider` is an abstraction over the map source (CARLA, planar graph, hand-authored static data).
+  * Internally, the map is represented as a `TransitGraph`: a directed graph whose **nodes are road edges** from the underlying map and
+  whose graph edges represent legal transitions between them. Bus stops are attributes on certain nodes.
+  
+  ### Requests
+  * `Request` is a dataclass carrying a pickup stop, a dropoff stop, and a lifecycle state (`PENDING → ON_BUS → FULFILLED`, or
+  `CANCELLED`).
+  * `RequestPool` is the single shared store for all requests. The bus agent writes state transitions; the demand generator adds new
+  requests; a future metrics component can read history.
+  
+  ### Demand generation
+  * `DemandGenerator` adds new `Request` objects to the pool on each simulation tick by delegating to a `GenerationPolicy` (e.g.
+  `PeriodicPolicy`) to decide how many to emit.
+  
+  ### Routing
+  * `BusState` is a snapshot passed to the policy on each planning call: current position, onboard passengers, pending requests, and
+  remaining capacity.
+  * `DispatchPolicy` is an abstract base class with one method — `plan(state, n_stops) → list[stop_id]` — that returns an ordered list of
+  stops to visit. Concrete implementations contain the actual routing logic.
+  * `BusAgent` holds the bus's mutable state (position, onboard passengers, planned route). On each stop arrival it: (1) alights and
+  boards passengers, updating the pool; (2) re-plans by projecting state forward past a configurable **commitment window** and calling
+  the policy. Stops inside the commitment window are locked and not replaced by the re-plan.
+
 
 ## Stack
 The program should be written in Python 3.12.  

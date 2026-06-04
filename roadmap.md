@@ -9,11 +9,11 @@
       2. [X] `TransitGraph` methods (to be determined)
    4. [X] Implement `RequestPool` which stores active passenger requests waiting to be handled.
    5. [X] Implement `DemandGenerator` which generates passenger requests in real time.
-   6. [ ] Implement `DispatchPolicy`, which determines which passenger requests to serve and how to prioritize them,
-      depending on `RequestPool`, `TransitGraph` and the bus's current position.
-   7. [ ] Implement `RoutePlanner` which turns demand and `DispatchPolicy` into a sequence of stops.
-   8. [ ] Implement `BusAgent`
-   9. [ ] Implement `SimulationBackend` which handles the simulation, this is probably an abstract library
-   10. [ ] Implement `MockBackend` which inherits from `SimulationBackend`
-   11. [ ] Implement `MetricsTracker`, self-explanatory
-   12. [ ] Implement `SimulationRunner` which initializes everything, runs the tick loops, collects metrics and prints/saves results.
+   6. [X] Implement `DispatchPolicy` base class and placeholder subclass
+   7. [ ] Implement `BusAgent`
+   8. [ ] Implement `SimulationBackend` which handles the simulation, this is probably an abstract library
+   9. [ ] Implement `MockBackend` which inherits from `SimulationBackend`
+   10. [ ] Implement `MetricsTracker`, self-explanatory
+   11. [ ] Implement `SimulationRunner` which initializes everything, runs the tick loops, collects metrics and prints/saves results.
+   12. [ ] Implement fixed-route `DispatchPolicy`
+   13. [ ] Implement at least one heuristic-based `DispatchPolicy`

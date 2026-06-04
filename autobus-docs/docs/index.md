@@ -21,7 +21,8 @@ src/
 │   └── map_data.py            # Data records: StopRecord, RoadNodeRecord, RoadEdgeRecord
 ├── algorithm/
 │   ├── RequestPool.py         # Passenger request data model and pool
-│   └── DispatchPolicy.py      # Dispatch policy interface and bus state
+│   ├── DispatchPolicy.py      # Dispatch policy interface and bus state
+│   └── BusAgent.py            # Bus agent: state management and re-planning
 └── simulation/
     └── DemandGenerator.py     # Synthetic demand: GenerationPolicy and DemandGenerator
 ```

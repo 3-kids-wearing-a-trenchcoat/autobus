@@ -24,6 +24,7 @@ nav:
       - Requests: concepts/requests.md
       - Demand Generation: concepts/demand_generation.md
       - Dispatch Policy: concepts/dispatch_policy.md
+      - Bus Agent: concepts/bus_agent.md
   - API Reference:
       - Map: api/map.md
       - Requests: api/requests.md

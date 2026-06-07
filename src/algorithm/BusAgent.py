@@ -41,20 +41,21 @@ class BusAgent:
         self._onboard: list[Request] = []
         self._replan()
 
-    def on_arrival(self, stop_id: str) -> None:
+    def on_arrival(self, stop_id: str, sim_time: float) -> None:
         """
         Called by the runner when the bus arrives at a stop.
 
         Updates passenger states (alight then board), advances the route,
         and triggers a re-plan.
         :param stop_id: TransitGraph node ID of the stop just arrived at.
+        :param sim_time: Current simulation time in seconds.
         """
         if self._route and self._route[0] == stop_id:
             self._route.pop(0)
         self._position = stop_id
 
-        self._alight(stop_id)
-        self._board(stop_id)
+        self._alight(stop_id, sim_time)
+        self._board(stop_id, sim_time)
         self._replan()
 
     def next_stop(self) -> str | None:
@@ -69,19 +70,21 @@ class BusAgent:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _alight(self, stop_id: str) -> None:
+    def _alight(self, stop_id: str, sim_time: float) -> None:
         """Drop off all passengers whose destination is stop_id."""
         alighting = [r for r in self._onboard if r.dropoff_stop_id == stop_id]
         for request in alighting:
+            request.fulfilled_at = sim_time
             self._pool.update_state(request.id, RequestState.FULFILLED)
             self._onboard.remove(request)
 
-    def _board(self, stop_id: str) -> None:
-        """Board pending passengers waiting at stop_id, up to remaining capacity."""
+    def _board(self, stop_id: str, sim_time: float) -> None:
+        """Board pending passengers waiting at stop_id, up to capacity."""
         for request in self._pool.get_pending():
             if len(self._onboard) >= self._capacity:
                 break
             if request.pickup_stop_id == stop_id:
+                request.boarded_at = sim_time
                 self._pool.update_state(request.id, RequestState.ON_BUS)
                 self._onboard.append(request)
 

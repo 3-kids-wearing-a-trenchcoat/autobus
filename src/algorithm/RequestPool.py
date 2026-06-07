@@ -1,7 +1,6 @@
 """Passenger request data model and pool."""
 
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 
@@ -24,15 +23,22 @@ class Request:
     :param id: Unique request identifier.
     :param pickup_stop_id: ID of the stop where the passenger waits.
     :param dropoff_stop_id: ID of the stop where the passenger wants to go.
+    :param created_at: Simulation time in seconds when the request was
+        submitted. Supplied by the caller; no default.
     :param state: Current lifecycle state (defaults to PENDING).
-    :param created_at: Unix timestamp of when the request was created.
+    :param boarded_at: Simulation time when the passenger boarded.
+        None until the request transitions to ON_BUS.
+    :param fulfilled_at: Simulation time when the passenger alighted.
+        None until the request transitions to FULFILLED.
     """
 
     id: str
     pickup_stop_id: str
     dropoff_stop_id: str
+    created_at: float
     state: RequestState = RequestState.PENDING
-    created_at: float = field(default_factory=time.time)
+    boarded_at: float | None = None
+    fulfilled_at: float | None = None
 
 
 class RequestPool:
@@ -87,6 +93,20 @@ class RequestPool:
         return [
             r for r in self._requests.values()
             if r.state is RequestState.ON_BUS
+        ]
+
+    def get_fulfilled(self) -> list[Request]:
+        """Return all requests that have been fulfilled."""
+        return [
+            r for r in self._requests.values()
+            if r.state is RequestState.FULFILLED
+        ]
+
+    def get_cancelled(self) -> list[Request]:
+        """Return all requests that have been cancelled."""
+        return [
+            r for r in self._requests.values()
+            if r.state is RequestState.CANCELLED
         ]
 
     def update_state(

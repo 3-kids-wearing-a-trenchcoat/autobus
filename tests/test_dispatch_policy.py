@@ -18,7 +18,8 @@ class _ConcretePolicy(DispatchPolicy):
 
 def make_request(id: str = "r1") -> Request:
     """Helper: build a minimal PENDING request."""
-    return Request(id=id, pickup_stop_id="A", dropoff_stop_id="B")
+    return Request(id=id, pickup_stop_id="A", dropoff_stop_id="B",
+                   created_at=0.0)
 
 
 # ---------------------------------------------------------------------------

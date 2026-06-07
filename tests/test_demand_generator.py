@@ -181,3 +181,14 @@ def test_biased_mode_produces_valid_requests() -> None:
     assert len(pool) == 10
     for r in pool.get_all():
         assert r.pickup_stop_id != r.dropoff_stop_id
+
+
+# ---------------------------------------------------------------------------
+# created_at uses simulation time
+# ---------------------------------------------------------------------------
+
+def test_request_created_at_matches_sim_time() -> None:
+    gen, pool = make_generator(interval_s=10.0, max_requests=1)
+    gen.update(sim_time=100.0)
+    request = pool.get_all()[0]
+    assert request.created_at == 100.0

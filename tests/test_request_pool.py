@@ -11,7 +11,8 @@ from src.algorithm.RequestPool import (
 
 def make_request(id: str = "r1") -> Request:
     """Helper: build a minimal PENDING request."""
-    return Request(id=id, pickup_stop_id="A", dropoff_stop_id="B")
+    return Request(id=id, pickup_stop_id="A", dropoff_stop_id="B",
+                   created_at=0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -24,8 +25,9 @@ def test_request_defaults_to_pending() -> None:
 
 
 def test_request_created_at_is_set() -> None:
-    r = make_request()
-    assert r.created_at > 0
+    r = Request(id="r1", pickup_stop_id="A", dropoff_stop_id="B",
+                created_at=42.5)
+    assert r.created_at == 42.5
 
 
 # ---------------------------------------------------------------------------
@@ -140,3 +142,73 @@ def test_len_counts_active_only() -> None:
 
     pool.cancel("r2")
     assert len(pool) == 0
+
+
+# ---------------------------------------------------------------------------
+# Request timestamp defaults
+# ---------------------------------------------------------------------------
+
+def test_request_boarded_at_defaults_to_none() -> None:
+    r = make_request()
+    assert r.boarded_at is None
+
+
+def test_request_fulfilled_at_defaults_to_none() -> None:
+    r = make_request()
+    assert r.fulfilled_at is None
+
+
+# ---------------------------------------------------------------------------
+# get_fulfilled / get_cancelled
+# ---------------------------------------------------------------------------
+
+def test_get_fulfilled_returns_fulfilled_requests() -> None:
+    pool = RequestPool()
+    pool.add(make_request("r1"))
+    pool.add(make_request("r2"))
+    pool.update_state("r1", RequestState.FULFILLED)
+
+    fulfilled_ids = {r.id for r in pool.get_fulfilled()}
+    assert fulfilled_ids == {"r1"}
+
+
+def test_get_fulfilled_excludes_other_states() -> None:
+    pool = RequestPool()
+    pool.add(make_request("pending"))
+    pool.add(make_request("on_bus"))
+    pool.add(make_request("cancelled"))
+    pool.update_state("on_bus", RequestState.ON_BUS)
+    pool.update_state("cancelled", RequestState.CANCELLED)
+
+    assert pool.get_fulfilled() == []
+
+
+def test_get_fulfilled_empty_when_none_fulfilled() -> None:
+    pool = RequestPool()
+    assert pool.get_fulfilled() == []
+
+
+def test_get_cancelled_returns_cancelled_requests() -> None:
+    pool = RequestPool()
+    pool.add(make_request("r1"))
+    pool.add(make_request("r2"))
+    pool.cancel("r1")
+
+    cancelled_ids = {r.id for r in pool.get_cancelled()}
+    assert cancelled_ids == {"r1"}
+
+
+def test_get_cancelled_excludes_other_states() -> None:
+    pool = RequestPool()
+    pool.add(make_request("pending"))
+    pool.add(make_request("on_bus"))
+    pool.add(make_request("fulfilled"))
+    pool.update_state("on_bus", RequestState.ON_BUS)
+    pool.update_state("fulfilled", RequestState.FULFILLED)
+
+    assert pool.get_cancelled() == []
+
+
+def test_get_cancelled_empty_when_none_cancelled() -> None:
+    pool = RequestPool()
+    assert pool.get_cancelled() == []

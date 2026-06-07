@@ -10,8 +10,10 @@ that writes passenger state transitions back to the `RequestPool`.
 The runner interacts with `BusAgent` through two methods:
 
 - **`next_stop()`** — read the next stop to drive to.
-- **`on_arrival(stop_id)`** — notify the agent that the bus has arrived; the
-  agent handles boarding/alighting and re-plans before returning.
+- **`on_arrival(stop_id, sim_time)`** — notify the agent that the bus has
+  arrived; the agent handles boarding/alighting and re-plans before returning.
+  `sim_time` is the current simulation time in seconds, used to stamp
+  `boarded_at` and `fulfilled_at` on the affected requests.
 
 ## Re-planning cycle
 
@@ -74,4 +76,6 @@ RequestPool ◄─────────────────────�
 `BusAgent` holds a reference to the shared `RequestPool`. The simulation runner
 and demand generator also write to the pool (adding new requests); `BusAgent`
 only reads pending requests and transitions their states to `ON_BUS` or
-`FULFILLED`.
+`FULFILLED`. At each transition it stamps the corresponding timestamp field on
+the request (`boarded_at` when boarding, `fulfilled_at` when alighting), making
+per-journey timing data available to `MetricsTracker`.

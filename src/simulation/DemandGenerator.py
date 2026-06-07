@@ -103,10 +103,13 @@ class DemandGenerator:
         """
         count = self._policy.should_generate(sim_time)
         for _ in range(count):
-            self._emit_request()
+            self._emit_request(sim_time)
 
-    def _emit_request(self) -> None:
-        """Pick stops, build a Request, and add it to the pool."""
+    def _emit_request(self, sim_time: float) -> None:
+        """
+        Pick stops, build a Request, and add it to the pool.
+        :param sim_time: Current simulation time in seconds.
+        """
         pickup = random.choices(self._stops, weights=self._weights)[0]
 
         dropoff_stops = [s for s in self._stops if s.id != pickup.id]
@@ -122,6 +125,7 @@ class DemandGenerator:
             id=f"req_{self._next_id}",
             pickup_stop_id=pickup.id,
             dropoff_stop_id=dropoff.id,
+            created_at=sim_time,
         )
         self._pool.add(request)
         self._next_id += 1

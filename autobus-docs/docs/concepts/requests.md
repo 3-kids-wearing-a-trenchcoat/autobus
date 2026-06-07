@@ -25,9 +25,13 @@ to another. It records:
 - **`dropoff_stop_id`** — the stop where the passenger wants to get off.
 - **`state`** — the current lifecycle stage (see [Request state](#request-state)
   below).
-- **`created_at`** — a Unix timestamp recording when the request was submitted.
-  Used by `DispatchPolicy` for fairness-based prioritisation and by
-  `MetricsTracker` to compute wait times.
+- **`created_at`** — simulation time in seconds when the request was submitted.
+  Supplied by the caller (typically `DemandGenerator`); no default.
+  Used by `MetricsTracker` to compute wait times.
+- **`boarded_at`** — simulation time when the passenger boarded the bus.
+  `None` until the request transitions to `ON_BUS`. Set by `BusAgent`.
+- **`fulfilled_at`** — simulation time when the passenger alighted.
+  `None` until the request transitions to `FULFILLED`. Set by `BusAgent`.
 
 Each request has a unique string `id` assigned by whatever component creates
 it (typically `DemandGenerator`).
@@ -67,9 +71,11 @@ and *inactive* ones (`FULFILLED` or `CANCELLED`):
 
 - **Active queries** — `get_all()`, `get_pending()`, and `get_on_bus()` return
   only active requests.
-- **Historical access** — `get(id)` can still retrieve any request, regardless
-  of state. This allows `MetricsTracker` to read completed requests without
-  a separate history store.
+- **Historical queries** — `get_fulfilled()` and `get_cancelled()` return all
+  completed requests of each kind. These are the primary interface for
+  `MetricsTracker` to compute aggregate KPIs.
+- **Individual lookup** — `get(id)` retrieves any request by ID regardless of
+  state.
 
 ### Why separate `get_pending` and `get_on_bus`?
 

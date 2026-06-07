@@ -10,7 +10,7 @@
    4. [X] Implement `RequestPool` which stores active passenger requests waiting to be handled.
    5. [X] Implement `DemandGenerator` which generates passenger requests in real time.
    6. [X] Implement `DispatchPolicy` base class and placeholder subclass
-   7. [ ] Implement `BusAgent`
+   7. [X] Implement `BusAgent`
    8. [ ] Implement `SimulationBackend` which handles the simulation, this is probably an abstract library
    9. [ ] Implement `MockBackend` which inherits from `SimulationBackend`
    10. [ ] Implement `MetricsTracker`, self-explanatory

@@ -87,13 +87,13 @@ def test_tick_history_returns_copy() -> None:
 # ---------------------------------------------------------------------------
 
 def test_snapshot_empty_pool_counts_are_zero() -> None:
-    kpi = MetricsTracker(RequestPool()).snapshot()
+    kpi = MetricsTracker(RequestPool()).snapshot(sim_time=0.0)
     assert kpi.fulfilled_count == 0
     assert kpi.cancelled_count == 0
 
 
 def test_snapshot_empty_pool_means_are_none() -> None:
-    kpi = MetricsTracker(RequestPool()).snapshot()
+    kpi = MetricsTracker(RequestPool()).snapshot(sim_time=0.0)
     assert kpi.mean_wait_time is None
     assert kpi.mean_ride_time is None
     assert kpi.mean_journey_time is None
@@ -108,7 +108,7 @@ def test_snapshot_only_cancelled_means_are_none() -> None:
     pool.add(make_pending_request("c1"))
     pool.cancel("c1")
 
-    kpi = MetricsTracker(pool).snapshot()
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
     assert kpi.mean_wait_time is None
     assert kpi.mean_ride_time is None
     assert kpi.mean_journey_time is None
@@ -121,7 +121,7 @@ def test_snapshot_only_cancelled_count_is_correct() -> None:
     pool.cancel("c1")
     pool.cancel("c2")
 
-    kpi = MetricsTracker(pool).snapshot()
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
     assert kpi.cancelled_count == 2
     assert kpi.fulfilled_count == 0
 
@@ -134,7 +134,7 @@ def test_snapshot_single_fulfilled_wait_time() -> None:
     pool = RequestPool()
     pool.add(make_fulfilled_request("r1", created_at=0.0,
                                     boarded_at=10.0, fulfilled_at=25.0))
-    kpi = MetricsTracker(pool).snapshot()
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
     assert kpi.mean_wait_time == pytest.approx(10.0)
 
 
@@ -142,7 +142,7 @@ def test_snapshot_single_fulfilled_ride_time() -> None:
     pool = RequestPool()
     pool.add(make_fulfilled_request("r1", created_at=0.0,
                                     boarded_at=10.0, fulfilled_at=25.0))
-    kpi = MetricsTracker(pool).snapshot()
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
     assert kpi.mean_ride_time == pytest.approx(15.0)
 
 
@@ -150,7 +150,7 @@ def test_snapshot_single_fulfilled_journey_time() -> None:
     pool = RequestPool()
     pool.add(make_fulfilled_request("r1", created_at=0.0,
                                     boarded_at=10.0, fulfilled_at=25.0))
-    kpi = MetricsTracker(pool).snapshot()
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
     assert kpi.mean_journey_time == pytest.approx(25.0)
 
 
@@ -158,7 +158,7 @@ def test_snapshot_single_fulfilled_count() -> None:
     pool = RequestPool()
     pool.add(make_fulfilled_request("r1", created_at=0.0,
                                     boarded_at=10.0, fulfilled_at=25.0))
-    kpi = MetricsTracker(pool).snapshot()
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
     assert kpi.fulfilled_count == 1
 
 
@@ -173,7 +173,7 @@ def test_snapshot_mean_wait_time_across_multiple() -> None:
                                     boarded_at=10.0, fulfilled_at=30.0))
     pool.add(make_fulfilled_request("r2", created_at=0.0,
                                     boarded_at=20.0, fulfilled_at=40.0))
-    kpi = MetricsTracker(pool).snapshot()
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
     assert kpi.mean_wait_time == pytest.approx(15.0)
 
 
@@ -184,7 +184,7 @@ def test_snapshot_mean_ride_time_across_multiple() -> None:
                                     boarded_at=10.0, fulfilled_at=30.0))
     pool.add(make_fulfilled_request("r2", created_at=0.0,
                                     boarded_at=20.0, fulfilled_at=40.0))
-    kpi = MetricsTracker(pool).snapshot()
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
     assert kpi.mean_ride_time == pytest.approx(20.0)
 
 
@@ -195,7 +195,7 @@ def test_snapshot_mean_journey_time_across_multiple() -> None:
                                     boarded_at=10.0, fulfilled_at=30.0))
     pool.add(make_fulfilled_request("r2", created_at=0.0,
                                     boarded_at=20.0, fulfilled_at=40.0))
-    kpi = MetricsTracker(pool).snapshot()
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
     assert kpi.mean_journey_time == pytest.approx(35.0)
 
 
@@ -209,7 +209,7 @@ def test_snapshot_excludes_pending_from_fulfilled_count() -> None:
                                     boarded_at=5.0, fulfilled_at=10.0))
     pool.add(make_pending_request("p1"))
 
-    kpi = MetricsTracker(pool).snapshot()
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
     assert kpi.fulfilled_count == 1
 
 
@@ -220,7 +220,7 @@ def test_snapshot_excludes_on_bus_from_fulfilled_count() -> None:
     pool.add(make_pending_request("o1"))
     pool.update_state("o1", RequestState.ON_BUS)
 
-    kpi = MetricsTracker(pool).snapshot()
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
     assert kpi.fulfilled_count == 1
 
 
@@ -230,7 +230,68 @@ def test_snapshot_means_unaffected_by_in_flight() -> None:
                                     boarded_at=10.0, fulfilled_at=25.0))
     pool.add(make_pending_request("p1"))   # no timestamps
 
-    kpi = MetricsTracker(pool).snapshot()
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
     assert kpi.mean_wait_time == pytest.approx(10.0)
     assert kpi.mean_ride_time == pytest.approx(15.0)
     assert kpi.mean_journey_time == pytest.approx(25.0)
+
+
+# ---------------------------------------------------------------------------
+# fulfillment_rate
+# ---------------------------------------------------------------------------
+
+def test_snapshot_fulfillment_rate_none_when_no_terminal() -> None:
+    kpi = MetricsTracker(RequestPool()).snapshot(sim_time=10.0)
+    assert kpi.fulfillment_rate is None
+
+
+def test_snapshot_fulfillment_rate_all_fulfilled() -> None:
+    pool = RequestPool()
+    for i in range(3):
+        pool.add(make_fulfilled_request(f"r{i}", 0.0, 5.0, 10.0))
+    kpi = MetricsTracker(pool).snapshot(sim_time=10.0)
+    assert kpi.fulfillment_rate == pytest.approx(1.0)
+
+
+def test_snapshot_fulfillment_rate_mixed() -> None:
+    pool = RequestPool()
+    for i in range(3):
+        pool.add(make_fulfilled_request(f"r{i}", 0.0, 5.0, 10.0))
+    pool.add(make_pending_request("c1"))
+    pool.cancel("c1")
+    kpi = MetricsTracker(pool).snapshot(sim_time=10.0)
+    assert kpi.fulfillment_rate == pytest.approx(0.75)
+
+
+def test_snapshot_fulfillment_rate_all_cancelled() -> None:
+    pool = RequestPool()
+    for i in range(2):
+        pool.add(make_pending_request(f"c{i}"))
+        pool.cancel(f"c{i}")
+    kpi = MetricsTracker(pool).snapshot(sim_time=10.0)
+    assert kpi.fulfillment_rate == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# throughput
+# ---------------------------------------------------------------------------
+
+def test_snapshot_throughput_none_when_sim_time_zero() -> None:
+    pool = RequestPool()
+    pool.add(make_fulfilled_request("r1", 0.0, 5.0, 10.0))
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
+    assert kpi.throughput is None
+
+
+def test_snapshot_throughput_correct() -> None:
+    pool = RequestPool()
+    for i in range(4):
+        pool.add(make_fulfilled_request(f"r{i}", 0.0, 5.0, 10.0))
+    kpi = MetricsTracker(pool).snapshot(sim_time=20.0)
+    assert kpi.throughput == pytest.approx(0.2)
+
+
+def test_snapshot_throughput_zero_fulfilled() -> None:
+    pool = RequestPool()
+    kpi = MetricsTracker(pool).snapshot(sim_time=10.0)
+    assert kpi.throughput == pytest.approx(0.0)

@@ -23,10 +23,12 @@ class TickSnapshot:
 @dataclass
 class KPISnapshot:
     """
-    Aggregate KPIs computed from fulfilled requests only.
+    Aggregate KPIs computed from completed requests.
 
-    In-flight (PENDING or ON_BUS) requests are excluded from all
-    calculations. All time values are in simulation seconds.
+    Timing means are computed over fulfilled requests only; in-flight
+    (PENDING or ON_BUS) requests are excluded. All time values are in
+    simulation seconds. Fields are None when there is not yet enough
+    data to compute them.
 
     :param fulfilled_count: Total number of fulfilled requests.
     :param cancelled_count: Total number of cancelled requests.
@@ -36,6 +38,12 @@ class KPISnapshot:
         None if no requests have been fulfilled yet.
     :param mean_journey_time: Average time from created_at to
         fulfilled_at. None if no requests have been fulfilled yet.
+    :param fulfillment_rate: Fraction of terminal requests that were
+        fulfilled (fulfilled / (fulfilled + cancelled)).
+        None if no terminal requests exist yet.
+    :param throughput: Fulfilled requests per simulation second
+        (fulfilled_count / sim_time).
+        None if sim_time is 0.
     """
 
     fulfilled_count: int
@@ -43,6 +51,8 @@ class KPISnapshot:
     mean_wait_time: float | None
     mean_ride_time: float | None
     mean_journey_time: float | None
+    fulfillment_rate: float | None
+    throughput: float | None
 
 
 class MetricsTracker:
@@ -84,24 +94,39 @@ class MetricsTracker:
         """Return a copy of the recorded per-tick snapshots."""
         return list(self._ticks)
 
-    def snapshot(self) -> KPISnapshot:
+    def snapshot(self, sim_time: float) -> KPISnapshot:
         """
-        Compute aggregate KPIs from all fulfilled requests.
+        Compute aggregate KPIs as of the given simulation time.
 
-        In-flight (PENDING or ON_BUS) requests are excluded. If no
-        requests have been fulfilled yet, all means are None.
+        Timing means are computed over fulfilled requests only; in-flight
+        requests are excluded. fulfillment_rate covers all terminal
+        (fulfilled + cancelled) requests. throughput is None when
+        sim_time is 0.
+        :param sim_time: Current simulation time in seconds.
         :return: KPISnapshot with current aggregate metrics.
         """
         fulfilled = self._pool.get_fulfilled()
         cancelled = self._pool.get_cancelled()
+        n_fulfilled = len(fulfilled)
+        n_cancelled = len(cancelled)
+        n_terminal = n_fulfilled + n_cancelled
+
+        fulfillment_rate = (
+            n_fulfilled / n_terminal if n_terminal > 0 else None
+        )
+        throughput = (
+            n_fulfilled / sim_time if sim_time > 0 else None
+        )
 
         if not fulfilled:
             return KPISnapshot(
                 fulfilled_count=0,
-                cancelled_count=len(cancelled),
+                cancelled_count=n_cancelled,
                 mean_wait_time=None,
                 mean_ride_time=None,
                 mean_journey_time=None,
+                fulfillment_rate=fulfillment_rate,
+                throughput=throughput,
             )
 
         wait_times = [r.boarded_at - r.created_at for r in fulfilled]
@@ -111,8 +136,10 @@ class MetricsTracker:
 
         return KPISnapshot(
             fulfilled_count=n,
-            cancelled_count=len(cancelled),
+            cancelled_count=n_cancelled,
             mean_wait_time=sum(wait_times) / n,
             mean_ride_time=sum(ride_times) / n,
             mean_journey_time=sum(journey_times) / n,
+            fulfillment_rate=fulfillment_rate,
+            throughput=throughput,
         )

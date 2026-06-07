@@ -32,28 +32,30 @@ to plot how queue depth and occupancy evolved over the course of a run.
 
 ## KPI summaries
 
-Calling `snapshot()` at any point during or after a run returns a `KPISnapshot`
-with the following fields:
+Calling `snapshot(sim_time)` at any point during or after a run returns a
+`KPISnapshot` with the following fields:
 
-| Field | Meaning |
-|-------|---------|
-| `fulfilled_count` | Total number of fulfilled requests so far. |
-| `cancelled_count` | Total number of cancelled requests so far. |
-| `mean_wait_time` | Average time from `created_at` to `boarded_at` (in seconds). |
-| `mean_ride_time` | Average time from `boarded_at` to `fulfilled_at` (in seconds). |
-| `mean_journey_time` | Average time from `created_at` to `fulfilled_at` (in seconds). |
+| Field | Meaning | `None` when |
+|-------|---------|-------------|
+| `fulfilled_count` | Total fulfilled requests so far. | — |
+| `cancelled_count` | Total cancelled requests so far. | — |
+| `mean_wait_time` | Average time from `created_at` to `boarded_at` (seconds). | No fulfilled requests yet. |
+| `mean_ride_time` | Average time from `boarded_at` to `fulfilled_at` (seconds). | No fulfilled requests yet. |
+| `mean_journey_time` | Average time from `created_at` to `fulfilled_at` (seconds). | No fulfilled requests yet. |
+| `fulfillment_rate` | `fulfilled / (fulfilled + cancelled)` — fraction of terminal requests served. | No terminal requests yet. |
+| `throughput` | Fulfilled requests per simulation second (`fulfilled / sim_time`). | `sim_time` is 0. |
 
 ### In-flight exclusion
 
-**Only fulfilled requests contribute to the KPI means.** Requests that are
-still `PENDING` or `ON_BUS` at the time of the call are excluded entirely —
-they have incomplete journeys and including them would undercount the true
-latency. `None` is returned for all means when no requests have been fulfilled
-yet.
+**Only fulfilled requests contribute to the timing means.** Requests still
+`PENDING` or `ON_BUS` are excluded — they have incomplete journeys and
+including them would undercount the true latency. `None` is returned for all
+means when no requests have been fulfilled yet.
 
-This means `snapshot()` is safe to call at any point mid-run. The KPIs reflect
-the performance of completed journeys only, which is a stable and unbiased
-view of how the system has performed so far.
+`fulfillment_rate` covers all *terminal* requests (fulfilled + cancelled), so it
+is also unaffected by in-flight state.
+
+`snapshot()` is safe to call at any point mid-run.
 
 ## Expected call pattern
 
@@ -65,7 +67,7 @@ bus_agent.on_arrival(stop_id, sim_time)
 metrics.record_tick(sim_time)
 
 # At any point — inspect KPIs to decide whether to continue:
-kpi = metrics.snapshot()
+kpi = metrics.snapshot(sim_time)
 if kpi.mean_wait_time is not None and kpi.mean_wait_time > threshold:
     ...  # terminate or adjust
 

@@ -24,6 +24,7 @@ src/
 │   ├── DispatchPolicy.py      # Dispatch policy interface and bus state
 │   └── BusAgent.py            # Bus agent: state management and re-planning
 └── simulation/
+    ├── SimulationBackend.py   # Abstract simulation controller
     └── DemandGenerator.py     # Synthetic demand: GenerationPolicy and DemandGenerator
 ```
 

@@ -26,6 +26,7 @@ nav:
       - Dispatch Policy: concepts/dispatch_policy.md
       - Bus Agent: concepts/bus_agent.md
       - Metrics: concepts/metrics.md
+      - Simulation Backend: concepts/simulation_backend.md
   - API Reference:
       - Map: api/map.md
       - Requests: api/requests.md

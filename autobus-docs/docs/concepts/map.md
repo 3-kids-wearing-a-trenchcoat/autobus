@@ -45,7 +45,8 @@ The three return types are plain frozen dataclasses defined in `map_data`:
 - **`RoadNodeRecord`** — a road intersection with a string ID and a position
   `(x, y, z)`.
 - **`RoadEdgeRecord`** — a directed road segment between two nodes, carrying
-  `length_m` and `speed_limit_kph` (defaults to 130 kph).
+  `length_m` and an optional `speed_limit_kph` (`None` when unspecified;
+  `TransitGraph` falls back to 130 kph when computing travel times).
 
 All IDs are strings so that implementations backed by different sources (integer
 node IDs from networkx, string actor IDs from CARLA, etc.) can be accommodated
@@ -161,13 +162,13 @@ The graph is build on top of [networkx](https://networkx.org/en/), and each node
     Gets a value in [0.0, 1.0], where `0.0` represents the stop is at the very start, `1.0` represents the stop is at the very end, and so on.  
 4. **stop_name** -- The name of the bus stop (if the bus stop exists and it has the optional name property)  
 5. **length** -- length of the route in meters  
-6. **speed_limit** -- The speed limit in this route in km/h  
+6. **speed_limit** -- The speed limit in this route in km/h, or `None` if not specified by the source edge  
 7. **start_node** -- id of start road node (matching `from_node_id` in `RoadEdgeRecord`)  
 8. **stop_node** -- if of end node (matching `to_node_id` in `RoadEdgeRecord`)  
 9. **metadata** -- dictionary of additional data (matching `metadata` in `RoadEdgeRecord`)  
 
 Additionally, each edge in `TransitGraph` also has certain data associated with them:  
-1. **weight** -- expected travel time in seconds, calculated as `length / speed_limit`  
+1. **weight** -- expected travel time in seconds, calculated as `length / speed_limit` (falling back to 130 kph when `speed_limit` is `None`)  
 
 `TransitGraph` defines the following methods:  
 | Method | Returns | Description |  

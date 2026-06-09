@@ -58,6 +58,11 @@ class BusAgent:
         self._board(stop_id, sim_time)
         self._replan()
 
+    @property
+    def position(self) -> str:
+        """Current TransitGraph node ID of the bus."""
+        return self._position
+
     def next_stop(self) -> str | None:
         """
         Return the next stop to drive to without triggering a re-plan.

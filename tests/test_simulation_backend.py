@@ -27,7 +27,6 @@ class _ConcreteBackend(SimulationBackend):
 
 def make_backend(
     next_stop: str | None = "stop_B",
-    initial_position: str = "stop_A",
 ) -> tuple[_ConcreteBackend, MagicMock, MagicMock, MagicMock, MagicMock]:
     """
     Build a _ConcreteBackend with all components mocked.
@@ -45,7 +44,6 @@ def make_backend(
         demand_generator=demand_gen,
         metrics_tracker=metrics,
         pool=pool,
-        initial_position=initial_position,
     )
     return backend, agent, demand_gen, metrics, pool
 
@@ -61,7 +59,6 @@ def test_cannot_instantiate_abstract_class() -> None:
             demand_generator=MagicMock(spec=DemandGenerator),
             metrics_tracker=MagicMock(spec=MetricsTracker),
             pool=MagicMock(spec=RequestPool),
-            initial_position="stop_A",
         )
 
 

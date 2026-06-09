@@ -20,8 +20,6 @@ class SimulationBackend(ABC):
     :param demand_generator: Generates new passenger requests each tick.
     :param metrics_tracker: Passive observer that records per-tick snapshots.
     :param pool: Shared request pool; read here only for ``is_done``.
-    :param initial_position: TransitGraph node ID where the bus starts.
-        Required because ``BusAgent._position`` is private.
     """
 
     def __init__(
@@ -30,14 +28,12 @@ class SimulationBackend(ABC):
         demand_generator: DemandGenerator,
         metrics_tracker: MetricsTracker,
         pool: RequestPool,
-        initial_position: str,
     ) -> None:
         self._agent = agent
         self._demand_generator = demand_generator
         self._metrics_tracker = metrics_tracker
         self._pool = pool
         self._sim_time: float = 0.0
-        self._current_position: str = initial_position
         self._elapsed_toward_next: float = 0.0
         self._time_to_next_stop: float | None = (
             self._compute_next_travel_time()
@@ -99,7 +95,7 @@ class SimulationBackend(ABC):
         next_stop = self._agent.next_stop()
         if next_stop is None:
             return None
-        return self._travel_time(self._current_position, next_stop)
+        return self._travel_time(self._agent.position, next_stop)
 
     def _process_movement(self, dt: float) -> None:
         """Process bus movement, firing on_arrival for each stop reached."""
@@ -117,7 +113,6 @@ class SimulationBackend(ABC):
                 arrival_time = self._sim_time - (remaining - time_left)
                 remaining -= time_left
                 self._elapsed_toward_next = 0.0
-                self._current_position = next_stop
                 self._agent.on_arrival(next_stop, arrival_time)
                 self._time_to_next_stop = self._compute_next_travel_time()
             else:

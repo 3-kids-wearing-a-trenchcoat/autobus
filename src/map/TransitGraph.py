@@ -1,6 +1,6 @@
 import networkx as nx
 from itertools import permutations
-from map.map_data import StopRecord, RoadNodeRecord, RoadEdgeRecord
+from map.map_data import StopRecord, RoadNodeRecord, RoadEdgeRecord, DEFAULT_SPEED_LIMIT
 from map.MapProvider import MapProvider
 
 def _dict_edge_by_origin_node(road_nodes: list[RoadNodeRecord],
@@ -32,7 +32,7 @@ def _calc_weights(graph: nx.DiGraph) -> None:
     for origin_id, dest_id in graph.edges():
         origin_data = graph.nodes[origin_id]
         length_m: float = origin_data.get("length")
-        speed_limit_kph: float = origin_data.get("speed_limit")
+        speed_limit_kph: float = origin_data.get("speed_limit") or DEFAULT_SPEED_LIMIT
         speed_limit_mps = speed_limit_kph * 1000 / 3600
         travel_time_s = length_m / speed_limit_mps
         graph[origin_id][dest_id]["weight"] = travel_time_s

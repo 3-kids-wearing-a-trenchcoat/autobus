@@ -24,7 +24,7 @@ class RoadEdgeRecord:
     from_node_id: str
     to_node_id: str
     length_m: float
-    speed_limit_kph: float = DEFAULT_SPEED_LIMIT
+    speed_limit_kph: Optional[float] = None
     metadata: Optional[dict[str, Any]] = None
 
 @dataclass(frozen=True)

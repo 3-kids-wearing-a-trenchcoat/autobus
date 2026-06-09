@@ -7,8 +7,9 @@ runner and the routing policy. It owns the bus's mutable state — current
 position, onboard passengers, and the planned route — and is the only component
 that writes passenger state transitions back to the `RequestPool`.
 
-The runner interacts with `BusAgent` through two methods:
+The runner interacts with `BusAgent` through three methods/properties:
 
+- **`position`** — read the bus's current TransitGraph node ID.
 - **`next_stop()`** — read the next stop to drive to.
 - **`on_arrival(stop_id, sim_time)`** — notify the agent that the bus has
   arrived; the agent handles boarding/alighting and re-plans before returning.
@@ -70,6 +71,7 @@ RequestPool ◄─────────────────────�
      ▼                                                  │
  BusAgent ──► _build_projected_state() ──► DispatchPolicy.plan()
      │
+     ├──► position     ──►  simulation runner
      └──► next_stop()  ──►  simulation runner
 ```
 

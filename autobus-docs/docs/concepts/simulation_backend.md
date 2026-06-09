@@ -35,8 +35,12 @@ after all boardings and alightings.
 using two fields:
 
 - `_time_to_next_stop` — the total travel time for the current leg, computed
-  once by calling `_travel_time(current_position, next_stop)`.
+  once by calling `_travel_time(agent.position, next_stop)`.
 - `_elapsed_toward_next` — seconds accumulated across ticks toward that leg.
+
+The bus's current position is owned by `BusAgent` (via its `position` property)
+and updated there on each `on_arrival` call. `SimulationBackend` reads it only
+when computing the travel time to the next stop.
 
 When `_elapsed_toward_next` reaches `_time_to_next_stop`, the bus has arrived.
 `on_arrival` is fired with the **exact** arrival timestamp rather than the tick

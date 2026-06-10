@@ -1,8 +1,8 @@
 """PlanarMapProvider: MapProvider backed by a PlanarStreetGraph."""
 
-from map.MapProvider import MapProvider
-from map.map_data import StopRecord, RoadNodeRecord, RoadEdgeRecord
-from map.graph import PlanarStreetGraph
+from src.map.MapProvider import MapProvider
+from src.map.map_data import StopRecord, RoadNodeRecord, RoadEdgeRecord
+from src.map.graph import PlanarStreetGraph
 
 
 class PlanarMapProvider(MapProvider):

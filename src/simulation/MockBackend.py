@@ -1,12 +1,12 @@
 """MockBackend: SimulationBackend for non-CARLA map sources."""
 
-from algorithm.BusAgent import BusAgent
-from algorithm.RequestPool import RequestPool
-from map.MapProvider import MapProvider
-from map.TransitGraph import TransitGraph
-from metrics.MetricsTracker import MetricsTracker
-from simulation.DemandGenerator import DemandGenerator
-from simulation.SimulationBackend import SimulationBackend
+from src.algorithm.BusAgent import BusAgent
+from src.algorithm.RequestPool import RequestPool
+from src.map.MapProvider import MapProvider
+from src.map.TransitGraph import TransitGraph
+from src.metrics.MetricsTracker import MetricsTracker
+from src.simulation.DemandGenerator import DemandGenerator
+from src.simulation.SimulationBackend import SimulationBackend
 
 
 class MockBackend(SimulationBackend):

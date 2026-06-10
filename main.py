@@ -1,76 +1,15 @@
 """End-to-end sanity check: PlanarMapProvider + PlaceholderPolicy."""
 
-import sys
-import os
-
-# ── Path bootstrap ───────────────────────────────────────────────────────────
-# Add src/ so that source files using bare 'algorithm.X' imports can resolve
-# their internal dependencies (pytest does this automatically via pytest.ini).
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
-
-# Source files are inconsistent: some import 'algorithm.X', others import
-# 'src.algorithm.X'.  Without intervention Python creates two separate module
-# objects for the same file, breaking Enum identity checks
-# (e.g. `r.state is RequestState.PENDING` returns False even though the state
-# was just set to PENDING, because the two modules have distinct RequestState
-# classes).
-#
-# Fix: import modules bottom-up and register each under its 'src.*' alias
-# before any file that uses 'from src.X import ...' is loaded.  Python's
-# import system short-circuits on the first sys.modules hit, so subsequent
-# 'from src.algorithm.RequestPool import ...' calls reuse our pre-loaded module.
-
-import algorithm.RequestPool    # stdlib only — safe first
-import algorithm.DispatchPolicy
-import algorithm.BusAgent
-import map.map_data
-import map.MapProvider
-import map.graph
-import map.PlanarMapProvider
-import map.TransitGraph
-
-
-def _src(name: str) -> None:
-    """Register sys.modules['src.<name>'] pointing at sys.modules['<name>']."""
-    sys.modules.setdefault(f"src.{name}", sys.modules[name])
-
-
-for _n in list(sys.modules):
-    if any(_n == p or _n.startswith(p + ".") for p in ("algorithm", "map")):
-        _src(_n)
-
-# MetricsTracker imports src.algorithm.RequestPool — alias already in place.
-import metrics.MetricsTracker
-_src("metrics")
-_src("metrics.MetricsTracker")
-
-# DemandGenerator imports src.algorithm.RequestPool — alias already in place.
-import simulation.DemandGenerator
-_src("simulation")
-_src("simulation.DemandGenerator")
-
-# SimulationBackend imports src.algorithm.*, src.metrics.*, src.simulation.DemandGenerator
-# — all three aliases are set above.
-import simulation.SimulationBackend
-_src("simulation.SimulationBackend")
-
-# MockBackend and SimulationRunner use only bare (non-src) imports.
-import simulation.MockBackend
-import simulation.SimulationRunner
-
-del _src, _n   # clean up bootstrap helpers
-
-# ── Real imports ─────────────────────────────────────────────────────────────
-from algorithm.BusAgent import BusAgent
-from algorithm.DispatchPolicy import PlaceholderPolicy
-from algorithm.RequestPool import RequestPool
-from map.PlanarMapProvider import PlanarMapProvider
-from map.TransitGraph import TransitGraph
-from map.graph import PlanarStreetGraph
-from metrics.MetricsTracker import MetricsTracker
-from simulation.DemandGenerator import DemandGenerator, PeriodicPolicy
-from simulation.MockBackend import MockBackend
-from simulation.SimulationRunner import SimulationRunner
+from src.algorithm.BusAgent import BusAgent
+from src.algorithm.DispatchPolicy import PlaceholderPolicy
+from src.algorithm.RequestPool import RequestPool
+from src.map.PlanarMapProvider import PlanarMapProvider
+from src.map.TransitGraph import TransitGraph
+from src.map.graph import PlanarStreetGraph
+from src.metrics.MetricsTracker import MetricsTracker
+from src.simulation.DemandGenerator import DemandGenerator, PeriodicPolicy
+from src.simulation.MockBackend import MockBackend
+from src.simulation.SimulationRunner import SimulationRunner
 
 
 def main() -> None:

@@ -1,7 +1,7 @@
 """SimulationRunner: top-level driver for the simulation tick loop."""
 
-from metrics.MetricsTracker import KPISnapshot
-from simulation.SimulationBackend import SimulationBackend
+from src.metrics.MetricsTracker import KPISnapshot
+from src.simulation.SimulationBackend import SimulationBackend
 
 
 class SimulationRunner:

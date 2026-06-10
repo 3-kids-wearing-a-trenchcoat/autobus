@@ -1,7 +1,7 @@
 """Bus agent: decision-making component that manages state and routing."""
 
-from algorithm.DispatchPolicy import BusState, DispatchPolicy
-from algorithm.RequestPool import Request, RequestPool, RequestState
+from src.algorithm.DispatchPolicy import BusState, DispatchPolicy
+from src.algorithm.RequestPool import Request, RequestPool, RequestState
 
 
 class BusAgent:

@@ -1,7 +1,7 @@
 import networkx as nx
 from itertools import permutations
-from map.map_data import StopRecord, RoadNodeRecord, RoadEdgeRecord, DEFAULT_SPEED_LIMIT
-from map.MapProvider import MapProvider
+from src.map.map_data import StopRecord, RoadNodeRecord, RoadEdgeRecord, DEFAULT_SPEED_LIMIT
+from src.map.MapProvider import MapProvider
 
 def _dict_edge_by_origin_node(road_nodes: list[RoadNodeRecord],
                               road_edges: list[RoadEdgeRecord]) -> dict[str, list[RoadEdgeRecord]]:

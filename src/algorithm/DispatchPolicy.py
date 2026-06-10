@@ -3,8 +3,8 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from algorithm.RequestPool import Request
-from map.TransitGraph import TransitGraph
+from src.algorithm.RequestPool import Request
+from src.map.TransitGraph import TransitGraph
 
 
 @dataclass

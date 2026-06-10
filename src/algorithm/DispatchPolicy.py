@@ -47,6 +47,13 @@ class PlaceholderPolicy(DispatchPolicy):
     """placeholder policy, just so I can continue development without implementing a proper policy first"""
 
     def plan(self, state: BusState, n_stops: int) -> list[str]:
+        if not state.onboard and not state.pending_requests:
+            return []
         if state.onboard:
-            return self._graph.best_path(state.position, state.onboard[0].dropoff_stop_id)
-        return self._graph.best_path(state.position, state.pending_requests[0].pickup_stop_id)
+            target = state.onboard[0].dropoff_stop_id
+        else:
+            target = state.pending_requests[0].pickup_stop_id
+        path = self._graph.best_path(state.position, target)
+        # Exclude the origin: BusAgent already knows where it is, and including
+        # it creates a zero-length self-transition that stalls _process_movement.
+        return path[1:] if len(path) > 1 else path

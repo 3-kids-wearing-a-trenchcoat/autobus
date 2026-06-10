@@ -33,7 +33,7 @@ class PlanarMapProvider(MapProvider):
                 speed_limit_kph=data['speed_limit'],
             )
             result.append(StopRecord(
-                id=f"{stop['id']}_{u}_{v}",
+                id=f"{u}_{v}",
                 x=stop['x'],
                 y=stop['y'],
                 edge=edge,

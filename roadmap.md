@@ -14,6 +14,6 @@
    8. [X] Implement `SimulationBackend` which handles the simulation, this is probably an abstract library
    9. [X] Implement `MockBackend` which inherits from `SimulationBackend`
    10. [X] Implement `MetricsTracker`, self-explanatory
-   11. [ ] Implement `SimulationRunner` which initializes everything, runs the tick loops, collects metrics and prints/saves results.
+   11. [X] Implement `SimulationRunner` which initializes everything, runs the tick loops, collects metrics and prints/saves results.
    12. [ ] Implement fixed-route `DispatchPolicy`
    13. [ ] Implement at least one heuristic-based `DispatchPolicy`

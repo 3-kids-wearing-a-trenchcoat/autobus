@@ -27,6 +27,7 @@ nav:
       - Bus Agent: concepts/bus_agent.md
       - Metrics: concepts/metrics.md
       - Simulation Backend: concepts/simulation_backend.md
+      - Simulation Runner: concepts/simulation_runner.md
   - API Reference:
       - Map: api/map.md
       - Requests: api/requests.md

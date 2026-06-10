@@ -23,8 +23,12 @@ src/
 │   ├── RequestPool.py         # Passenger request data model and pool
 │   ├── DispatchPolicy.py      # Dispatch policy interface and bus state
 │   └── BusAgent.py            # Bus agent: state management and re-planning
+├── metrics/
+│   └── MetricsTracker.py      # Per-tick snapshots and aggregate KPIs
 └── simulation/
     ├── SimulationBackend.py   # Abstract simulation controller
+    ├── MockBackend.py         # SimulationBackend for non-CARLA map sources
+    ├── SimulationRunner.py    # Tick loop driver and result reporter
     └── DemandGenerator.py     # Synthetic demand: GenerationPolicy and DemandGenerator
 ```
 

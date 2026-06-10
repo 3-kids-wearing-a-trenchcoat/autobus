@@ -71,8 +71,10 @@ This is the only method subclasses must implement. It returns the travel time in
 seconds between two TransitGraph node IDs and encapsulates all
 environment-specific movement physics:
 
-- **Planar backend** — calls `TransitGraph.best_path_cost(from_id, to_id)`,
-  which computes travel time from road lengths and speed limits.
+- **`MockBackend`** — the concrete implementation for non-CARLA map sources
+  (`PlanarMapProvider` or `StaticMapProvider`). Calls
+  `TransitGraph.best_path_cost(from_id, to_id)`, which computes travel time
+  from road lengths and speed limits via Dijkstra.
 - **CARLA backend** — would query the simulator to obtain the actual travel time
   for the vehicle on that road segment.
 

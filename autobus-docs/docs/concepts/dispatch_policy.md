@@ -92,3 +92,40 @@ There is no contract requiring that every onboard passenger's dropoff stop
 appears in the returned list. Whether to guarantee this is a design choice
 left to each concrete implementation — it is an intentional axis of comparison
 between policies.
+
+## FixedRoutePolicy
+
+`FixedRoutePolicy` is the baseline concrete policy. It follows a fixed,
+repeating cycle of stops regardless of passenger demand — the bus behaves
+like a real-life scheduled bus line.
+
+### Construction
+
+```python
+# Explicit stop order (TransitGraph node IDs):
+policy = FixedRoutePolicy(graph, stop_order=["3_5", "7_2", "1_4"])
+
+# Auto-generated from all stops in the graph:
+policy = FixedRoutePolicy(graph)
+```
+
+When `stop_order` is omitted, the policy collects every stop node from the
+graph and orders them using a **nearest-neighbor heuristic**: starting from
+the first stop, it repeatedly visits the closest unvisited stop (by
+shortest-path travel time). This runs in O(n²) time and produces a
+reasonable loop with minimal backtracking.
+
+### Routing behaviour
+
+`plan()` ignores `state.onboard` and `state.pending_requests` entirely. It
+finds where in the cycle the bus currently is, then returns the next `n_stops`
+entries, wrapping around at the end:
+
+- If the bus is at a stop that belongs to the cycle, planning continues from
+  the *following* stop in the cycle.
+- If the bus is not at a cycle stop (e.g. at startup before reaching the
+  first stop), it heads to the nearest cycle stop first.
+
+Because the route is fixed, the commitment window in `BusAgent` has no
+effect on route diversity — it only determines how far ahead the bus has
+confirmed its path.

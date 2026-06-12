@@ -5,3 +5,5 @@
 ::: src.algorithm.DispatchPolicy.BusState
 
 ::: src.algorithm.DispatchPolicy.DispatchPolicy
+
+::: src.algorithm.FixedRoutePolicy.FixedRoutePolicy

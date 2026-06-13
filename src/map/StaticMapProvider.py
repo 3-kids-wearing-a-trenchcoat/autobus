@@ -4,8 +4,8 @@ import math
 from dataclasses import dataclass
 from typing import Optional
 
-from map.MapProvider import MapProvider
-from map.map_data import StopRecord, RoadNodeRecord, RoadEdgeRecord
+from src.map.MapProvider import MapProvider
+from src.map.map_data import StopRecord, RoadNodeRecord, RoadEdgeRecord
 
 
 @dataclass(frozen=True)

@@ -51,10 +51,12 @@ Sim time:         3600.00 s
 Fulfilled:        142
 Cancelled:        3
 Mean wait time:   45.30 s
+P90 wait time:    65.80 s
+Max wait time:    92.40 s
 Mean ride time:   120.80 s
 Mean journey:     166.10 s
 Fulfillment rate: 97.9 %
-Throughput:       0.039 req/s
+Throughput:       2.37 req/m
 ```
 
 It also returns the `KPISnapshot` for programmatic use.

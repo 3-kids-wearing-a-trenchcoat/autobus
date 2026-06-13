@@ -61,8 +61,8 @@ historical data later.
 
 `RequestPool` is the central registry of all passenger requests. It is
 written to by `DemandGenerator` (which adds new requests as passengers arrive)
-and read by `DispatchPolicy` and `RoutePlanner` (which query active requests to
-decide where the bus should go next).
+and read by `BusAgent` (which queries active requests when boarding passengers
+and building the `BusState` snapshot for `DispatchPolicy`).
 
 ### Active vs. historical requests
 

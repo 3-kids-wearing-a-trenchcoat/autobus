@@ -157,14 +157,14 @@ This representation makes it easier to discriminate illegal moves (for example, 
 
 The graph is build on top of [networkx](https://networkx.org/en/), and each node has certain data associated with it:  
 1. **id** -- matching the edge id in the `RoadEdgeRecord` provided by `MapProvider`  
-2. **stop** -- The id of a bus stop that sits on this edge (if it exists)  
+2. **stop** -- The `StopRecord` of the bus stop that sits on this edge (if it exists)  
 3. **stop_pos** -- position of the stop (if it exists) along the route.  
     Gets a value in [0.0, 1.0], where `0.0` represents the stop is at the very start, `1.0` represents the stop is at the very end, and so on.  
 4. **stop_name** -- The name of the bus stop (if the bus stop exists and it has the optional name property)  
 5. **length** -- length of the route in meters  
 6. **speed_limit** -- The speed limit in this route in km/h, or `None` if not specified by the source edge  
 7. **start_node** -- id of start road node (matching `from_node_id` in `RoadEdgeRecord`)  
-8. **stop_node** -- if of end node (matching `to_node_id` in `RoadEdgeRecord`)  
+8. **stop_node** -- id of end node (matching `to_node_id` in `RoadEdgeRecord`)  
 9. **metadata** -- dictionary of additional data (matching `metadata` in `RoadEdgeRecord`)  
 
 Additionally, each edge in `TransitGraph` also has certain data associated with them:  
@@ -177,4 +177,9 @@ Additionally, each edge in `TransitGraph` also has certain data associated with 
 | `successors(node_id)` | `list[str]` | Immediate successor node IDs of the given node |  
 | `best_path(origin_id, destination_id)` | `list[str]` | Ordered list of node IDs for the most efficient route from origin to destination |  
 | `best_path_cost(origin_id, destination_id)` | `float` | Total travel time in seconds for the most efficient route from origin to destination |  
-| `best_tour(start_id, stop_ids)` | `list[str]` | Ordered list of node IDs (starting with `start_id`) representing the cheapest tour that visits all nodes in `stop_ids` |  
+| `best_tour(start_id, stop_ids)` | `list[str]` | Ordered list of node IDs (starting with `start_id`) representing the cheapest tour that visits all nodes in `stop_ids` |
+
+> **Note:** The current `best_tour` implementation is a brute-force O(n!) permutation
+> search. It is only practical for small stop counts (up to ~8–10 stops) and should
+> be replaced with a more efficient algorithm (nearest-neighbor, dynamic programming,
+> etc.) before being used in performance-sensitive contexts.

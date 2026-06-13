@@ -76,7 +76,7 @@ If you get this permission, make sure to also update `environment.yml` to reflec
     This can be postponed until after some implementation has been made, verified and approved, but it's important not to forget about it.
 
 ## How to run
-Use `run.sh` to execute code. This is to make sure the correct Conda environment is used.  
+Always use `run.sh` to execute code. This is to make sure the correct Conda environment is used.  
 This script simply runs `conda run -n "$ENV_NAME" python "$@"`, so `run.sh` needs to be supplied only with the 
 commands that would appear after `python` if you were to write it manually. (`$ENV_NAME` is a constant defined in the script)
 

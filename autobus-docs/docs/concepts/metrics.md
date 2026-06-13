@@ -43,7 +43,7 @@ Calling `snapshot(sim_time)` at any point during or after a run returns a
 | `mean_ride_time` | Average time from `boarded_at` to `fulfilled_at` (seconds). | No fulfilled requests yet. |
 | `mean_journey_time` | Average time from `created_at` to `fulfilled_at` (seconds). | No fulfilled requests yet. |
 | `fulfillment_rate` | `fulfilled / (fulfilled + cancelled)` — fraction of terminal requests served. | No terminal requests yet. |
-| `throughput` | Fulfilled requests per simulation second (`fulfilled / sim_time`). | `sim_time` is 0. |
+| `throughput` | Fulfilled requests per simulation minute (`fulfilled / sim_time * 60`). | `sim_time` is 0. |
 
 ### In-flight exclusion
 

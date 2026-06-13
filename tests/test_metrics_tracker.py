@@ -288,7 +288,7 @@ def test_snapshot_throughput_correct() -> None:
     for i in range(4):
         pool.add(make_fulfilled_request(f"r{i}", 0.0, 5.0, 10.0))
     kpi = MetricsTracker(pool).snapshot(sim_time=20.0)
-    assert kpi.throughput == pytest.approx(0.2)
+    assert kpi.throughput == pytest.approx(12.0)  # 4 req / 20 s * 60 = 12 req/min
 
 
 def test_snapshot_throughput_zero_fulfilled() -> None:

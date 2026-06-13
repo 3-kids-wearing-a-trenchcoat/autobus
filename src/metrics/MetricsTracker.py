@@ -41,8 +41,8 @@ class KPISnapshot:
     :param fulfillment_rate: Fraction of terminal requests that were
         fulfilled (fulfilled / (fulfilled + cancelled)).
         None if no terminal requests exist yet.
-    :param throughput: Fulfilled requests per simulation second
-        (fulfilled_count / sim_time).
+    :param throughput: Fulfilled requests per simulation minute
+        (fulfilled_count / sim_time * 60).
         None if sim_time is 0.
     """
 
@@ -115,7 +115,7 @@ class MetricsTracker:
             n_fulfilled / n_terminal if n_terminal > 0 else None
         )
         throughput = (
-            n_fulfilled / sim_time if sim_time > 0 else None
+            n_fulfilled / sim_time * 60 if sim_time > 0 else None
         )
 
         if not fulfilled:

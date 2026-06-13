@@ -64,4 +64,4 @@ def _print_results(kpi: KPISnapshot, sim_time: float) -> None:
         print(f"Fulfillment rate: {fmt_float(None)}")
     else:
         print(f"Fulfillment rate: {kpi.fulfillment_rate * 100:.1f} %")
-    print(f"Throughput:       {fmt_float(kpi.throughput, 'req/s')}")
+    print(f"Throughput:       {fmt_float(kpi.throughput, 'req/m')}")

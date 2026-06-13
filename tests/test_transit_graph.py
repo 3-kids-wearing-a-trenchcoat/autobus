@@ -4,8 +4,8 @@ import unittest
 
 import networkx as nx
 
-from map.StaticMapProvider import StaticMapProvider, StopInput
-from map.map_data import RoadNodeRecord, RoadEdgeRecord, StopRecord
+from src.map.StaticMapProvider import StaticMapProvider, StopInput
+from src.map.map_data import RoadNodeRecord, RoadEdgeRecord, StopRecord
 
 
 # Hand-authored test map (all edges directed, lengths in metres):
@@ -48,7 +48,7 @@ class TestTransitGraphConstructor(unittest.TestCase):
     """Verify that TransitGraph builds the correct graph for a known input."""
 
     def setUp(self) -> None:
-        from map.TransitGraph import TransitGraph
+        from src.map.TransitGraph import TransitGraph
         self.graph = TransitGraph(_PROVIDER)
 
     def test_map_structure(self) -> None:

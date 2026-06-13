@@ -2,7 +2,7 @@
 
 import unittest
 
-from map.TransitGraph import TransitGraph
+from src.map.TransitGraph import TransitGraph
 from test_transit_graph import _PROVIDER
 
 # All edges in _PROVIDER use the RoadEdgeRecord default speed limit.

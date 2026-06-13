@@ -295,3 +295,63 @@ def test_snapshot_throughput_zero_fulfilled() -> None:
     pool = RequestPool()
     kpi = MetricsTracker(pool).snapshot(sim_time=10.0)
     assert kpi.throughput == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# max_wait_time
+# ---------------------------------------------------------------------------
+
+def test_snapshot_max_wait_time_none_when_no_fulfilled() -> None:
+    kpi = MetricsTracker(RequestPool()).snapshot(sim_time=10.0)
+    assert kpi.max_wait_time is None
+
+
+def test_snapshot_max_wait_time_single() -> None:
+    pool = RequestPool()
+    pool.add(make_fulfilled_request("r1", created_at=0.0,
+                                    boarded_at=10.0, fulfilled_at=25.0))
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
+    assert kpi.max_wait_time == pytest.approx(10.0)
+
+
+def test_snapshot_max_wait_time_multiple() -> None:
+    pool = RequestPool()
+    # wait times: 10 and 20 → max 20
+    pool.add(make_fulfilled_request("r1", created_at=0.0,
+                                    boarded_at=10.0, fulfilled_at=30.0))
+    pool.add(make_fulfilled_request("r2", created_at=0.0,
+                                    boarded_at=20.0, fulfilled_at=40.0))
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
+    assert kpi.max_wait_time == pytest.approx(20.0)
+
+
+# ---------------------------------------------------------------------------
+# p90_wait_time
+# ---------------------------------------------------------------------------
+
+def test_snapshot_p90_wait_time_none_when_no_fulfilled() -> None:
+    kpi = MetricsTracker(RequestPool()).snapshot(sim_time=10.0)
+    assert kpi.p90_wait_time is None
+
+
+def test_snapshot_p90_wait_time_single() -> None:
+    pool = RequestPool()
+    pool.add(make_fulfilled_request("r1", created_at=0.0,
+                                    boarded_at=15.0, fulfilled_at=30.0))
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
+    assert kpi.p90_wait_time == pytest.approx(15.0)
+
+
+def test_snapshot_p90_wait_time_multiple() -> None:
+    pool = RequestPool()
+    # 11 requests with wait times 10, 20, ..., 110.
+    # inclusive method: index = 9/10 * (11-1) = 9.0 → value at index 9 = 100.
+    for i in range(1, 12):
+        pool.add(make_fulfilled_request(
+            f"r{i}",
+            created_at=0.0,
+            boarded_at=float(i * 10),
+            fulfilled_at=float(i * 10 + 5),
+        ))
+    kpi = MetricsTracker(pool).snapshot(sim_time=0.0)
+    assert kpi.p90_wait_time == pytest.approx(100.0)

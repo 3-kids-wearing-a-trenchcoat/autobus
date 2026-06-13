@@ -1,5 +1,6 @@
 """Passive simulation observer: collects tick snapshots and computes KPIs."""
 
+import statistics
 from dataclasses import dataclass
 
 from src.algorithm.RequestPool import RequestPool
@@ -38,6 +39,10 @@ class KPISnapshot:
         None if no requests have been fulfilled yet.
     :param mean_journey_time: Average time from created_at to
         fulfilled_at. None if no requests have been fulfilled yet.
+    :param max_wait_time: Longest wait time across all fulfilled
+        requests. None if no requests have been fulfilled yet.
+    :param p90_wait_time: 90th-percentile wait time across fulfilled
+        requests. None if no requests have been fulfilled yet.
     :param fulfillment_rate: Fraction of terminal requests that were
         fulfilled (fulfilled / (fulfilled + cancelled)).
         None if no terminal requests exist yet.
@@ -51,6 +56,8 @@ class KPISnapshot:
     mean_wait_time: float | None
     mean_ride_time: float | None
     mean_journey_time: float | None
+    max_wait_time: float | None
+    p90_wait_time: float | None
     fulfillment_rate: float | None
     throughput: float | None
 
@@ -125,6 +132,8 @@ class MetricsTracker:
                 mean_wait_time=None,
                 mean_ride_time=None,
                 mean_journey_time=None,
+                max_wait_time=None,
+                p90_wait_time=None,
                 fulfillment_rate=fulfillment_rate,
                 throughput=throughput,
             )
@@ -140,6 +149,14 @@ class MetricsTracker:
             mean_wait_time=sum(wait_times) / n,
             mean_ride_time=sum(ride_times) / n,
             mean_journey_time=sum(journey_times) / n,
+            max_wait_time=max(wait_times),
+            p90_wait_time=(
+                wait_times[0]
+                if len(wait_times) == 1
+                else statistics.quantiles(
+                    wait_times, n=10, method='inclusive'
+                )[8]
+            ),
             fulfillment_rate=fulfillment_rate,
             throughput=throughput,
         )

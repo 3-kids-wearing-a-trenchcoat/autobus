@@ -58,6 +58,8 @@ def _print_results(kpi: KPISnapshot, sim_time: float) -> None:
     print(f"Fulfilled:        {kpi.fulfilled_count}")
     print(f"Cancelled:        {kpi.cancelled_count}")
     print(f"Mean wait time:   {fmt_float(kpi.mean_wait_time)}")
+    print(f"P90 wait time:    {fmt_float(kpi.p90_wait_time)}")
+    print(f"Max wait time:    {fmt_float(kpi.max_wait_time)}")
     print(f"Mean ride time:   {fmt_float(kpi.mean_ride_time)}")
     print(f"Mean journey:     {fmt_float(kpi.mean_journey_time)}")
     if kpi.fulfillment_rate is None:

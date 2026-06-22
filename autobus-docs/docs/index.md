@@ -34,12 +34,7 @@ src/
 
 ## Running the project
 
-Use `run.sh` from the project root to ensure the correct Conda environment is
-active:
-
-```bash
-bash run.sh main.py
-```
+See [Running the Project](running.md) for setup and execution instructions.
 
 ## Browsing these docs locally
 

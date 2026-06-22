@@ -19,6 +19,7 @@ plugins:
 
 nav:
   - Home: index.md
+  - Running: running.md
   - Concepts:
       - Map: concepts/map.md
       - Requests: concepts/requests.md

@@ -7,3 +7,5 @@
 ::: src.algorithm.DispatchPolicy.DispatchPolicy
 
 ::: src.algorithm.FixedRoutePolicy.FixedRoutePolicy
+
+::: src.algorithm.NearestUnservedPolicy.NearestUnservedPolicy

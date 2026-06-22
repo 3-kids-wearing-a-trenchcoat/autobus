@@ -129,3 +129,47 @@ entries, wrapping around at the end:
 Because the route is fixed, the commitment window in `BusAgent` has no
 effect on route diversity — it only determines how far ahead the bus has
 confirmed its path.
+
+## NearestUnservedPolicy
+
+`NearestUnservedPolicy` is the first demand-responsive concrete policy. On
+each planning call it builds a route greedily, one stop at a time, by always
+choosing the nearest stop that serves an active need.
+
+### Candidate stops
+
+At each step, two sets of candidates are considered:
+
+- **Dropoff stops** — the `dropoff_stop_id` of every onboard passenger.
+  Always eligible.
+- **Pickup stops** — the `pickup_stop_id` of every pending passenger.
+  Eligible only when `remaining_capacity > 0` (the *capacity gate*).
+
+The capacity gate prevents the bus from routing to a pickup stop it cannot
+serve: when the bus is full, only dropoff stops are candidates until a
+passenger alights and frees a seat.
+
+### Routing behaviour
+
+`plan()` simulates the bus's future state locally — it does not mutate real
+state. Starting from `state.position`, the simulation at each step:
+
+1. Builds the candidate set as described above.
+2. Picks the candidate with the lowest `best_path_cost` from the simulated
+   current position.
+3. Appends it to the route.
+4. Advances the simulated state: passengers alight at their dropoff stop, then
+   pending passengers board at their pickup stop (up to available capacity).
+
+This repeats for at most `n_stops` steps. Planning stops early when the
+candidate set is empty — i.e. all active demand has been served. The returned
+list may therefore be shorter than `n_stops`; `BusAgent` will re-plan on the
+next stop arrival regardless.
+
+### Construction
+
+```python
+policy = NearestUnservedPolicy(graph)
+```
+
+No additional arguments are required beyond the `TransitGraph`.

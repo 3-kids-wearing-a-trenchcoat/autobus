@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
 ENV_NAME="autobus"
+SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 
-conda run -n "$ENV_NAME" jupyter lab
+PYTHONPATH="$SCRIPT_DIR" conda run -n "$ENV_NAME" jupyter lab

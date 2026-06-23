@@ -1,0 +1,197 @@
+# Experiment Helpers
+
+## Overview
+
+The `experiment` package provides utilities for comparing routing policies
+systematically in JupyterLab notebooks. It handles the boilerplate of wiring
+up the simulation stack, running multiple trials, and producing summary plots,
+so notebooks can focus on what differs between strategies rather than on
+infrastructure.
+
+The package has three layers:
+
+1. **`run_trial`** — runs a single simulation and returns structured results.
+2. **`compare_policies`** — runs every policy for *n* trials on the same map.
+3. **Plot helpers** — turn the comparison results into charts.
+
+## TrialResult
+
+`TrialResult` is a dataclass that collects everything produced by one
+simulation run:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `kpi` | `KPISnapshot` | Aggregate KPIs at the end of the run. |
+| `tick_history` | `list[TickSnapshot]` | Per-tick occupancy and queue snapshots. |
+| `wait_times` | `list[float]` | Wait time (seconds) for each fulfilled request. |
+| `ride_times` | `list[float]` | Ride time (seconds) for each fulfilled request. |
+
+`wait_times` and `ride_times` expose the per-request distributions that
+`KPISnapshot` only summarises, making it possible to do full distributional
+comparisons across policies.
+
+## run_trial
+
+`run_trial` builds and runs the complete simulation stack from a policy
+factory and a pre-built street graph:
+
+```python
+from src.experiment import run_trial
+from src.algorithm.FixedRoutePolicy import FixedRoutePolicy
+from src.map.graph import PlanarStreetGraph
+
+graph = PlanarStreetGraph.generate(n_seeds=20, bounds=(0, 0, 5000, 5000), seed=42)
+
+result = run_trial(
+    policy_factory=lambda g: FixedRoutePolicy(g),
+    graph=graph,
+    seed=0,
+)
+print(result.kpi.mean_wait_time)
+```
+
+The `policy_factory` argument is a callable that accepts a `TransitGraph` and
+returns a `DispatchPolicy`. Using a factory (rather than a policy instance)
+lets `run_trial` construct fresh policy state for every call while keeping the
+same underlying street graph.
+
+`seed` controls the demand sequence: it is passed to Python's `random` module
+before any demand is generated, making the pickup/dropoff stop selections
+deterministic. It has no effect on map generation, which is seeded separately
+in `PlanarStreetGraph.generate`.
+
+Passing `silent=True` suppresses the per-run summary printed by
+`SimulationRunner`; this is the default when called from `compare_policies`.
+
+## compare_policies
+
+`compare_policies` runs every policy for a fixed number of trials on the same
+map and returns the results grouped by policy label:
+
+```python
+from src.experiment import compare_policies
+from src.algorithm.FixedRoutePolicy import FixedRoutePolicy
+from src.algorithm.NearestUnservedPolicy import NearestUnservedPolicy
+
+results = compare_policies(
+    policies=[
+        ("Fixed route",       lambda g: FixedRoutePolicy(g)),
+        ("Nearest unserved",  lambda g: NearestUnservedPolicy(g)),
+    ],
+    graph=graph,
+    n_trials=5,
+    base_seed=42,
+)
+```
+
+The return value is `dict[str, list[TrialResult]]`, mapping each label to its
+list of trial results.
+
+### Seed strategy
+
+Fair comparison requires that all policies face the same demand within a given
+trial. `compare_policies` achieves this by using the same seed for every
+policy at a given trial index: trial *i* uses `base_seed + i` as the demand
+seed, regardless of which policy is being run.
+
+```
+trial 0: seed = base_seed + 0  →  all policies see the same 100 requests
+trial 1: seed = base_seed + 1  →  all policies see a different but shared sequence
+...
+```
+
+When `base_seed` is `None`, all trials are non-deterministic.
+
+### Forwarding parameters to run_trial
+
+Any keyword argument not listed in `compare_policies`'s own signature is
+forwarded to `run_trial`. This covers simulation parameters such as
+`max_requests`, `capacity`, `dt`, and `max_time`:
+
+```python
+results = compare_policies(
+    policies=[...],
+    graph=graph,
+    n_trials=10,
+    base_seed=0,
+    max_requests=200,
+    capacity=8,
+)
+```
+
+## Plot helpers
+
+All three plot functions accept the `dict[str, list[TrialResult]]` returned
+by `compare_policies` and return a `matplotlib.figure.Figure`.
+
+### plot_kpi_bars
+
+Bar chart comparing one or more aggregate KPI fields across policies. Each
+field gets its own subplot. Error bars show ±1 standard deviation and are
+omitted when only one trial was run.
+
+```python
+from src.experiment import plot_kpi_bars
+
+fig = plot_kpi_bars(
+    results,
+    fields=["mean_wait_time", "throughput", "fulfillment_rate"],
+)
+fig.show()
+```
+
+Valid field names are the attribute names of `KPISnapshot`:
+`mean_wait_time`, `p90_wait_time`, `max_wait_time`, `mean_ride_time`,
+`mean_journey_time`, `fulfillment_rate`, `throughput`, `fulfilled_count`,
+`cancelled_count`.
+
+### plot_wait_distribution
+
+Box plot of per-request wait times. All trials for a policy are pooled into a
+single distribution before plotting, so the boxes represent the combined
+sample across all runs.
+
+```python
+from src.experiment import plot_wait_distribution
+
+fig = plot_wait_distribution(results)
+fig.show()
+```
+
+### plot_occupancy
+
+Line plot of bus occupancy and pending request count over simulation time. One
+subplot pair (occupancy / pending) is drawn per policy. When multiple trials
+are available, each trial is drawn as a semi-transparent line and the
+per-tick mean across trials is overlaid as a solid line.
+
+The mean is computed over the shortest common tick prefix: if trials end at
+different times the mean line is trimmed to the length of the shortest trial.
+
+```python
+from src.experiment import plot_occupancy
+
+fig = plot_occupancy(results)
+fig.show()
+```
+
+## Relationship to other components
+
+```
+PlanarStreetGraph  ──────────────────────────────────────────┐
+                                                             │ (shared)
+                  policy_factory ──► run_trial ──► TrialResult
+                                         ▲
+                              compare_policies
+                                         │
+                              dict[label, list[TrialResult]]
+                                         │
+                        ┌────────────────┼──────────────────┐
+                        ▼                ▼                   ▼
+                plot_kpi_bars  plot_wait_distribution  plot_occupancy
+```
+
+`run_trial` depends on the full simulation stack (`BusAgent`, `MockBackend`,
+`SimulationRunner`, etc.) but hides that wiring from the caller.
+`compare_policies` depends only on `run_trial`. The plot helpers depend only
+on `TrialResult` and `matplotlib`.

@@ -80,7 +80,7 @@ def plot_wait_distribution(
     ]
     ax.boxplot(
         data,
-        labels=labels,
+        tick_labels=labels,
         patch_artist=True,
         boxprops=dict(facecolor="steelblue", alpha=0.6),
     )

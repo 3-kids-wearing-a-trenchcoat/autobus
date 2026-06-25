@@ -3,7 +3,7 @@
 import contextlib
 import io
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 from src.algorithm.BusAgent import BusAgent
@@ -17,6 +17,7 @@ from src.metrics.MetricsTracker import (
     MetricsTracker,
     TickSnapshot,
 )
+from src.simulation.AnimationRecorder import AnimationFrame, AnimationRecorder
 from src.simulation.DemandGenerator import DemandGenerator, PeriodicPolicy
 from src.simulation.MockBackend import MockBackend
 from src.simulation.SimulationRunner import SimulationRunner
@@ -31,12 +32,18 @@ class TrialResult:
     :param tick_history: Per-tick snapshots recorded during the run.
     :param wait_times: Wait time (s) for each fulfilled request.
     :param ride_times: Ride time (s) for each fulfilled request.
+    :param animation_frames: Per-stop-arrival snapshots for animation;
+        empty unless run_trial was called with record_animation=True.
+    :param transit_graph: The TransitGraph used during the run; None unless
+        record_animation=True.
     """
 
     kpi: KPISnapshot
     tick_history: list[TickSnapshot]
     wait_times: list[float]
     ride_times: list[float]
+    animation_frames: list[AnimationFrame] = field(default_factory=list)
+    transit_graph: TransitGraph | None = field(default=None)
 
 
 def run_trial(
@@ -51,6 +58,7 @@ def run_trial(
     dt: float = 1.0,
     max_time: float = 36000.0,
     silent: bool = False,
+    record_animation: bool = False,
 ) -> TrialResult:
     """
     Run one simulation trial and return the results.
@@ -75,6 +83,10 @@ def run_trial(
         reaches this before all requests are served.
     :param silent: If True, suppress the summary printed by
         SimulationRunner.
+    :param record_animation: If True, capture per-stop-arrival frames
+        and store them in TrialResult.animation_frames. Also exposes
+        the TransitGraph via TrialResult.transit_graph. Defaults to
+        False to avoid overhead in comparison runs.
     :return: TrialResult with KPIs, tick history, and timing
         distributions.
     """
@@ -86,6 +98,9 @@ def run_trial(
     stops = provider.get_stops()
 
     pool = RequestPool()
+    recorder: AnimationRecorder | None = (
+        AnimationRecorder(pool) if record_animation else None
+    )
     gen_policy = PeriodicPolicy(
         interval_s=demand_interval_s,
         max_requests=max_requests,
@@ -110,6 +125,7 @@ def run_trial(
         metrics_tracker=metrics,
         pool=pool,
         provider=provider,
+        recorder=recorder,
     )
     runner = SimulationRunner(backend=backend, dt=dt, max_time=max_time)
 
@@ -128,4 +144,8 @@ def run_trial(
         tick_history=metrics.tick_history,
         wait_times=wait_times,
         ride_times=ride_times,
+        animation_frames=recorder.frames if recorder is not None else [],
+        transit_graph=(
+            backend._transit_graph if record_animation else None
+        ),
     )

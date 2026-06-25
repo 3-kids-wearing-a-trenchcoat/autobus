@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from src.algorithm.BusAgent import BusAgent
 from src.algorithm.RequestPool import RequestPool
 from src.metrics.MetricsTracker import MetricsTracker
+from src.simulation.AnimationRecorder import AnimationRecorder
 from src.simulation.DemandGenerator import DemandGenerator
 
 
@@ -20,6 +21,8 @@ class SimulationBackend(ABC):
     :param demand_generator: Generates new passenger requests each tick.
     :param metrics_tracker: Passive observer that records per-tick snapshots.
     :param pool: Shared request pool; read here only for ``is_done``.
+    :param recorder: Optional animation recorder; when provided, captures a
+        frame on each stop arrival. Defaults to None.
     """
 
     def __init__(
@@ -28,11 +31,13 @@ class SimulationBackend(ABC):
         demand_generator: DemandGenerator,
         metrics_tracker: MetricsTracker,
         pool: RequestPool,
+        recorder: AnimationRecorder | None = None,
     ) -> None:
         self._agent = agent
         self._demand_generator = demand_generator
         self._metrics_tracker = metrics_tracker
         self._pool = pool
+        self._recorder = recorder
         self._sim_time: float = 0.0
         self._elapsed_toward_next: float = 0.0
         self._time_to_next_stop: float | None = (
@@ -114,6 +119,8 @@ class SimulationBackend(ABC):
                 remaining -= time_left
                 self._elapsed_toward_next = 0.0
                 self._agent.on_arrival(next_stop, arrival_time)
+                if self._recorder is not None:
+                    self._recorder.record_arrival(next_stop, arrival_time)
                 self._time_to_next_stop = self._compute_next_travel_time()
             else:
                 self._elapsed_toward_next += remaining

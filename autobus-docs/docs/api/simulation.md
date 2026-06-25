@@ -11,3 +11,7 @@
 ::: src.simulation.DemandGenerator.DemandGenerator
 
 ::: src.simulation.MockBackend.MockBackend
+
+::: src.simulation.AnimationRecorder.AnimationFrame
+
+::: src.simulation.AnimationRecorder.AnimationRecorder

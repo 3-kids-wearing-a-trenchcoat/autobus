@@ -11,3 +11,5 @@
 ::: src.experiment.plots.plot_wait_distribution
 
 ::: src.experiment.plots.plot_occupancy
+
+::: src.experiment.animation.animate_trial

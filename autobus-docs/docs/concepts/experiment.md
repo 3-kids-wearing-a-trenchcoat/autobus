@@ -25,6 +25,8 @@ simulation run:
 | `tick_history` | `list[TickSnapshot]` | Per-tick occupancy and queue snapshots. |
 | `wait_times` | `list[float]` | Wait time (seconds) for each fulfilled request. |
 | `ride_times` | `list[float]` | Ride time (seconds) for each fulfilled request. |
+| `animation_frames` | `list[AnimationFrame]` | Per-stop-arrival snapshots for animation. Empty unless `record_animation=True` was passed to `run_trial`. |
+| `transit_graph` | `TransitGraph \| None` | The graph used during the run; `None` unless `record_animation=True`. |
 
 `wait_times` and `ride_times` expose the per-request distributions that
 `KPISnapshot` only summarises, making it possible to do full distributional
@@ -62,6 +64,10 @@ in `PlanarStreetGraph.generate`.
 
 Passing `silent=True` suppresses the per-run summary printed by
 `SimulationRunner`; this is the default when called from `compare_policies`.
+
+Passing `record_animation=True` enables animation recording (see
+[`animate_trial`](#animate_trial) below). This has no effect on the KPI or
+tick-history data.
 
 ## compare_policies
 
@@ -175,6 +181,44 @@ fig = plot_occupancy(results)
 fig.show()
 ```
 
+## animate_trial
+
+`animate_trial` builds a `matplotlib.animation.FuncAnimation` from the
+per-stop-arrival frames recorded by `run_trial`.  Each frame in the animation
+corresponds to one stop arrival; the view never changes during transit.
+
+```python
+from src.experiment import run_trial, animate_trial
+from IPython.display import HTML
+
+result = run_trial(
+    policy_factory=lambda g: NearestUnservedPolicy(g),
+    graph=graph,
+    seed=42,
+    record_animation=True,
+)
+
+anim = animate_trial(result.animation_frames, result.transit_graph)
+HTML(anim.to_jshtml())
+```
+
+The animation displays:
+
+- **Road network** — all road edges drawn as light gray lines.
+- **Bus stops** — circles whose size and fill colour encode the number of
+  waiting passengers (small/white = none, large/steelblue = many). A numeric
+  count label appears above each stop when the count is non-zero.
+- **Destination rings** — hollow orange rings drawn around stops that are
+  the dropoff target for at least one onboard passenger, showing the bus's
+  current obligations at a glance.
+- **Bus marker** — a black dot at the stop the bus just reached, with an
+  arrow indicating the direction of travel.
+- **HUD** — text in the top-left corner showing onboard passenger count and
+  elapsed simulation time in minutes.
+
+`interval_ms` (default 300) controls playback speed.  To save the animation
+as a video file, use `anim.save("run.mp4")` (requires `ffmpeg`).
+
 ## Relationship to other components
 
 ```
@@ -189,9 +233,13 @@ PlanarStreetGraph  ────────────────────�
                         ┌────────────────┼──────────────────┐
                         ▼                ▼                   ▼
                 plot_kpi_bars  plot_wait_distribution  plot_occupancy
+
+TrialResult.animation_frames ──► animate_trial ──► FuncAnimation
 ```
 
 `run_trial` depends on the full simulation stack (`BusAgent`, `MockBackend`,
 `SimulationRunner`, etc.) but hides that wiring from the caller.
 `compare_policies` depends only on `run_trial`. The plot helpers depend only
-on `TrialResult` and `matplotlib`.
+on `TrialResult` and `matplotlib`. `animate_trial` depends on
+`TrialResult.animation_frames` and `TrialResult.transit_graph`, so it is only
+usable after a `run_trial(..., record_animation=True)` call.

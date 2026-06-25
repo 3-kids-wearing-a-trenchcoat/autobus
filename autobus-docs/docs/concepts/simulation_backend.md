@@ -20,14 +20,18 @@ step(dt)
     │
     ├─ sim_time += dt
     ├─ demand_generator.update(sim_time)   # new passengers become available
-    ├─ _process_movement(dt)               # fire on_arrival for each stop reached
+    ├─ _process_movement(dt)               # for each stop reached:
+    │       └─ agent.on_arrival()          #   board/alight passengers
+    │           └─ recorder.record_arrival() #   (if recorder attached) capture frame
     └─ metrics_tracker.record_tick(sim_time)
 ```
 
 Demand is generated before movement so that passengers created in this tick can
 board at stops the bus visits within the same tick.
 `record_tick` is called last so that the snapshot reflects the final pool state
-after all boardings and alightings.
+after all boardings and alightings. `recorder.record_arrival` is called
+immediately after each `on_arrival` for the same reason — frames capture
+post-boarding state.
 
 ## Movement model
 
@@ -97,11 +101,16 @@ SimulationRunner
       ▼
 SimulationBackend (abstract)
       │
-      ├─ demand_generator.update()    ──►  DemandGenerator  ──►  RequestPool
-      ├─ agent.on_arrival()           ──►  BusAgent         ──►  RequestPool
-      └─ metrics_tracker.record_tick() ──►  MetricsTracker  ◄──  RequestPool
+      ├─ demand_generator.update()      ──►  DemandGenerator   ──►  RequestPool
+      ├─ agent.on_arrival()             ──►  BusAgent          ──►  RequestPool
+      │    └─ recorder.record_arrival()  ──►  AnimationRecorder ◄──  RequestPool
+      └─ metrics_tracker.record_tick()  ──►  MetricsTracker    ◄──  RequestPool
 ```
 
 `SimulationBackend` is the only component that knows about simulation time
 advancement. `SimulationRunner` only needs to call `step(dt)` in a loop and
 check `is_done()` to decide when to stop.
+
+`AnimationRecorder` is an optional passive observer — it is only attached when
+`run_trial` is called with `record_animation=True`, and it never modifies the
+pool.

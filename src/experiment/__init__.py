@@ -1,6 +1,10 @@
 """Experiment helpers for comparing routing policies."""
 
-from src.experiment.animation import animate_trial, show_animation
+from src.experiment.animation import (
+    animate_trial,
+    show_animation,
+    show_animations,
+)
 from src.experiment.comparison import compare_policies
 from src.experiment.plots import (
     plot_kpi_bars,
@@ -18,4 +22,5 @@ __all__ = [
     "plot_occupancy",
     "animate_trial",
     "show_animation",
+    "show_animations",
 ]

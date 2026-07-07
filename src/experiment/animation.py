@@ -264,7 +264,7 @@ def animate_trial(
         _update,
         frames=len(frames),
         interval=interval_ms,
-        blit=True,
+        blit=False,
     )
     return anim
 

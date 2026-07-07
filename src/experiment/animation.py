@@ -6,10 +6,17 @@ import matplotlib.animation as mpl_animation
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
+from IPython import get_ipython
 from matplotlib.collections import LineCollection
 
+from src.experiment.trial import TrialResult
 from src.map.TransitGraph import TransitGraph
 from src.simulation.AnimationRecorder import AnimationFrame
+
+# Keeps FuncAnimation instances alive: nothing else holds a reference once
+# show_animation returns, and matplotlib silently stops/GCs unreferenced
+# animations.
+_live_animations: list[mpl_animation.FuncAnimation] = []
 
 
 def _build_road_segments(
@@ -260,3 +267,46 @@ def animate_trial(
         blit=True,
     )
     return anim
+
+
+def show_animation(
+    result: TrialResult,
+    interval_ms: int = 300,
+    figsize: tuple[float, float] = (10.0, 8.0),
+) -> None:
+    """
+    Build and display a trial's animation in one call, for notebook use.
+
+    Switches to the ipympl (``%matplotlib widget``) backend if running
+    under IPython so playback is interactive, then builds and shows the
+    animation via animate_trial. Unlike the plot_* helpers, this
+    displays directly rather than returning a Figure, since it is meant
+    to be the last statement in a notebook cell.
+
+    :param result: TrialResult produced by run_trial(...,
+        record_animation=True); must have non-empty animation_frames
+        and a non-None transit_graph.
+    :param interval_ms: Milliseconds between frames in the animation.
+    :param figsize: (width, height) in inches for the figure.
+    :return: None.
+    """
+    if not result.animation_frames or result.transit_graph is None:
+        raise ValueError(
+            "result has no animation data; call run_trial(..., "
+            "record_animation=True) to capture animation_frames and "
+            "transit_graph before calling show_animation"
+        )
+
+    try:
+        get_ipython().run_line_magic("matplotlib", "widget")
+    except Exception:
+        pass
+
+    anim = animate_trial(
+        result.animation_frames,
+        result.transit_graph,
+        interval_ms=interval_ms,
+        figsize=figsize,
+    )
+    _live_animations.append(anim)
+    plt.show()

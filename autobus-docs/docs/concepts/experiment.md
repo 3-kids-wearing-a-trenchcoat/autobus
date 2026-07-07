@@ -185,7 +185,10 @@ fig.show()
 
 `animate_trial` builds a `matplotlib.animation.FuncAnimation` from the
 per-stop-arrival frames recorded by `run_trial`.  Each frame in the animation
-corresponds to one stop arrival; the view never changes during transit.
+corresponds to one stop arrival; the view never changes during transit. It's
+the lower-level builder underneath `show_animation` and `show_animations`
+below; use it directly when you want the raw `FuncAnimation` object, e.g. to
+export a static video/HTML file rather than display it live.
 
 ```python
 from src.experiment import run_trial, animate_trial
@@ -219,6 +222,70 @@ The animation displays:
 `interval_ms` (default 300) controls playback speed.  To save the animation
 as a video file, use `anim.save("run.mp4")` (requires `ffmpeg`).
 
+## show_animation
+
+`show_animation` is a one-liner for the common case: build and display a
+single trial's animation live, right in the notebook cell:
+
+```python
+from src.experiment import run_trial, show_animation
+
+result = run_trial(
+    policy_factory=lambda g: NearestUnservedPolicy(g),
+    graph=graph,
+    seed=42,
+    record_animation=True,
+)
+
+show_animation(result)
+```
+
+It raises `ValueError` if `result` wasn't produced with
+`record_animation=True` (i.e. `animation_frames`/`transit_graph` are empty).
+If running under IPython, it switches to the `ipympl` (`%matplotlib widget`)
+backend itself so playback is interactive without needing a separate
+`%matplotlib widget` cell first. Below the animation it draws Pause/Resume and
+0.5x/1x/2x speed buttons (plain `matplotlib.widgets.Button`s, wired to the
+underlying `FuncAnimation`'s `pause()`/`resume()` and `event_source.interval`)
+so you can slow down, speed up, or freeze playback to inspect a moment.
+
+Unlike the plot helpers, `show_animation` displays directly and returns
+`None` — it's meant to be the last statement in a cell, not assigned to a
+variable.
+
+## show_animations
+
+`show_animations` shows several trials' animations side by side,
+**synchronized**: every panel is driven by the same shared frame index, so
+they always show the same step at the same instant and share one set of
+Pause/Resume and speed controls.
+
+```python
+from src.experiment import run_trial, show_animations
+
+fixed_result = run_trial(
+    policy_factory=lambda g: FixedRoutePolicy(g),
+    graph=graph, seed=0, record_animation=True,
+)
+nearest_result = run_trial(
+    policy_factory=lambda g: NearestUnservedPolicy(g),
+    graph=graph, seed=0, record_animation=True,
+)
+
+show_animations({
+    "Fixed route": fixed_result,
+    "Nearest unserved": nearest_result,
+})
+```
+
+It takes a `dict[str, TrialResult]` — the same shape `compare_policies`
+groups results by, so a natural use is picking one representative trial per
+policy label out of a comparison run. Each entry becomes one titled panel.
+Since different policies can produce different numbers of recorded stop
+arrivals, playback runs for as many frames as the *longest* trial; a panel
+whose trial is shorter simply freezes on its last frame rather than cutting
+the other panels off early.
+
 ## Relationship to other components
 
 ```
@@ -234,12 +301,20 @@ PlanarStreetGraph  ────────────────────�
                         ▼                ▼                   ▼
                 plot_kpi_bars  plot_wait_distribution  plot_occupancy
 
-TrialResult.animation_frames ──► animate_trial ──► FuncAnimation
+TrialResult.animation_frames ──► animate_trial ──────► FuncAnimation
+                              │                             ▲
+                              ├──► show_animation ──────────┘ (displayed live)
+                              │
+                              └──► show_animations (dict[label, TrialResult])
 ```
 
 `run_trial` depends on the full simulation stack (`BusAgent`, `MockBackend`,
 `SimulationRunner`, etc.) but hides that wiring from the caller.
 `compare_policies` depends only on `run_trial`. The plot helpers depend only
-on `TrialResult` and `matplotlib`. `animate_trial` depends on
-`TrialResult.animation_frames` and `TrialResult.transit_graph`, so it is only
-usable after a `run_trial(..., record_animation=True)` call.
+on `TrialResult` and `matplotlib`. `animate_trial`, `show_animation`, and
+`show_animations` all depend on `TrialResult.animation_frames` and
+`TrialResult.transit_graph`, so they're only usable after a
+`run_trial(..., record_animation=True)` call. `show_animation` and
+`show_animations` build their own `FuncAnimation` internally (via the same
+per-panel logic `animate_trial` uses) rather than calling `animate_trial`
+directly, since they need direct figure access to attach playback controls.

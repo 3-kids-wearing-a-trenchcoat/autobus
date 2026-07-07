@@ -13,3 +13,7 @@
 ::: src.experiment.plots.plot_occupancy
 
 ::: src.experiment.animation.animate_trial
+
+::: src.experiment.animation.show_animation
+
+::: src.experiment.animation.show_animations

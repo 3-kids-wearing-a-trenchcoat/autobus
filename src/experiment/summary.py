@@ -1,6 +1,7 @@
 """Markdown summary table for multi-trial policy comparison."""
 
 import statistics
+from dataclasses import dataclass
 from typing import Callable
 
 from scipy import stats
@@ -39,6 +40,23 @@ _ROW_SPECS: list[_RowSpec] = [
 ]
 
 
+@dataclass
+class ComparisonSummary:
+    """
+    Output of summarize_comparison: a table plus the runs behind it.
+
+    :param markdown: The comparison table rendered as Markdown.
+    :param results: Raw per-policy trial results, exactly as returned by
+        compare_policies (a mapping from policy label to its list of
+        TrialResult). Feed this to the plot helpers (plot_kpi_bars,
+        plot_wait_distribution, plot_occupancy) to visualise the same runs
+        without re-running the simulation.
+    """
+
+    markdown: str
+    results: dict[str, list[TrialResult]]
+
+
 def summarize_comparison(
     policies: list[tuple[str, Callable[[TransitGraph], DispatchPolicy]]],
     graph: PlanarStreetGraph,
@@ -46,9 +64,9 @@ def summarize_comparison(
     base_seed: int | None = None,
     confidence: float = 0.95,
     **trial_kwargs,
-) -> str:
+) -> ComparisonSummary:
     """
-    Run every policy for n_trials and summarise the results as Markdown.
+    Run every policy for n_trials and summarise the results.
 
     Delegates to compare_policies to run the trials, then builds a table
     whose rows are the measured properties and whose columns are the
@@ -66,8 +84,9 @@ def summarize_comparison(
     :param confidence: Confidence level for the margin of error, in (0, 1).
     :param trial_kwargs: Additional keyword arguments forwarded to
         run_trial (e.g. max_requests, capacity, dt).
-    :return: A Markdown table (as a string) of mean (relative margin of
-        error) per property and policy.
+    :return: A ComparisonSummary bundling the Markdown table and the raw
+        per-policy trial results (the latter for reuse by the plot
+        helpers).
     """
     results = compare_policies(
         policies,
@@ -76,7 +95,8 @@ def summarize_comparison(
         base_seed=base_seed,
         **trial_kwargs,
     )
-    return _format_summary_table(results, confidence)
+    markdown = _format_summary_table(results, confidence)
+    return ComparisonSummary(markdown=markdown, results=results)
 
 
 def _mean(values: list[float]) -> float | None:

@@ -11,7 +11,7 @@ from src.experiment.plots import (
     plot_occupancy,
     plot_wait_distribution,
 )
-from src.experiment.summary import summarize_comparison
+from src.experiment.summary import ComparisonSummary, summarize_comparison
 from src.experiment.trial import TrialResult, run_trial
 
 __all__ = [
@@ -19,6 +19,7 @@ __all__ = [
     "run_trial",
     "compare_policies",
     "summarize_comparison",
+    "ComparisonSummary",
     "plot_kpi_bars",
     "plot_wait_distribution",
     "plot_occupancy",

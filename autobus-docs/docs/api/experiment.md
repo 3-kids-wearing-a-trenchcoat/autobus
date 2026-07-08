@@ -8,6 +8,8 @@
 
 ::: src.experiment.summary.summarize_comparison
 
+::: src.experiment.summary.ComparisonSummary
+
 ::: src.experiment.plots.plot_kpi_bars
 
 ::: src.experiment.plots.plot_wait_distribution

@@ -4,7 +4,12 @@ import statistics
 
 from scipy import stats
 
-from src.experiment.summary import _format_summary_table, _moe
+from src.experiment.summary import (
+    ComparisonSummary,
+    _format_summary_table,
+    _moe,
+    summarize_comparison,
+)
 from src.experiment.trial import TrialResult
 from src.metrics.MetricsTracker import KPISnapshot
 
@@ -123,6 +128,26 @@ def test_all_none_property_shows_na() -> None:
         if line.startswith("| Mean wait time |")
     )
     assert "N/A" in row
+
+
+def test_summarize_comparison_bundles_table_and_results(monkeypatch) -> None:
+    """summarize_comparison returns the table alongside the raw results."""
+    canned = {
+        "P": [_trial(_kpi(mean_wait=20.0)), _trial(_kpi(mean_wait=40.0))],
+    }
+
+    def fake_compare_policies(policies, graph, **kwargs):
+        return canned
+
+    monkeypatch.setattr(
+        "src.experiment.summary.compare_policies", fake_compare_policies
+    )
+    summary = summarize_comparison(
+        [("P", lambda g: None)], graph=None, n_trials=2, base_seed=0
+    )
+    assert isinstance(summary, ComparisonSummary)
+    assert summary.results is canned
+    assert summary.markdown == _format_summary_table(canned, 0.95)
 
 
 def test_percentage_scaling() -> None:

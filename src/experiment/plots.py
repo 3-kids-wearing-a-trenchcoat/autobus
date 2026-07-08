@@ -1,5 +1,7 @@
 """Visualisation helpers for policy comparison experiments."""
 
+import math
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
@@ -24,28 +26,40 @@ _KPI_LABELS: dict[str, str] = {
 def plot_kpi_bars(
     results: dict[str, list[TrialResult]],
     fields: list[str],
+    title: str | None = None,
+    max_cols: int = 2,
 ) -> Figure:
     """
     Bar chart comparing one or more KPI fields across policies.
 
-    Each field gets its own subplot. Error bars show one standard
-    deviation and are omitted for single-trial results.
+    Each field gets its own subplot; subplots wrap into a grid of at most
+    max_cols columns so the figure keeps a sensible aspect ratio (a single
+    wide row overflows the notebook's output area). Error bars show one
+    standard deviation and are omitted for single-trial results.
 
     :param results: Policy label → list of TrialResult, as returned by
         compare_policies.
     :param fields: KPI field names to plot (attributes of KPISnapshot,
         e.g. ["mean_wait_time", "throughput"]).
+    :param title: Optional figure-level title (suptitle).
+    :param max_cols: Maximum number of subplot columns before wrapping to
+        a new row.
     :return: Matplotlib Figure.
     """
     n_fields = len(fields)
+    n_cols = min(n_fields, max_cols)
+    n_rows = math.ceil(n_fields / n_cols)
     fig, axes = plt.subplots(
-        1, n_fields, figsize=(5 * n_fields, 4), squeeze=False
+        n_rows, n_cols,
+        figsize=(5 * n_cols, 4 * n_rows),
+        squeeze=False,
     )
+    flat_axes = axes.ravel()
     labels = list(results.keys())
     x = np.arange(len(labels))
 
-    for col, field in enumerate(fields):
-        ax: Axes = axes[0][col]
+    for idx, field in enumerate(fields):
+        ax: Axes = flat_axes[idx]
         means, stds = _aggregate_kpi(results, field)
         n_trials = len(results[labels[0]])
         yerr = stds if n_trials > 1 else None
@@ -56,7 +70,17 @@ def plot_kpi_bars(
         ax.set_ylabel(_KPI_LABELS.get(field, field))
         ax.set_title(_KPI_LABELS.get(field, field))
 
-    fig.tight_layout()
+    # Hide any leftover axes when the grid is not completely filled.
+    for idx in range(n_fields, n_rows * n_cols):
+        flat_axes[idx].set_visible(False)
+
+    # tight_layout (computed eagerly) renders reliably under the notebook's
+    # ipympl backend, unlike constrained_layout which defers to draw time.
+    if title:
+        fig.suptitle(title)
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
+    else:
+        fig.tight_layout()
     return fig
 
 

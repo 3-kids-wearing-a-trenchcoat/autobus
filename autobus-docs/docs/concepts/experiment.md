@@ -140,8 +140,10 @@ by `compare_policies` and return a `matplotlib.figure.Figure`.
 ### plot_kpi_bars
 
 Bar chart comparing one or more aggregate KPI fields across policies. Each
-field gets its own subplot. Error bars show ±1 standard deviation and are
-omitted when only one trial was run.
+field gets its own subplot, and subplots wrap into a grid (at most `max_cols`
+columns) so the figure keeps a sensible aspect ratio instead of one very wide
+row. Error bars show ±1 standard deviation and are omitted when only one trial
+was run. Pass `title` to add a figure-level heading.
 
 ```python
 from src.experiment import plot_kpi_bars

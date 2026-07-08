@@ -63,6 +63,7 @@ def summarize_comparison(
     n_trials: int = 1,
     base_seed: int | None = None,
     confidence: float = 0.95,
+    progress: bool = True,
     **trial_kwargs,
 ) -> ComparisonSummary:
     """
@@ -82,6 +83,8 @@ def summarize_comparison(
     :param base_seed: Base random seed forwarded to compare_policies.
         Trial i uses base_seed + i. None = non-deterministic.
     :param confidence: Confidence level for the margin of error, in (0, 1).
+    :param progress: When True, display one tqdm progress bar per policy
+        while the trials run. Set False to run silently.
     :param trial_kwargs: Additional keyword arguments forwarded to
         run_trial (e.g. max_requests, capacity, dt).
     :return: A ComparisonSummary bundling the Markdown table and the raw
@@ -93,6 +96,7 @@ def summarize_comparison(
         graph,
         n_trials=n_trials,
         base_seed=base_seed,
+        progress=progress,
         **trial_kwargs,
     )
     markdown = _format_summary_table(results, confidence)

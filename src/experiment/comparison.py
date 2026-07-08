@@ -2,6 +2,8 @@
 
 from typing import Callable
 
+from tqdm.auto import tqdm
+
 from src.algorithm.DispatchPolicy import DispatchPolicy
 from src.experiment.trial import TrialResult, run_trial
 from src.map.TransitGraph import TransitGraph
@@ -13,6 +15,7 @@ def compare_policies(
     graph: PlanarStreetGraph,
     n_trials: int = 1,
     base_seed: int | None = None,
+    progress: bool = True,
     **trial_kwargs,
 ) -> dict[str, list[TrialResult]]:
     """
@@ -28,6 +31,8 @@ def compare_policies(
     :param n_trials: Number of independent trials per policy.
     :param base_seed: Base random seed. Trial i uses base_seed + i.
         None = non-deterministic.
+    :param progress: When True, display one tqdm progress bar per policy
+        (filling as trials complete). Set False to run silently.
     :param trial_kwargs: Additional keyword arguments forwarded to
         run_trial (e.g. max_requests, capacity, dt).
     :return: Dict mapping each policy label to a list of TrialResult,
@@ -39,6 +44,19 @@ def compare_policies(
         label: [] for label, _ in policies
     }
 
+    # One progress bar per policy, labels padded to align the bars.
+    label_width = max(len(label) for label, _ in policies)
+    bars = {
+        label: tqdm(
+            total=n_trials,
+            desc=label.ljust(label_width),
+            position=index,
+            leave=True,
+            disable=not progress,
+        )
+        for index, (label, _) in enumerate(policies)
+    }
+
     for trial_idx in range(n_trials):
         seed = (
             base_seed + trial_idx
@@ -46,7 +64,6 @@ def compare_policies(
             else None
         )
         for label, factory in policies:
-            print(f"  [{label}] trial {trial_idx + 1}/{n_trials}")
             result = run_trial(
                 policy_factory=factory,
                 graph=graph,
@@ -54,5 +71,9 @@ def compare_policies(
                 **trial_kwargs,
             )
             results[label].append(result)
+            bars[label].update(1)
+
+    for bar in bars.values():
+        bar.close()
 
     return results

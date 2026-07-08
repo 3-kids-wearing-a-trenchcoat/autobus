@@ -97,6 +97,9 @@ results = compare_policies(
 The return value is `dict[str, list[TrialResult]]`, mapping each label to its
 list of trial results.
 
+While running, `compare_policies` displays one tqdm progress bar per policy that
+fills as trials complete. Pass `progress=False` to run silently.
+
 ### Seed strategy
 
 Fair comparison requires that all policies face the same demand within a given

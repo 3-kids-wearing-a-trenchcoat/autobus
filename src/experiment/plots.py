@@ -94,11 +94,13 @@ def plot_occupancy(
     results: dict[str, list[TrialResult]],
 ) -> Figure:
     """
-    Line plot of bus occupancy and pending requests over time.
+    Mean occupancy and pending-request curves over time, per policy.
 
-    When multiple trials are available, each trial is drawn as a
-    semi-transparent line and the mean is overlaid as a solid line.
-    One subplot pair (occupancy / pending) is drawn per policy.
+    For each policy the mean across trials is drawn as a solid line with a
+    shaded band spanning ±1 standard deviation (the run-to-run spread);
+    with a single trial only its line is shown. Trials are aligned by tick
+    index and truncated to the shortest run. One subplot pair (occupancy /
+    pending) is drawn per policy.
 
     :param results: Policy label → list of TrialResult, as returned by
         compare_policies.
@@ -160,45 +162,22 @@ def _plot_occupancy_row(
     occ_ax: Axes = axes[0]
     pend_ax: Axes = axes[1]
 
-    for r in trials:
-        times = [t.sim_time for t in r.tick_history]
-        occ_ax.plot(
-            times,
-            [t.occupancy for t in r.tick_history],
-            alpha=0.3, color="steelblue",
-        )
-        pend_ax.plot(
-            times,
-            [t.pending_count for t in r.tick_history],
-            alpha=0.3, color="tomato",
-        )
+    # Align trials by tick index (dt is constant, so index maps to time)
+    # and truncate to the shortest run so every tick has a value from all
+    # trials.
+    min_len = min(len(r.tick_history) for r in trials)
+    times = [trials[0].tick_history[i].sim_time for i in range(min_len)]
+    occupancy = np.array([
+        [r.tick_history[i].occupancy for i in range(min_len)]
+        for r in trials
+    ])
+    pending = np.array([
+        [r.tick_history[i].pending_count for i in range(min_len)]
+        for r in trials
+    ])
 
-    if len(trials) > 1:
-        min_len = min(len(r.tick_history) for r in trials)
-        mean_times = [
-            trials[0].tick_history[i].sim_time
-            for i in range(min_len)
-        ]
-        mean_occ = [
-            np.mean([r.tick_history[i].occupancy for r in trials])
-            for i in range(min_len)
-        ]
-        mean_pend = [
-            np.mean(
-                [r.tick_history[i].pending_count for r in trials]
-            )
-            for i in range(min_len)
-        ]
-        occ_ax.plot(
-            mean_times, mean_occ,
-            color="steelblue", linewidth=2, label="mean",
-        )
-        pend_ax.plot(
-            mean_times, mean_pend,
-            color="tomato", linewidth=2, label="mean",
-        )
-        occ_ax.legend()
-        pend_ax.legend()
+    _plot_mean_band(occ_ax, times, occupancy, "steelblue")
+    _plot_mean_band(pend_ax, times, pending, "tomato")
 
     occ_ax.set_xlabel("Simulation time (s)")
     occ_ax.set_ylabel("Passengers on bus")
@@ -206,3 +185,33 @@ def _plot_occupancy_row(
     pend_ax.set_xlabel("Simulation time (s)")
     pend_ax.set_ylabel("Pending requests")
     pend_ax.set_title(f"{label} — pending requests")
+
+
+def _plot_mean_band(
+    ax: Axes,
+    times: list[float],
+    data: np.ndarray,
+    color: str,
+) -> None:
+    """
+    Draw a mean line with a ±1 standard-deviation shaded band.
+
+    The band's lower edge is clipped at zero, since occupancy and pending
+    counts are non-negative. With a single trial only the line is drawn.
+
+    :param times: X values (simulation time per tick).
+    :param data: 2-D array of shape (n_trials, n_ticks).
+    :param color: Line and band colour.
+    """
+    mean = data.mean(axis=0)
+    ax.plot(times, mean, color=color, linewidth=2, label="mean")
+
+    if data.shape[0] > 1:
+        std = data.std(axis=0)
+        ax.fill_between(
+            times,
+            np.maximum(mean - std, 0.0),
+            mean + std,
+            color=color, alpha=0.25, linewidth=0, label="±1σ",
+        )
+        ax.legend(loc="upper right")

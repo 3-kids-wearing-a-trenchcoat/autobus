@@ -175,11 +175,13 @@ fig.show()
 
 Line plot of bus occupancy and pending request count over simulation time. One
 subplot pair (occupancy / pending) is drawn per policy. When multiple trials
-are available, each trial is drawn as a semi-transparent line and the
-per-tick mean across trials is overlaid as a solid line.
+are available, the per-tick mean across trials is drawn as a solid line with a
+shaded band spanning ±1 standard deviation (the run-to-run spread); with a
+single trial only its line is shown. This keeps the plot readable at large
+trial counts, where overplotting every run would be an unreadable blur.
 
-The mean is computed over the shortest common tick prefix: if trials end at
-different times the mean line is trimmed to the length of the shortest trial.
+The mean and band are computed over the shortest common tick prefix: if trials
+end at different times they are trimmed to the length of the shortest trial.
 
 ```python
 from src.experiment import plot_occupancy

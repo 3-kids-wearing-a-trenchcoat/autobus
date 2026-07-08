@@ -132,6 +132,44 @@ results = compare_policies(
 )
 ```
 
+## summarize_comparison
+
+`summarize_comparison` runs the same multi-trial experiment as
+`compare_policies` and packages the outcome for quick reading. It returns a
+`ComparisonSummary` dataclass with two attributes:
+
+- `markdown` — a Markdown table with one row per measured property and one
+  column per policy. Each cell is `mean unit (±X%)`, where `X%` is the **margin
+  of error as a percentage of the mean** (the relative half-width of the 95%
+  confidence interval, from the Student *t*-distribution). A smaller percentage
+  means a more reliable estimate.
+- `results` — the raw `dict[str, list[TrialResult]]` (exactly what
+  `compare_policies` returns), so the plot helpers can visualise the same runs
+  without re-running the simulation.
+
+It takes the same arguments as `compare_policies` (`policies`, `graph`,
+`n_trials`, `base_seed`, `progress`, and any forwarded `run_trial` keywords),
+plus a `confidence` level (default `0.95`) for the margin of error.
+
+```python
+from IPython.display import Markdown
+from src.experiment import summarize_comparison
+
+summary = summarize_comparison(
+    policies=[
+        ("Fixed route",      lambda g: FixedRoutePolicy(g)),
+        ("Nearest unserved", lambda g: NearestUnservedPolicy(g)),
+    ],
+    graph=graph,
+    n_trials=200,
+    base_seed=0,
+    max_requests=100,
+)
+
+Markdown(summary.markdown)                 # render the comparison table
+plot_kpi_bars(summary.results, fields=["mean_wait_time", "throughput"])
+```
+
 ## Plot helpers
 
 All three plot functions accept the `dict[str, list[TrialResult]]` returned
@@ -321,8 +359,9 @@ TrialResult.animation_frames ──► animate_trial ──────► FuncA
 
 `run_trial` depends on the full simulation stack (`BusAgent`, `MockBackend`,
 `SimulationRunner`, etc.) but hides that wiring from the caller.
-`compare_policies` depends only on `run_trial`. The plot helpers depend only
-on `TrialResult` and `matplotlib`. `animate_trial`, `show_animation`, and
+`compare_policies` depends only on `run_trial`. `summarize_comparison` wraps
+`compare_policies`, returning its results alongside a formatted Markdown table.
+The plot helpers depend only on `TrialResult` and `matplotlib`. `animate_trial`, `show_animation`, and
 `show_animations` all depend on `TrialResult.animation_frames` and
 `TrialResult.transit_graph`, so they're only usable after a
 `run_trial(..., record_animation=True)` call. `show_animation` and

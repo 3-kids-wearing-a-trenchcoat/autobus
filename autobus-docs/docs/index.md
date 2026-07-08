@@ -33,7 +33,9 @@ src/
 └── experiment/
     ├── trial.py               # TrialResult dataclass and run_trial()
     ├── comparison.py          # compare_policies(): multi-strategy runner
-    └── plots.py               # plot_kpi_bars(), plot_wait_distribution(), plot_occupancy()
+    ├── summary.py             # summarize_comparison(), ComparisonSummary
+    ├── plots.py               # plot_kpi_bars(), plot_wait_distribution(), plot_occupancy()
+    └── animation.py           # animate_trial(), show_animation(), show_animations()
 ```
 
 ## Running the project

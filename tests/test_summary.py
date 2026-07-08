@@ -1,0 +1,136 @@
+"""Tests for the Markdown comparison summary table."""
+
+import statistics
+
+from scipy import stats
+
+from src.experiment.summary import _format_summary_table, _moe
+from src.experiment.trial import TrialResult
+from src.metrics.MetricsTracker import KPISnapshot
+
+
+def _kpi(
+    fulfilled: int = 10,
+    cancelled: int = 2,
+    mean_wait: float | None = 30.0,
+    p90_wait: float | None = 50.0,
+    mean_ride: float | None = 20.0,
+    fulfillment: float | None = 0.8,
+    throughput: float | None = 1.5,
+) -> KPISnapshot:
+    """Build a KPISnapshot with sensible defaults for testing."""
+    return KPISnapshot(
+        fulfilled_count=fulfilled,
+        cancelled_count=cancelled,
+        mean_wait_time=mean_wait,
+        mean_ride_time=mean_ride,
+        mean_journey_time=None,
+        max_wait_time=None,
+        p90_wait_time=p90_wait,
+        fulfillment_rate=fulfillment,
+        throughput=throughput,
+    )
+
+
+def _trial(
+    kpi: KPISnapshot,
+    wait_times: list[float] | None = None,
+    ride_times: list[float] | None = None,
+) -> TrialResult:
+    """Build a TrialResult from a KPISnapshot and optional sample lists."""
+    return TrialResult(
+        kpi=kpi,
+        tick_history=[],
+        wait_times=wait_times if wait_times is not None else [],
+        ride_times=ride_times if ride_times is not None else [],
+    )
+
+
+def test_moe_matches_t_formula() -> None:
+    """_moe equals t * s / sqrt(n) for a known sample."""
+    values = [10.0, 12.0, 14.0, 16.0]
+    n = len(values)
+    expected = (
+        stats.t.ppf(0.975, n - 1)
+        * statistics.stdev(values)
+        / (n ** 0.5)
+    )
+    assert _moe(values, 0.95) == expected
+
+
+def test_moe_undefined_for_single_value() -> None:
+    """_moe is None when fewer than two values are given."""
+    assert _moe([5.0], 0.95) is None
+    assert _moe([], 0.95) is None
+
+
+def test_table_structure_has_column_per_policy() -> None:
+    """Header/separator expose one column per policy plus 'Property'."""
+    results = {
+        "Fixed": [_trial(_kpi()), _trial(_kpi())],
+        "Nearest": [_trial(_kpi()), _trial(_kpi())],
+    }
+    lines = _format_summary_table(results, 0.95).splitlines()
+
+    header_cells = [cell.strip() for cell in lines[0].strip("|").split("|")]
+    assert header_cells == ["Property", "Fixed", "Nearest"]
+    # Separator row: one '---' per header column.
+    assert lines[1].count("---") == len(header_cells)
+    # One data row per measured property.
+    assert len(lines) == 2 + 13
+
+
+def test_mean_and_moe_cell_formatting() -> None:
+    """A mean cell shows 'mean (±moe) unit' with one decimal each."""
+    results = {
+        "P": [
+            _trial(_kpi(mean_wait=20.0)),
+            _trial(_kpi(mean_wait=40.0)),
+        ],
+    }
+    table = _format_summary_table(results, 0.95)
+    row = next(
+        line for line in table.splitlines()
+        if line.startswith("| Mean wait time |")
+    )
+    moe = _moe([20.0, 40.0], 0.95)
+    assert f"30.0 (±{moe:.1f}) s" in row
+
+
+def test_single_trial_omits_moe_term() -> None:
+    """With one trial the margin of error term is dropped."""
+    results = {"P": [_trial(_kpi(mean_wait=25.0))]}
+    table = _format_summary_table(results, 0.95)
+    row = next(
+        line for line in table.splitlines()
+        if line.startswith("| Mean wait time |")
+    )
+    assert "25.0 s" in row
+    assert "±" not in row
+
+
+def test_all_none_property_shows_na() -> None:
+    """A property that is None in every run renders as N/A."""
+    results = {
+        "P": [
+            _trial(_kpi(mean_wait=None)),
+            _trial(_kpi(mean_wait=None)),
+        ],
+    }
+    table = _format_summary_table(results, 0.95)
+    row = next(
+        line for line in table.splitlines()
+        if line.startswith("| Mean wait time |")
+    )
+    assert "N/A" in row
+
+
+def test_percentage_scaling() -> None:
+    """Fulfillment rate is scaled by 100 and shown with a % unit."""
+    results = {"P": [_trial(_kpi(fulfillment=0.75))]}
+    table = _format_summary_table(results, 0.95)
+    row = next(
+        line for line in table.splitlines()
+        if line.startswith("| Fulfillment rate |")
+    )
+    assert "75.0 %" in row

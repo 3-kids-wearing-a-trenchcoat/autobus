@@ -1,0 +1,167 @@
+"""Markdown summary table for multi-trial policy comparison."""
+
+import statistics
+from typing import Callable
+
+from scipy import stats
+
+from src.algorithm.DispatchPolicy import DispatchPolicy
+from src.experiment.comparison import compare_policies
+from src.experiment.trial import TrialResult
+from src.map.TransitGraph import TransitGraph
+from src.map.graph import PlanarStreetGraph
+
+# One row per measured property, mirroring the "Inspecting TrialResult"
+# subsection of the notebook. Each entry is
+# (label, extractor, unit) where extractor maps a single TrialResult to a
+# per-run scalar (or None when the property is undefined for that run) and
+# unit selects how the aggregated value is formatted by _format_cell.
+_RowSpec = tuple[str, Callable[[TrialResult], float | None], str]
+
+_ROW_SPECS: list[_RowSpec] = [
+    ("Fulfilled requests", lambda r: r.kpi.fulfilled_count, ""),
+    ("Cancelled requests", lambda r: r.kpi.cancelled_count, ""),
+    ("Mean wait time", lambda r: r.kpi.mean_wait_time, "s"),
+    ("P90 wait time", lambda r: r.kpi.p90_wait_time, "s"),
+    ("Mean ride time", lambda r: r.kpi.mean_ride_time, "s"),
+    ("Fulfillment rate", lambda r: r.kpi.fulfillment_rate, "%"),
+    ("Throughput", lambda r: r.kpi.throughput, "req/min"),
+    ("Tick snapshots", lambda r: len(r.tick_history), ""),
+    ("Fulfilled (wait samples)", lambda r: len(r.wait_times), ""),
+    ("Min wait time", lambda r: min(r.wait_times) if r.wait_times else None,
+     "s"),
+    ("Max wait time", lambda r: max(r.wait_times) if r.wait_times else None,
+     "s"),
+    ("Min ride time", lambda r: min(r.ride_times) if r.ride_times else None,
+     "s"),
+    ("Max ride time", lambda r: max(r.ride_times) if r.ride_times else None,
+     "s"),
+]
+
+
+def summarize_comparison(
+    policies: list[tuple[str, Callable[[TransitGraph], DispatchPolicy]]],
+    graph: PlanarStreetGraph,
+    n_trials: int = 1,
+    base_seed: int | None = None,
+    confidence: float = 0.95,
+    **trial_kwargs,
+) -> str:
+    """
+    Run every policy for n_trials and summarise the results as Markdown.
+
+    Delegates to compare_policies to run the trials, then builds a table
+    whose rows are the measured properties and whose columns are the
+    policies. Each cell is the mean of that property across runs, followed
+    by its margin of error (the confidence-interval half-width) in
+    parentheses. Supports any number (>0) of policies.
+
+    :param policies: List of (label, factory) pairs. Each factory accepts
+        a TransitGraph and returns a DispatchPolicy.
+    :param graph: Pre-built street graph shared across all runs.
+    :param n_trials: Number of independent trials per policy.
+    :param base_seed: Base random seed forwarded to compare_policies.
+        Trial i uses base_seed + i. None = non-deterministic.
+    :param confidence: Confidence level for the margin of error, in (0, 1).
+    :param trial_kwargs: Additional keyword arguments forwarded to
+        run_trial (e.g. max_requests, capacity, dt).
+    :return: A Markdown table (as a string) of mean (margin of error) per
+        property and policy.
+    """
+    results = compare_policies(
+        policies,
+        graph,
+        n_trials=n_trials,
+        base_seed=base_seed,
+        **trial_kwargs,
+    )
+    return _format_summary_table(results, confidence)
+
+
+def _mean(values: list[float]) -> float | None:
+    """
+    Mean of the given values, or None when there are no values.
+
+    :param values: Per-run scalar values (already stripped of None).
+    :return: The arithmetic mean, or None if values is empty.
+    """
+    return statistics.fmean(values) if values else None
+
+
+def _moe(values: list[float], confidence: float) -> float | None:
+    """
+    Margin of error (confidence-interval half-width) for a mean.
+
+    Uses the Student t-distribution: half-width = t * s / sqrt(n), where
+    t is the two-sided critical value at the given confidence level with
+    n - 1 degrees of freedom, s is the sample standard deviation and n is
+    the number of values.
+
+    :param values: Per-run scalar values (already stripped of None).
+    :param confidence: Confidence level in (0, 1).
+    :return: The margin of error, or None when it is undefined (fewer than
+        two values).
+    """
+    n = len(values)
+    if n < 2:
+        return None
+    std = statistics.stdev(values)
+    critical = stats.t.ppf((1.0 + confidence) / 2.0, n - 1)
+    return critical * std / (n ** 0.5)
+
+
+def _format_cell(
+    mean: float | None,
+    moe: float | None,
+    unit: str,
+) -> str:
+    """
+    Format a single table cell as "mean (margin of error) unit".
+
+    :param mean: Mean of the property across runs, or None.
+    :param moe: Margin of error, or None when it is undefined.
+    :param unit: Display unit; "%" scales values by 100, "" is unitless.
+    :return: The formatted cell text, or "N/A" when mean is None.
+    """
+    if mean is None:
+        return "N/A"
+
+    scale = 100.0 if unit == "%" else 1.0
+    suffix = f" {unit}" if unit else ""
+    value = f"{mean * scale:.1f}"
+    if moe is None:
+        return f"{value}{suffix}"
+    return f"{value} (±{moe * scale:.1f}){suffix}"
+
+
+def _format_summary_table(
+    results: dict[str, list[TrialResult]],
+    confidence: float,
+) -> str:
+    """
+    Build the Markdown comparison table from per-policy trial results.
+
+    :param results: Mapping of policy label to its list of TrialResult.
+    :param confidence: Confidence level for the margin of error.
+    :return: A Markdown table string with one column per policy and one
+        row per measured property.
+    """
+    labels = list(results.keys())
+    header = "| Property | " + " | ".join(labels) + " |"
+    separator = "| --- | " + " | ".join("---" for _ in labels) + " |"
+
+    lines = [header, separator]
+    for label, extractor, unit in _ROW_SPECS:
+        cells = []
+        for policy_label in labels:
+            values = [
+                value
+                for trial in results[policy_label]
+                if (value := extractor(trial)) is not None
+            ]
+            cells.append(
+                _format_cell(_mean(values), _moe(values, confidence), unit)
+            )
+        lines.append(f"| {label} | " + " | ".join(cells) + " |")
+
+    return "\n".join(lines)

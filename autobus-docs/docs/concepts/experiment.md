@@ -13,7 +13,8 @@ The package has three layers:
 1. **`run_trial`** — runs a single simulation and returns structured results.
 2. **`compare_policies`** — runs every policy for *n* trials on the same map.
    **`summarize_comparison`** wraps it to return a Markdown table of each
-   property's mean across trials with its margin of error.
+   property's mean across trials with its margin of error (as a percentage
+   of the mean).
 3. **Plot helpers** — turn the comparison results into charts.
 
 ## TrialResult

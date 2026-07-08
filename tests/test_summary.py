@@ -81,7 +81,7 @@ def test_table_structure_has_column_per_policy() -> None:
 
 
 def test_mean_and_moe_cell_formatting() -> None:
-    """A mean cell shows 'mean (±moe) unit' with one decimal each."""
+    """A mean cell shows 'mean unit (±moe%)', moe relative to the mean."""
     results = {
         "P": [
             _trial(_kpi(mean_wait=20.0)),
@@ -93,8 +93,8 @@ def test_mean_and_moe_cell_formatting() -> None:
         line for line in table.splitlines()
         if line.startswith("| Mean wait time |")
     )
-    moe = _moe([20.0, 40.0], 0.95)
-    assert f"30.0 (±{moe:.1f}) s" in row
+    moe_pct = _moe([20.0, 40.0], 0.95) / 30.0 * 100.0
+    assert f"30.0 s (±{moe_pct:.1f}%)" in row
 
 
 def test_single_trial_omits_moe_term() -> None:

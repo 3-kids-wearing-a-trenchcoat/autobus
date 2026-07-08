@@ -53,8 +53,9 @@ def summarize_comparison(
     Delegates to compare_policies to run the trials, then builds a table
     whose rows are the measured properties and whose columns are the
     policies. Each cell is the mean of that property across runs, followed
-    by its margin of error (the confidence-interval half-width) in
-    parentheses. Supports any number (>0) of policies.
+    by its margin of error as a percentage of the mean (the relative
+    confidence-interval half-width) in parentheses. Supports any number
+    (>0) of policies.
 
     :param policies: List of (label, factory) pairs. Each factory accepts
         a TransitGraph and returns a DispatchPolicy.
@@ -65,8 +66,8 @@ def summarize_comparison(
     :param confidence: Confidence level for the margin of error, in (0, 1).
     :param trial_kwargs: Additional keyword arguments forwarded to
         run_trial (e.g. max_requests, capacity, dt).
-    :return: A Markdown table (as a string) of mean (margin of error) per
-        property and policy.
+    :return: A Markdown table (as a string) of mean (relative margin of
+        error) per property and policy.
     """
     results = compare_policies(
         policies,
@@ -116,10 +117,15 @@ def _format_cell(
     unit: str,
 ) -> str:
     """
-    Format a single table cell as "mean (margin of error) unit".
+    Format a single table cell as "mean unit (±margin of error %)".
+
+    The margin of error is shown as a percentage of the mean (its relative
+    confidence-interval half-width), so a target such as "below 5%" reads
+    directly off the cell.
 
     :param mean: Mean of the property across runs, or None.
-    :param moe: Margin of error, or None when it is undefined.
+    :param moe: Margin of error (in the property's own units), or None when
+        it is undefined.
     :param unit: Display unit; "%" scales values by 100, "" is unitless.
     :return: The formatted cell text, or "N/A" when mean is None.
     """
@@ -131,7 +137,8 @@ def _format_cell(
     value = f"{mean * scale:.1f}"
     if moe is None:
         return f"{value}{suffix}"
-    return f"{value} (±{moe * scale:.1f}){suffix}"
+    moe_pct = 0.0 if mean == 0 else abs(moe / mean) * 100.0
+    return f"{value}{suffix} (±{moe_pct:.1f}%)"
 
 
 def _format_summary_table(

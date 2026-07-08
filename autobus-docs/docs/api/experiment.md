@@ -6,6 +6,8 @@
 
 ::: src.experiment.comparison.compare_policies
 
+::: src.experiment.summary.summarize_comparison
+
 ::: src.experiment.plots.plot_kpi_bars
 
 ::: src.experiment.plots.plot_wait_distribution

@@ -43,6 +43,50 @@ class DispatchPolicy(ABC):
         :return: Ordered list of stop IDs to visit.
         """
 
+    def _simulate_stop(
+        self,
+        stop_id: str,
+        sim_onboard: list[Request],
+        sim_pending: list[Request],
+        sim_remaining_capacity: int,
+    ) -> tuple[list[Request], list[Request], int]:
+        """
+        Advance the simulation state after visiting a stop.
+
+        Passengers whose dropoff matches stop_id alight first (freeing
+        capacity), then pending passengers whose pickup matches stop_id
+        board up to the available capacity.
+        :param stop_id: The stop being visited.
+        :param sim_onboard: Simulated onboard passengers before the stop.
+        :param sim_pending: Simulated pending passengers before the stop.
+        :param sim_remaining_capacity: Remaining capacity before the stop.
+        :return: Updated (sim_onboard, sim_pending, sim_remaining_capacity).
+        """
+        # Alight
+        alighting = [r for r in sim_onboard if r.dropoff_stop_id == stop_id]
+        sim_onboard = [
+            r for r in sim_onboard if r.dropoff_stop_id != stop_id
+        ]
+        sim_remaining_capacity += len(alighting)
+
+        # Board
+        boarding: list[Request] = []
+        remaining_pending: list[Request] = []
+        for r in sim_pending:
+            if (r.pickup_stop_id == stop_id
+                    and sim_remaining_capacity > 0):
+                boarding.append(r)
+                sim_remaining_capacity -= 1
+            else:
+                remaining_pending.append(r)
+
+        return (
+            sim_onboard + boarding,
+            remaining_pending,
+            sim_remaining_capacity,
+        )
+
+
 class PlaceholderPolicy(DispatchPolicy):
     """placeholder policy, just so I can continue development without implementing a proper policy first"""
 

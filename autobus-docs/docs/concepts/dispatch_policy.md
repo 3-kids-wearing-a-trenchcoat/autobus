@@ -173,3 +173,49 @@ policy = NearestUnservedPolicy(graph)
 ```
 
 No additional arguments are required beyond the `TransitGraph`.
+
+## SkipStopFixedRoutePolicy
+
+`SkipStopFixedRoutePolicy` is a demand-aware variant of `FixedRoutePolicy`.
+It subclasses `FixedRoutePolicy`, inheriting the exact same cycle
+construction and ordering, but overrides `plan()` to **skip stops that have
+no boarding or alighting demand**.
+
+Preserving the fixed cycle *order* is the key property: because stops are
+never reordered, the worst-case wait is still bounded by one full cycle,
+exactly as in a plain fixed route. Skipping empty stops only ever shortens a
+cycle, so it can improve average wait and throughput without making the
+worst case worse — the reason it is a natural first comparison point against
+`FixedRoutePolicy`.
+
+### Construction
+
+Identical to `FixedRoutePolicy` — an explicit `stop_order`, or auto-generated
+from the graph:
+
+```python
+policy = SkipStopFixedRoutePolicy(graph, stop_order=["3_5", "7_2", "1_4"])
+policy = SkipStopFixedRoutePolicy(graph)
+```
+
+### Routing behaviour
+
+`plan()` walks the fixed cycle from the current position for **at most one
+full pass**, keeping only stops where a passenger would board or alight given
+the projected bus state:
+
+1. A stop is kept if any onboard passenger alights there, **or** a pending
+   passenger picks up there and there is room after alighting (the *capacity
+   gate* — a pickup-only stop is skipped while the bus is projected to be
+   full).
+2. When a stop is kept, the simulated state is advanced (alight, then board)
+   before evaluating the next stop; skipped stops leave the state unchanged.
+3. The walk stops once `n_stops` stops have been collected.
+
+The returned list may be shorter than `n_stops` when demand is sparse, and
+empty when there is no demand at all — matching the conventions of the other
+demand-responsive policies. Because it is a single-cycle scan, a pickup
+skipped while the bus is full is simply left for the next re-plan.
+
+The alight/board simulation used here (`_simulate_stop`) lives on the
+`DispatchPolicy` base class and is shared with `NearestUnservedPolicy`.

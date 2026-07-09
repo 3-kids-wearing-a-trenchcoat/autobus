@@ -84,9 +84,10 @@ commands that would appear after `python` if you were to write it manually. (`$E
 When working on this repository, you MUST follow these rules:
 
 ### Branching
-* Always work on a dedicated branch
-* If the branch does not exist, create it from `main`.
-* If the branch already exists, switch to it.
+* Work on the single existing branch that isn't `main`. Consolidate work
+  onto that one working branch rather than juggling several in parallel.
+* If no such branch exists (e.g. the previous one was merged and deleted),
+  create a new one from `main`.
 * If a branch exists and you are not sure whether you should use it or not, ask before continuing.
 * Before applying git operation, make sure you're on the intended branch. As I may merge and delete branches and forget to notify you.
   If that happens, you may recreate the branch.
@@ -99,17 +100,17 @@ You are allowed to:
 * `git add`
 * `git commit`
 * `git revert` (only for commits on your branch)
+* `git merge <branch>` — LOCAL merges into your working branch only (e.g.
+  consolidating another feature branch onto it). Never into `main`.
 
 ### Forbidden Git Operations
 
 You are STRICTLY FORBIDDEN from:
 * `git push`
-* `git merge`
 * `git rebase`
 * `git cherry-pick`
 * `git pull` (unless explicitly instructed)
-* Any operation that modifies branches other than your working branch
-* Any operation that affects the `main` branch
+* Any operation that affects the `main` branch (including merging into it)
 
 ### Safety Rules
 * Never delete branches.
@@ -118,5 +119,6 @@ You are STRICTLY FORBIDDEN from:
 * Keep commits small and descriptive.
 
 ### Summary
-You may ONLY make local commits on your own branch.
+You may make local commits, and local merges between feature branches, on
+your own working branch.
 You may NEVER integrate your changes into `main` or interact with remotes.

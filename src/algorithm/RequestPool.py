@@ -13,9 +13,6 @@ class RequestState(Enum):
     CANCELLED = "cancelled"   # passenger gave up waiting
 
 
-_ACTIVE_STATES = {RequestState.PENDING, RequestState.ON_BUS}
-
-
 @dataclass
 class Request:
     """
@@ -52,6 +49,12 @@ class RequestPool:
 
     def __init__(self) -> None:
         self._requests: dict[str, Request] = {}
+        # Per-state index for O(k) state queries instead of O(n) scans.
+        # Insertion-ordered dicts preserve add-order, which get_pending
+        # relies on (BusAgent boards pending passengers in that order).
+        self._by_state: dict[RequestState, dict[str, Request]] = {
+            state: {} for state in RequestState
+        }
 
     def add(self, request: Request) -> None:
         """
@@ -64,6 +67,7 @@ class RequestPool:
                 f"Request with id '{request.id}' already exists."
             )
         self._requests[request.id] = request
+        self._by_state[request.state][request.id] = request
 
     def get(self, request_id: str) -> Request:
         """
@@ -76,38 +80,26 @@ class RequestPool:
 
     def get_all(self) -> list[Request]:
         """Return all active requests (PENDING and ON_BUS)."""
-        return [
-            r for r in self._requests.values()
-            if r.state in _ACTIVE_STATES
-        ]
+        return (
+            list(self._by_state[RequestState.PENDING].values())
+            + list(self._by_state[RequestState.ON_BUS].values())
+        )
 
     def get_pending(self) -> list[Request]:
         """Return requests where the passenger is still waiting at a stop."""
-        return [
-            r for r in self._requests.values()
-            if r.state is RequestState.PENDING
-        ]
+        return list(self._by_state[RequestState.PENDING].values())
 
     def get_on_bus(self) -> list[Request]:
         """Return requests where the passenger has already boarded."""
-        return [
-            r for r in self._requests.values()
-            if r.state is RequestState.ON_BUS
-        ]
+        return list(self._by_state[RequestState.ON_BUS].values())
 
     def get_fulfilled(self) -> list[Request]:
         """Return all requests that have been fulfilled."""
-        return [
-            r for r in self._requests.values()
-            if r.state is RequestState.FULFILLED
-        ]
+        return list(self._by_state[RequestState.FULFILLED].values())
 
     def get_cancelled(self) -> list[Request]:
         """Return all requests that have been cancelled."""
-        return [
-            r for r in self._requests.values()
-            if r.state is RequestState.CANCELLED
-        ]
+        return list(self._by_state[RequestState.CANCELLED].values())
 
     def update_state(
         self, request_id: str, new_state: RequestState
@@ -118,7 +110,13 @@ class RequestPool:
         :param new_state: The state to transition to.
         :raises KeyError: If no request with that ID exists.
         """
-        self._requests[request_id].state = new_state
+        request = self._requests[request_id]
+        old_state = request.state
+        if old_state is new_state:
+            return
+        del self._by_state[old_state][request_id]
+        request.state = new_state
+        self._by_state[new_state][request_id] = request
 
     def cancel(self, request_id: str) -> None:
         """
@@ -130,7 +128,7 @@ class RequestPool:
 
     def __len__(self) -> int:
         """Return the number of active requests (PENDING and ON_BUS)."""
-        return sum(
-            1 for r in self._requests.values()
-            if r.state in _ACTIVE_STATES
+        return (
+            len(self._by_state[RequestState.PENDING])
+            + len(self._by_state[RequestState.ON_BUS])
         )

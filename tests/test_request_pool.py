@@ -212,3 +212,48 @@ def test_get_cancelled_excludes_other_states() -> None:
 def test_get_cancelled_empty_when_none_cancelled() -> None:
     pool = RequestPool()
     assert pool.get_cancelled() == []
+
+
+# ---------------------------------------------------------------------------
+# State index consistency and ordering
+# ---------------------------------------------------------------------------
+
+def test_index_follows_transitions() -> None:
+    """A request moves between state buckets as it transitions."""
+    pool = RequestPool()
+    pool.add(make_request("r1"))
+    assert [r.id for r in pool.get_pending()] == ["r1"]
+
+    pool.update_state("r1", RequestState.ON_BUS)
+    assert pool.get_pending() == []
+    assert [r.id for r in pool.get_on_bus()] == ["r1"]
+    assert len(pool) == 1
+
+    pool.cancel("r1")
+    assert pool.get_on_bus() == []
+    assert [r.id for r in pool.get_cancelled()] == ["r1"]
+    assert len(pool) == 0
+
+
+def test_get_pending_preserves_add_order() -> None:
+    """get_pending returns requests in add-order, even after some board.
+
+    This order drives BusAgent's capacity-limited boarding tie-break, so it
+    must not change.
+    """
+    pool = RequestPool()
+    for rid in ("r1", "r2", "r3"):
+        pool.add(make_request(rid))
+    assert [r.id for r in pool.get_pending()] == ["r1", "r2", "r3"]
+
+    pool.update_state("r2", RequestState.ON_BUS)
+    assert [r.id for r in pool.get_pending()] == ["r1", "r3"]
+
+
+def test_update_state_noop_leaves_index_intact() -> None:
+    """Transitioning to the current state is a harmless no-op."""
+    pool = RequestPool()
+    pool.add(make_request("r1"))
+    pool.update_state("r1", RequestState.PENDING)
+    assert [r.id for r in pool.get_pending()] == ["r1"]
+    assert len(pool) == 1

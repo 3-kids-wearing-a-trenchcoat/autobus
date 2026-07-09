@@ -9,3 +9,5 @@
 ::: src.algorithm.FixedRoutePolicy.FixedRoutePolicy
 
 ::: src.algorithm.NearestUnservedPolicy.NearestUnservedPolicy
+
+::: src.algorithm.MarginalCostFilterPolicy.MarginalCostFilterPolicy

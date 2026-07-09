@@ -149,6 +149,11 @@ The capacity gate prevents the bus from routing to a pickup stop it cannot
 serve: when the bus is full, only dropoff stops are candidates until a
 passenger alights and frees a seat.
 
+Pickup candidates additionally pass through an overridable
+`_pickup_eligible(pickup_stop, position)` hook (default: always eligible).
+Subclasses use it to filter pickups without duplicating the greedy loop —
+see `MarginalCostFilterPolicy` below.
+
 ### Routing behaviour
 
 `plan()` simulates the bus's future state locally — it does not mutate real
@@ -173,3 +178,50 @@ policy = NearestUnservedPolicy(graph)
 ```
 
 No additional arguments are required beyond the `TransitGraph`.
+
+## MarginalCostFilterPolicy
+
+`MarginalCostFilterPolicy` subclasses `NearestUnservedPolicy` and adds a single
+rule: it **skips a pending pickup whose travel cost from the current position
+exceeds a threshold**. Skipped requests stay `PENDING` — they are not
+cancelled, so a later planning call (or, in a multi-bus fleet, another bus) may
+still serve them. This is the *soft-skip* model: the policy spends a small
+amount of unfulfilled demand to avoid expensive diversions, aiming to improve
+average wait and ride time and the wait tail relative to unfiltered greedy.
+
+Onboard passengers' dropoffs are committed obligations and are **never**
+filtered — only pickups pass through the cost gate. The filter reuses the
+`_pickup_eligible` hook on `NearestUnservedPolicy`, so the greedy loop itself is
+inherited unchanged.
+
+### Threshold
+
+The pickup cost threshold is either supplied explicitly or auto-derived, in the
+same spirit as `FixedRoutePolicy`'s explicit-or-auto `stop_order`:
+
+```python
+# Explicit absolute threshold (in travel-cost units):
+policy = MarginalCostFilterPolicy(graph, max_pickup_cost=0.4)
+
+# Auto-derived from the graph (default):
+policy = MarginalCostFilterPolicy(graph)
+
+# Auto-derived, but tuning how far a diversion may go:
+policy = MarginalCostFilterPolicy(graph, cost_factor=3.0)
+```
+
+When `max_pickup_cost` is omitted, the threshold is `cost_factor` (default
+`2.0`) times a **graph-derived baseline**: the median over stops of each stop's
+nearest-neighbor travel cost — a scale-free proxy for typical inter-stop
+spacing. Auto-derivation raises `ValueError` if the graph has fewer than two
+stops (no baseline can be computed); pass `max_pickup_cost` explicitly in that
+case.
+
+### Routing behaviour
+
+Identical to `NearestUnservedPolicy` except that, at each greedy step, pickup
+candidates whose `best_path_cost` from the simulated position exceeds the
+threshold are excluded. Unreachable pickups (infinite cost) are therefore
+filtered automatically. When every remaining candidate is a filtered pickup and
+there are no dropoffs, planning stops and the returned route may be shorter than
+`n_stops` (or empty) — leaving that demand pending.

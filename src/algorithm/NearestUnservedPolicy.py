@@ -37,7 +37,8 @@ class NearestUnservedPolicy(DispatchPolicy):
         route: list[str] = []
         for _ in range(n_stops):
             candidates = self._candidates(
-                sim_onboard, sim_pending, sim_remaining_capacity
+                sim_position, sim_onboard, sim_pending,
+                sim_remaining_capacity,
             )
             if not candidates:
                 break
@@ -62,12 +63,15 @@ class NearestUnservedPolicy(DispatchPolicy):
 
     def _candidates(
         self,
+        sim_position: str,
         sim_onboard: list[Request],
         sim_pending: list[Request],
         sim_remaining_capacity: int,
     ) -> set[str]:
         """
         Build the set of candidate stops for the next routing step.
+        :param sim_position: Simulated current position (node ID), used to
+            evaluate pickup eligibility.
         :param sim_onboard: Simulated onboard passengers.
         :param sim_pending: Simulated pending passengers.
         :param sim_remaining_capacity: Simulated remaining seat capacity.
@@ -75,10 +79,26 @@ class NearestUnservedPolicy(DispatchPolicy):
         """
         dropoff_candidates = {r.dropoff_stop_id for r in sim_onboard}
         if sim_remaining_capacity > 0:
-            pickup_candidates = {r.pickup_stop_id for r in sim_pending}
+            pickup_candidates = {
+                r.pickup_stop_id for r in sim_pending
+                if self._pickup_eligible(r.pickup_stop_id, sim_position)
+            }
         else:
             pickup_candidates = set()
         return dropoff_candidates | pickup_candidates
+
+    def _pickup_eligible(self, pickup_stop: str, position: str) -> bool:
+        """
+        Decide whether a pending pickup is worth considering as a candidate.
+
+        The base policy accepts every pickup; subclasses may override this to
+        filter pickups (e.g. by travel cost). Onboard dropoffs are never
+        subject to this hook.
+        :param pickup_stop: Candidate pickup stop node ID.
+        :param position: Simulated current position node ID.
+        :return: True if the pickup should be a candidate, False otherwise.
+        """
+        return True
 
     def _simulate_stop(
         self,

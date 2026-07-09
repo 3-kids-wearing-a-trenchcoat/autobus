@@ -11,3 +11,5 @@
 ::: src.algorithm.NearestUnservedPolicy.NearestUnservedPolicy
 
 ::: src.algorithm.SkipStopFixedRoutePolicy.SkipStopFixedRoutePolicy
+
+::: src.algorithm.MarginalCostFilterPolicy.MarginalCostFilterPolicy

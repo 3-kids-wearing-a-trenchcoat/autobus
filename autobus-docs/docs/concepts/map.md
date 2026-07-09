@@ -179,6 +179,13 @@ Additionally, each edge in `TransitGraph` also has certain data associated with 
 | `best_path_cost(origin_id, destination_id)` | `float` | Total travel time in seconds for the most efficient route from origin to destination |  
 | `best_tour(start_id, stop_ids)` | `list[str]` | Ordered list of node IDs (starting with `start_id`) representing the cheapest tour that visits all nodes in `stop_ids` |
 
+`best_path_cost` caches its work: the first query from a given origin runs a
+single-source Dijkstra and stores the distances to every node, so subsequent
+queries from that same origin — the common case when a policy scores many
+candidate stops from one position — are O(1) lookups. This is valid only
+because the graph is immutable after construction; the cache would need
+invalidating if edge weights ever change (e.g. future congestion modelling).
+
 > **Note:** The current `best_tour` implementation is a brute-force O(n!) permutation
 > search. It is only practical for small stop counts (up to ~8–10 stops) and should
 > be replaced with a more efficient algorithm (nearest-neighbor, dynamic programming,

@@ -87,3 +87,13 @@ The routing algorithm treats the two active states differently:
 
 Having separate query methods avoids filtering at every call site and makes the
 intent at the call site explicit.
+
+### Query performance
+
+`RequestPool` keeps a per-state index (updated as requests are added and
+transition state), so `get_pending`, `get_on_bus`, `get_fulfilled`, and
+`get_cancelled` each return only the requests in their bucket rather than
+scanning the whole pool. This matters because these queries run on every
+simulation tick (e.g. from `MetricsTracker`). The index preserves insertion
+order, so `get_pending` still returns requests in the order they were added —
+the order in which `BusAgent` boards passengers when capacity is limited.

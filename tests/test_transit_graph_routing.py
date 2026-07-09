@@ -2,6 +2,8 @@
 
 import unittest
 
+import networkx as nx
+
 from src.map.TransitGraph import TransitGraph
 from test_transit_graph import _PROVIDER
 
@@ -91,6 +93,59 @@ class TestTransitGraphRouting(unittest.TestCase):
             self.graph.best_tour("n1_n2", []),
             ["n1_n2"],
         )
+
+
+class TestTransitGraphDistanceCache(unittest.TestCase):
+    """Verify that best_path_cost caching preserves values and reuses work."""
+
+    def setUp(self) -> None:
+        self.graph = TransitGraph(_PROVIDER)
+
+    def test_matches_direct_dijkstra(self) -> None:
+        """Cached costs equal a direct networkx Dijkstra for every pair."""
+        nodes = list(self.graph.map.nodes)
+        for origin in nodes:
+            for destination in nodes:
+                if origin == destination or not nx.has_path(
+                    self.graph.map, origin, destination
+                ):
+                    continue
+                self.assertAlmostEqual(
+                    self.graph.best_path_cost(origin, destination),
+                    nx.dijkstra_path_length(
+                        self.graph.map, origin, destination, weight="weight"
+                    ),
+                )
+
+    def test_populates_cache_on_first_query(self) -> None:
+        """The first query from an origin fills the per-origin cache."""
+        self.assertNotIn("n4_n1", self.graph._dist_cache)
+        self.graph.best_path_cost("n4_n1", "n3_n4")
+        self.assertIn("n4_n1", self.graph._dist_cache)
+
+    def test_reuses_cached_source_for_other_destinations(self) -> None:
+        """One cached single-source result serves multiple destinations."""
+        self.graph.best_path_cost("n4_n1", "n3_n4")
+        # A different destination from the same (now cached) origin still
+        # returns the correct value without recomputing a new source.
+        self.assertAlmostEqual(
+            self.graph.best_path_cost("n4_n1", "n1_n2"),
+            nx.dijkstra_path_length(
+                self.graph.map, "n4_n1", "n1_n2", weight="weight"
+            ),
+        )
+
+    def test_unreachable_destination_raises(self) -> None:
+        """An unreachable destination raises NetworkXNoPath (as before)."""
+        # n2_n3 has no path back to n1_n2 only if disconnected; here every
+        # node is reachable, so use a node guaranteed absent from distances by
+        # querying across a manually severed copy.
+        severed = TransitGraph(_PROVIDER)
+        severed.map.remove_edge("n4_n1", "n1_n2")
+        severed.map.remove_edge("n4_n1", "n1_n3")
+        severed._dist_cache.clear()
+        with self.assertRaises(nx.NetworkXNoPath):
+            severed.best_path_cost("n4_n1", "n1_n2")
 
 
 if __name__ == "__main__":

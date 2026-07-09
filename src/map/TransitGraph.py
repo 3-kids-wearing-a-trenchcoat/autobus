@@ -75,6 +75,10 @@ class TransitGraph:
     def __init__(self, provider: MapProvider):
         self.provider: MapProvider = provider
         self.map: nx.DiGraph = _build_map(self.provider)
+        # Cache of single-source shortest-path distances, keyed by origin.
+        # Safe because the map is static after construction; must be cleared
+        # if the map ever becomes mutable (future congestion/road-block TODO).
+        self._dist_cache: dict[str, dict[str, float]] = {}
 
     def get_stops(self) -> list[StopRecord]:
         """Get a list of all bus stops"""
@@ -103,11 +107,34 @@ class TransitGraph:
     def best_path_cost(self, origin_id: str, destination_id: str) -> float:
         """
         Calculate the cost of the best route from origin to destination.
+
+        Distances from a given origin are computed once (a single-source
+        Dijkstra) and cached, so repeated queries from the same origin — the
+        common case when scoring many candidate stops — are O(1) lookups. This
+        is valid because the map is static after construction.
         :param origin_id: ID of the start node
         :param destination_id: ID of the target node
         :return: total weight of the most efficient path from origin to destination
         """
-        return nx.dijkstra_path_length(self.map, origin_id, destination_id, weight="weight")
+        distances = self._distances_from(origin_id)
+        if destination_id not in distances:
+            raise nx.NetworkXNoPath(
+                f"No path between {origin_id} and {destination_id}.")
+        return distances[destination_id]
+
+    def _distances_from(self, origin_id: str) -> dict[str, float]:
+        """
+        Return the shortest-path cost from origin_id to every reachable node,
+        computing it once and caching the result.
+        :param origin_id: ID of the start node
+        :return: mapping from reachable node ID to its shortest-path cost
+        """
+        cached = self._dist_cache.get(origin_id)
+        if cached is None:
+            cached = nx.single_source_dijkstra_path_length(
+                self.map, origin_id, weight="weight")
+            self._dist_cache[origin_id] = cached
+        return cached
 
     def best_tour(self, start_id: str, stop_ids: list[str]) -> list[str]:
         """

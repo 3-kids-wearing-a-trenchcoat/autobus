@@ -76,8 +76,10 @@ class TransitGraph:
         self.provider: MapProvider = provider
         self.map: nx.DiGraph = _build_map(self.provider)
         # Cache of single-source shortest-path distances, keyed by origin.
-        # Safe because the map is static after construction; must be cleared
-        # if the map ever becomes mutable (future congestion/road-block TODO).
+        # Safe because the map is static after construction.
+        # TODO: when the map becomes mutable (e.g. congestion / road-blocks
+        # changing edge weights), invalidate this cache on every mutation —
+        # clear it wholesale, or drop only the affected origins.
         self._dist_cache: dict[str, dict[str, float]] = {}
 
     def get_stops(self) -> list[StopRecord]:

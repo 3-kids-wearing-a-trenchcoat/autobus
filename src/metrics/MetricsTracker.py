@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from src.algorithm.RequestPool import RequestPool
 
 
-@dataclass
+@dataclass(slots=True)
 class TickSnapshot:
     """
     Metrics recorded at a single simulation tick.

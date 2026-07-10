@@ -13,7 +13,7 @@ class RequestState(Enum):
     CANCELLED = "cancelled"   # passenger gave up waiting
 
 
-@dataclass
+@dataclass(slots=True)
 class Request:
     """
     A single passenger request.

@@ -64,6 +64,7 @@ def run_trial(
     silent: bool = False,
     record_animation: bool = False,
     keep_tick_history: bool = False,
+    max_wait_s: float | None = None,
 ) -> TrialResult:
     """
     Run one simulation trial and return the results.
@@ -96,6 +97,10 @@ def run_trial(
         TrialResult.tick_history (needed by plot_occupancy). Defaults to
         False so bulk comparison runs don't accumulate one snapshot per
         tick per trial; TrialResult.tick_count is always populated.
+    :param max_wait_s: Maximum time a request may stay PENDING before the
+        passenger abandons it (the request is cancelled). None disables
+        abandonment, so unserved requests wait indefinitely and the run
+        continues until max_time. Defaults to None.
     :return: TrialResult with KPIs, tick history, and timing
         distributions.
     """
@@ -135,6 +140,7 @@ def run_trial(
         pool=pool,
         provider=provider,
         recorder=recorder,
+        max_wait_s=max_wait_s,
     )
     runner = SimulationRunner(backend=backend, dt=dt, max_time=max_time)
 

@@ -22,6 +22,8 @@ class MockBackend(SimulationBackend):
     :param pool: Shared request pool.
     :param provider: Map source used to build the internal TransitGraph.
     :param recorder: Optional animation recorder. Defaults to None.
+    :param max_wait_s: Maximum PENDING wait before abandonment; forwarded
+        to SimulationBackend. None disables abandonment. Defaults to None.
     """
 
     def __init__(
@@ -32,11 +34,13 @@ class MockBackend(SimulationBackend):
         pool: RequestPool,
         provider: MapProvider,
         recorder: AnimationRecorder | None = None,
+        max_wait_s: float | None = None,
     ) -> None:
         # Must be set before super().__init__(), which calls _travel_time.
         self._transit_graph = TransitGraph(provider)
         super().__init__(
-            agent, demand_generator, metrics_tracker, pool, recorder
+            agent, demand_generator, metrics_tracker, pool, recorder,
+            max_wait_s=max_wait_s,
         )
 
     def _travel_time(self, from_id: str, to_id: str) -> float:

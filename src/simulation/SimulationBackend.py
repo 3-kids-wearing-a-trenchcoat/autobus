@@ -23,6 +23,9 @@ class SimulationBackend(ABC):
     :param pool: Shared request pool; read here only for ``is_done``.
     :param recorder: Optional animation recorder; when provided, captures a
         frame on each stop arrival. Defaults to None.
+    :param max_wait_s: Maximum time a request may stay PENDING before the
+        passenger gives up and the request is cancelled. None disables
+        abandonment (requests wait indefinitely). Defaults to None.
     """
 
     def __init__(
@@ -32,12 +35,14 @@ class SimulationBackend(ABC):
         metrics_tracker: MetricsTracker,
         pool: RequestPool,
         recorder: AnimationRecorder | None = None,
+        max_wait_s: float | None = None,
     ) -> None:
         self._agent = agent
         self._demand_generator = demand_generator
         self._metrics_tracker = metrics_tracker
         self._pool = pool
         self._recorder = recorder
+        self._max_wait_s = max_wait_s
         self._sim_time: float = 0.0
         self._elapsed_toward_next: float = 0.0
         self._time_to_next_stop: float | None = (
@@ -65,12 +70,14 @@ class SimulationBackend(ABC):
         """
         Advance the simulation by dt seconds.
 
-        Per-tick order: advance time → generate demand → process movement
-        (firing on_arrival for each stop reached) → record metrics snapshot.
+        Per-tick order: advance time → generate demand → expire long-waiting
+        requests → process movement (firing on_arrival for each stop reached)
+        → record metrics snapshot.
         :param dt: Time delta in seconds.
         """
         self._sim_time += dt
         self._demand_generator.update(self._sim_time)
+        self._expire_pending()
         self._process_movement(dt)
         self._metrics_tracker.record_tick(self._sim_time)
 
@@ -94,6 +101,22 @@ class SimulationBackend(ABC):
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    def _expire_pending(self) -> None:
+        """
+        Cancel PENDING requests whose passengers have waited too long.
+
+        A request is abandoned once it has been PENDING for at least
+        ``max_wait_s`` seconds (measured from ``created_at``). Onboard
+        (ON_BUS) requests are committed and never abandoned. No-op when
+        ``max_wait_s`` is None. ``get_pending`` returns a fresh list, so
+        cancelling under it is safe.
+        """
+        if self._max_wait_s is None:
+            return
+        for request in self._pool.get_pending():
+            if self._sim_time - request.created_at >= self._max_wait_s:
+                self._pool.cancel(request.id)
 
     def _compute_next_travel_time(self) -> float | None:
         """Return travel time to the next stop, or None if route is empty."""

@@ -1,13 +1,14 @@
 """Greedy dispatch policy that skips pickups whose diversion cost is too high."""
 
 import statistics
+from itertools import permutations
 
 from src.algorithm.NearestUnservedPolicy import NearestUnservedPolicy
 from src.map.TransitGraph import TransitGraph
 
 # A pending pickup is considered worth serving if its travel cost is within
-# this many times the typical inter-stop spacing (median nearest-neighbor
-# stop cost). Tunable via the cost_factor constructor argument.
+# this many times the typical inter-stop travel cost (the median cost over all
+# ordered stop pairs). Tunable via the cost_factor constructor argument.
 _DEFAULT_COST_FACTOR = 2.0
 
 
@@ -61,12 +62,14 @@ class MarginalCostFilterPolicy(NearestUnservedPolicy):
 
     def _baseline_stop_cost(self) -> float:
         """
-        Compute the median nearest-neighbor travel cost between stops.
+        Compute the median travel cost over all ordered pairs of stops.
 
-        For each stop, the minimum best_path_cost to any other stop is taken;
-        the median of those per-stop minima is returned as a scale-free proxy
-        for typical inter-stop spacing.
-        :return: Median nearest-neighbor stop cost.
+        This is the distance the bus typically covers to get from one stop to
+        another, which is the scale a pickup diversion should be judged
+        against. (Nearest-neighbor spacing, by contrast, only measures how
+        tightly stops cluster and badly underestimates the cost of reaching an
+        arbitrary pending pickup, starving the filter.)
+        :return: Median ordered-pair stop-to-stop cost.
         :raises ValueError: If the graph has fewer than two stops.
         """
         stop_ids = [s.edge.id for s in self._graph.get_stops()]
@@ -75,12 +78,8 @@ class MarginalCostFilterPolicy(NearestUnservedPolicy):
                 "Cannot auto-derive a pickup cost threshold: the graph has "
                 "fewer than two stops. Pass max_pickup_cost explicitly."
             )
-        nearest_costs = [
-            min(
-                self._graph.best_path_cost(origin, other)
-                for other in stop_ids
-                if other != origin
-            )
-            for origin in stop_ids
+        pairwise_costs = [
+            self._graph.best_path_cost(origin, destination)
+            for origin, destination in permutations(stop_ids, 2)
         ]
-        return statistics.median(nearest_costs)
+        return statistics.median(pairwise_costs)

@@ -34,8 +34,8 @@ class TestMarginalCostFilterPolicy(unittest.TestCase):
     Relevant travel costs (length / speed limit, so small fractional values):
       From "n4_n1":  _S1 costs ~0.083,  _S2 costs ~0.222.
       Stop-to-stop:  _S1 <-> _S2 costs ~0.194 each way, so the auto baseline
-      (median nearest-neighbor) is ~0.194 and the default auto threshold is
-      ~0.388.
+      (median over the two ordered pairs) is ~0.194 and the default auto
+      threshold is ~0.388.
     """
 
     def setUp(self) -> None:
@@ -97,7 +97,7 @@ class TestMarginalCostFilterPolicy(unittest.TestCase):
     def test_auto_threshold(self) -> None:
         """Auto-derivation yields the expected baseline and serves near demand."""
         policy = MarginalCostFilterPolicy(self.graph)
-        # median nearest-neighbor stop cost ~0.194; default factor 2.0 → ~0.388.
+        # median pairwise stop cost ~0.194; default factor 2.0 → ~0.388.
         self.assertAlmostEqual(policy._threshold, 0.3877, places=4)
         state = BusState(
             position="n4_n1",

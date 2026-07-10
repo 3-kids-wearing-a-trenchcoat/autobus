@@ -29,7 +29,10 @@ class TrialResult:
     Results from a single simulation run.
 
     :param kpi: Aggregate KPIs from the completed run.
-    :param tick_history: Per-tick snapshots recorded during the run.
+    :param tick_count: Total number of per-tick snapshots recorded during
+        the run. Always populated, even when tick_history is dropped.
+    :param tick_history: Per-tick snapshots recorded during the run. Empty
+        unless run_trial was called with keep_tick_history=True.
     :param wait_times: Wait time (s) for each fulfilled request.
     :param ride_times: Ride time (s) for each fulfilled request.
     :param animation_frames: Per-stop-arrival snapshots for animation;
@@ -39,6 +42,7 @@ class TrialResult:
     """
 
     kpi: KPISnapshot
+    tick_count: int
     tick_history: list[TickSnapshot]
     wait_times: list[float]
     ride_times: list[float]
@@ -59,6 +63,7 @@ def run_trial(
     max_time: float = 36000.0,
     silent: bool = False,
     record_animation: bool = False,
+    keep_tick_history: bool = False,
 ) -> TrialResult:
     """
     Run one simulation trial and return the results.
@@ -87,6 +92,10 @@ def run_trial(
         and store them in TrialResult.animation_frames. Also exposes
         the TransitGraph via TrialResult.transit_graph. Defaults to
         False to avoid overhead in comparison runs.
+    :param keep_tick_history: If True, retain the per-tick snapshots in
+        TrialResult.tick_history (needed by plot_occupancy). Defaults to
+        False so bulk comparison runs don't accumulate one snapshot per
+        tick per trial; TrialResult.tick_count is always populated.
     :return: TrialResult with KPIs, tick history, and timing
         distributions.
     """
@@ -141,7 +150,8 @@ def run_trial(
 
     return TrialResult(
         kpi=kpi,
-        tick_history=metrics.tick_history,
+        tick_count=metrics.tick_count,
+        tick_history=metrics.tick_history if keep_tick_history else [],
         wait_times=wait_times,
         ride_times=ride_times,
         animation_frames=recorder.frames if recorder is not None else [],

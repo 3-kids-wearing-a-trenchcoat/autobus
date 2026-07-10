@@ -186,6 +186,12 @@ def _plot_occupancy_row(
     occ_ax: Axes = axes[0]
     pend_ax: Axes = axes[1]
 
+    if any(not r.tick_history for r in trials):
+        raise ValueError(
+            f"Cannot plot occupancy for '{label}': tick history was not "
+            "retained. Re-run with keep_tick_history=True."
+        )
+
     # Align trials by tick index (dt is constant, so index maps to time)
     # and truncate to the shortest run so every tick has a value from all
     # trials.

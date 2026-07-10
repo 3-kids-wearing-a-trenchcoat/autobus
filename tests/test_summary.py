@@ -45,6 +45,7 @@ def _trial(
     """Build a TrialResult from a KPISnapshot and optional sample lists."""
     return TrialResult(
         kpi=kpi,
+        tick_count=0,
         tick_history=[],
         wait_times=wait_times if wait_times is not None else [],
         ride_times=ride_times if ride_times is not None else [],

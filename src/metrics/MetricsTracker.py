@@ -101,6 +101,11 @@ class MetricsTracker:
         """Return a copy of the recorded per-tick snapshots."""
         return list(self._ticks)
 
+    @property
+    def tick_count(self) -> int:
+        """Number of recorded per-tick snapshots (no list copy)."""
+        return len(self._ticks)
+
     def snapshot(self, sim_time: float) -> KPISnapshot:
         """
         Compute aggregate KPIs as of the given simulation time.

@@ -19,6 +19,11 @@ class NearestUnservedPolicy(DispatchPolicy):
     simulation state is advanced (alight then board), and the process
     repeats for up to n_stops steps. Planning stops early if no active
     demand remains.
+
+    Progress guarantee: whenever the bus has free capacity and pending
+    demand exists, at least one candidate is always produced (see
+    ``_candidates``). This is a no-op for the base policy but prevents
+    filtering subclasses from stranding an idle bus.
     """
 
     def plan(self, state: BusState, n_stops: int) -> list[str]:
@@ -85,7 +90,23 @@ class NearestUnservedPolicy(DispatchPolicy):
             }
         else:
             pickup_candidates = set()
-        return dropoff_candidates | pickup_candidates
+
+        candidates = dropoff_candidates | pickup_candidates
+        if not candidates and sim_remaining_capacity > 0 and sim_pending:
+            # Progress guarantee: never strand an idle bus while serveable
+            # demand exists. When _pickup_eligible filters out every pending
+            # pickup (a subclass hook; always False here), the empty route
+            # would keep the bus stationary, so its position never changes and
+            # nothing ever becomes eligible — a permanent deadlock. Fall back
+            # to the nearest pending pickup so the bus keeps moving.
+            nearest = min(
+                sim_pending,
+                key=lambda r: self._graph.best_path_cost(
+                    sim_position, r.pickup_stop_id
+                ),
+            )
+            candidates = {nearest.pickup_stop_id}
+        return candidates
 
     def _pickup_eligible(self, pickup_stop: str, position: str) -> bool:
         """

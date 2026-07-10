@@ -41,8 +41,30 @@ class TestMarginalCostFilterPolicy(unittest.TestCase):
     def setUp(self) -> None:
         self.graph = TransitGraph(_PROVIDER)
 
-    def test_far_pickup_skipped(self) -> None:
-        """A pending pickup beyond the threshold is skipped (stays pending)."""
+    def test_far_pickup_skipped_when_alternative_exists(self) -> None:
+        """A far pickup is passed over while a nearer eligible one exists."""
+        policy = MarginalCostFilterPolicy(self.graph, max_pickup_cost=0.15)
+        state = BusState(
+            position="n4_n1",
+            onboard=[],
+            pending_requests=[
+                _req("far", pickup=_S2, dropoff=_S1),   # ~0.222 > 0.15
+                _req("near", pickup=_S1, dropoff=_S2),  # ~0.083 <= 0.15
+            ],
+            remaining_capacity=3,
+        )
+        # Only _S1 is eligible, so it is chosen first; the far _S2 pickup is
+        # not what pulls the bus off its idle position.
+        self.assertEqual(policy.plan(state, n_stops=3)[0], _S1)
+
+    def test_lone_far_pickup_served_as_fallback(self) -> None:
+        """A far pickup that is the only demand is served, not stranded.
+
+        The progress guarantee in NearestUnservedPolicy._candidates keeps the
+        bus from deadlocking: rather than returning an empty route (which would
+        freeze it at its position forever), it falls back to the nearest
+        pending pickup even though the filter would reject it.
+        """
         policy = MarginalCostFilterPolicy(self.graph, max_pickup_cost=0.15)
         state = BusState(
             position="n4_n1",
@@ -50,8 +72,9 @@ class TestMarginalCostFilterPolicy(unittest.TestCase):
             pending_requests=[_req("r1", pickup=_S2, dropoff=_S1)],
             remaining_capacity=3,
         )
-        # _S2 costs ~0.222 > 0.15 → filtered out; no other candidates.
-        self.assertEqual(policy.plan(state, n_stops=3), [])
+        # _S2 (~0.222) exceeds the threshold but is the only option, so the
+        # fallback serves it and then the committed dropoff _S1 follows.
+        self.assertEqual(policy.plan(state, n_stops=3), [_S2, _S1])
 
     def test_near_pickup_served(self) -> None:
         """A pending pickup within the threshold is served."""

@@ -20,6 +20,11 @@ class MarginalCostFilterPolicy(NearestUnservedPolicy):
     bus (the soft-skip model). Onboard dropoffs are committed obligations and
     are never filtered.
 
+    The skip is not absolute: via the base policy's progress guarantee, when
+    every pending pickup is filtered out and the bus would otherwise idle, the
+    nearest pending pickup is served anyway rather than stranding the bus. In
+    other words, far pickups are deferred only while nearer work exists.
+
     The threshold is either supplied explicitly (max_pickup_cost) or derived
     from the graph as cost_factor times the median nearest-neighbor stop cost.
     """

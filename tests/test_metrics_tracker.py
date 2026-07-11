@@ -273,6 +273,40 @@ def test_snapshot_fulfillment_rate_all_cancelled() -> None:
 
 
 # ---------------------------------------------------------------------------
+# served_fraction
+# ---------------------------------------------------------------------------
+
+def test_snapshot_served_fraction_none_when_pool_empty() -> None:
+    kpi = MetricsTracker(RequestPool()).snapshot(sim_time=10.0)
+    assert kpi.served_fraction is None
+
+
+def test_snapshot_served_fraction_all_fulfilled() -> None:
+    pool = RequestPool()
+    for i in range(3):
+        pool.add(make_fulfilled_request(f"r{i}", 0.0, 5.0, 10.0))
+    kpi = MetricsTracker(pool).snapshot(sim_time=10.0)
+    assert kpi.served_fraction == pytest.approx(1.0)
+
+
+def test_snapshot_served_fraction_counts_stranded_and_in_flight() -> None:
+    """PENDING and ON_BUS demand lowers served_fraction below fulfillment_rate.
+
+    3 fulfilled + 1 cancelled + 1 pending gives served_fraction 3/5 = 0.6,
+    while fulfillment_rate (terminal only) is 3/4 = 0.75.
+    """
+    pool = RequestPool()
+    for i in range(3):
+        pool.add(make_fulfilled_request(f"r{i}", 0.0, 5.0, 10.0))
+    pool.add(make_pending_request("c1"))
+    pool.cancel("c1")
+    pool.add(make_pending_request("p1"))
+    kpi = MetricsTracker(pool).snapshot(sim_time=10.0)
+    assert kpi.served_fraction == pytest.approx(0.6)
+    assert kpi.fulfillment_rate == pytest.approx(0.75)
+
+
+# ---------------------------------------------------------------------------
 # throughput
 # ---------------------------------------------------------------------------
 

@@ -46,6 +46,11 @@ class KPISnapshot:
     :param fulfillment_rate: Fraction of terminal requests that were
         fulfilled (fulfilled / (fulfilled + cancelled)).
         None if no terminal requests exist yet.
+    :param served_fraction: Fraction of ALL requests ever created that were
+        fulfilled (fulfilled / (fulfilled + cancelled + pending + on_bus)).
+        Unlike fulfillment_rate, still-waiting (PENDING) and in-flight
+        (ON_BUS) demand counts against it, so stranded requests are not
+        hidden. None if the pool holds no requests yet.
     :param throughput: Fulfilled requests per simulation minute
         (fulfilled_count / sim_time * 60).
         None if sim_time is 0.
@@ -59,6 +64,7 @@ class KPISnapshot:
     max_wait_time: float | None
     p90_wait_time: float | None
     fulfillment_rate: float | None
+    served_fraction: float | None
     throughput: float | None
 
 
@@ -126,6 +132,16 @@ class MetricsTracker:
         fulfillment_rate = (
             n_fulfilled / n_terminal if n_terminal > 0 else None
         )
+        # served_fraction counts still-waiting and in-flight demand in the
+        # denominator, so stranded requests lower it (unlike fulfillment_rate).
+        n_total = (
+            n_terminal
+            + len(self._pool.get_pending())
+            + len(self._pool.get_on_bus())
+        )
+        served_fraction = (
+            n_fulfilled / n_total if n_total > 0 else None
+        )
         throughput = (
             n_fulfilled / sim_time * 60 if sim_time > 0 else None
         )
@@ -140,6 +156,7 @@ class MetricsTracker:
                 max_wait_time=None,
                 p90_wait_time=None,
                 fulfillment_rate=fulfillment_rate,
+                served_fraction=served_fraction,
                 throughput=throughput,
             )
 
@@ -163,5 +180,6 @@ class MetricsTracker:
                 )[8]
             ),
             fulfillment_rate=fulfillment_rate,
+            served_fraction=served_fraction,
             throughput=throughput,
         )

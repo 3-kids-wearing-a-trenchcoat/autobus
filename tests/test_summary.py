@@ -21,6 +21,7 @@ def _kpi(
     p90_wait: float | None = 50.0,
     mean_ride: float | None = 20.0,
     fulfillment: float | None = 0.8,
+    served: float | None = 0.9,
     throughput: float | None = 1.5,
 ) -> KPISnapshot:
     """Build a KPISnapshot with sensible defaults for testing."""
@@ -33,6 +34,7 @@ def _kpi(
         max_wait_time=None,
         p90_wait_time=p90_wait,
         fulfillment_rate=fulfillment,
+        served_fraction=served,
         throughput=throughput,
     )
 
@@ -83,7 +85,7 @@ def test_table_structure_has_column_per_policy() -> None:
     # Separator row: one '---' per header column.
     assert lines[1].count("---") == len(header_cells)
     # One data row per measured property.
-    assert len(lines) == 2 + 13
+    assert len(lines) == 2 + 14
 
 
 def test_mean_and_moe_cell_formatting() -> None:
@@ -160,3 +162,14 @@ def test_percentage_scaling() -> None:
         if line.startswith("| Fulfillment rate |")
     )
     assert "75.0 %" in row
+
+
+def test_served_fraction_row_scaled_as_percentage() -> None:
+    """Served fraction has its own row, scaled by 100 with a % unit."""
+    results = {"P": [_trial(_kpi(served=0.865))]}
+    table = _format_summary_table(results, 0.95)
+    row = next(
+        line for line in table.splitlines()
+        if line.startswith("| Served fraction |")
+    )
+    assert "86.5 %" in row

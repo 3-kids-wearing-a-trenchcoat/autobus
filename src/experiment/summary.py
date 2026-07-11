@@ -26,6 +26,7 @@ _ROW_SPECS: list[_RowSpec] = [
     ("P90 wait time", lambda r: r.kpi.p90_wait_time, "s"),
     ("Mean ride time", lambda r: r.kpi.mean_ride_time, "s"),
     ("Fulfillment rate", lambda r: r.kpi.fulfillment_rate, "%"),
+    ("Served fraction", lambda r: r.kpi.served_fraction, "%"),
     ("Throughput", lambda r: r.kpi.throughput, "req/min"),
     ("Tick snapshots", lambda r: r.tick_count, ""),
     ("Fulfilled (wait samples)", lambda r: len(r.wait_times), ""),

@@ -271,3 +271,71 @@ threshold are excluded. Unreachable pickups (infinite cost) are therefore
 filtered automatically. When every remaining candidate is a filtered pickup and
 there are no dropoffs, planning stops and the returned route may be shorter than
 `n_stops` (or empty) — leaving that demand pending.
+
+## RideBoundedGreedyPolicy
+
+`RideBoundedGreedyPolicy` subclasses `NearestUnservedPolicy` and adds a single
+rule aimed at a specific weakness of plain greedy routing: its **onboard ride
+time**. Because plain greedy always heads for the nearest candidate, under dense
+demand there is almost always a nearer *pickup* than any onboard passenger's
+dropoff, so the bus keeps deferring dropoffs and drags its riders around — a ride
+tail that grows without bound as demand rises. This policy caps that tail by
+forcing the bus to deliver riders before they are over-detoured.
+
+Unlike `MarginalCostFilterPolicy`, it **never rejects** demand: the rule only
+*reorders* stops. A pickup passed over because riders need delivering stays
+`PENDING` and is served on a later step (or a later plan) once the bus has
+capacity to detour again. Coverage therefore matches the base greedy policy
+while the ride tail is bounded — the appropriate trade-off for a single bus,
+where a rejected request has no other bus to fall back on.
+
+### The ride-slack gate
+
+Each onboard rider has a **ride budget** — the most along-route travel their
+trip should incur:
+
+- either an explicit absolute `max_ride_cost`, applied to every rider, or
+- `ride_factor` times that rider's **direct** cost
+  (`best_path_cost(pickup_stop_id, dropoff_stop_id)`), so the tolerated detour
+  scales with trip length.
+
+At each greedy step, for every onboard rider the policy computes the *slack*
+that remains if it delivered them next:
+
+```
+slack = budget − (ride_so_far + best_path_cost(position, dropoff_stop_id))
+```
+
+where `ride_so_far` is the along-route distance the rider has accrued **within
+the current plan**. If any onboard rider has non-positive slack, the *gate
+fires*: pickup candidates are suspended for that step and only onboard dropoffs
+are considered, so the bus makes delivery progress. When every rider still has
+slack, the inherited candidate set is used unchanged and the policy behaves
+exactly like `NearestUnservedPolicy` (including its capacity gate and progress
+guarantee). Selection is always the nearest candidate by `best_path_cost`.
+
+Because ride is measured within a single plan, a rider already onboard when the
+plan begins starts from `ride_so_far = 0` — the portion of their ride before
+this plan is not visible, since `plan()` has no access to simulation time. This
+is the same accepted limitation as `ConstrainedInsertionPolicy`'s geometric
+bound: frequent re-planning re-checks the bound each time the bus reaches a
+committed stop, so the cap is enforced repeatedly over the trip rather than once.
+
+### Construction
+
+```python
+# Per-rider budget = ride_factor × direct trip cost (default ride_factor=1.5):
+policy = RideBoundedGreedyPolicy(graph)
+
+# Tighter or looser ride cap via the trade-off knob:
+policy = RideBoundedGreedyPolicy(graph, ride_factor=1.3)
+
+# Explicit absolute cap applied to every rider (in travel-cost units):
+policy = RideBoundedGreedyPolicy(graph, max_ride_cost=1200.0)
+```
+
+A larger `ride_factor` (or `max_ride_cost`) lets the bus detour more before
+delivering, trading a longer ride tail for slightly higher coverage; a smaller
+one caps rides more aggressively. Unlike `MarginalCostFilterPolicy`, no minimum
+stop count is required — with an empty bus the gate can never fire, so the policy
+degrades gracefully to plain greedy.

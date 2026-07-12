@@ -13,3 +13,5 @@
 ::: src.algorithm.SkipStopFixedRoutePolicy.SkipStopFixedRoutePolicy
 
 ::: src.algorithm.MarginalCostFilterPolicy.MarginalCostFilterPolicy
+
+::: src.algorithm.RideBoundedGreedyPolicy.RideBoundedGreedyPolicy

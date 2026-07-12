@@ -339,3 +339,89 @@ delivering, trading a longer ride tail for slightly higher coverage; a smaller
 one caps rides more aggressively. Unlike `MarginalCostFilterPolicy`, no minimum
 stop count is required — with an empty bus the gate can never fire, so the policy
 degrades gracefully to plain greedy.
+
+## ConstrainedInsertionPolicy
+
+`ConstrainedInsertionPolicy` subclasses `DispatchPolicy` directly (not the
+`NearestUnservedPolicy` greedy family) and takes a different approach: rather
+than picking one nearest stop at a time, it builds the route by **cheapest
+insertion**. Each pending request is evaluated against the *entire* planned
+sequence — the policy tries inserting the request's pickup and dropoff at every
+valid slot pair and keeps the cheapest placement that stays feasible. A request
+with no feasible placement is **rejected**: it is left out of the route and
+stays `PENDING` (the *soft-skip* model), free to be served by a later plan.
+
+### Route representation
+
+Internally the route is a list of **events**, each a
+`(node_id, load_delta, owner_id)` triple: `load_delta` is `+1` for a pickup and
+`-1` for a dropoff, and `owner_id` ties the event to the request it serves so
+per-rider ride cost can be measured. Onboard passengers seed the route first —
+their dropoffs are ordered nearest-neighbor from the current position — and are
+**never rejected**, though their remaining leg is still subject to the ride
+bound. Pending requests are then inserted in **FIFO order** (`created_at`) for
+fairness; regret / cheapest-first insertion is a noted later refinement.
+
+### Insertion and the two bounds
+
+For each request, `_best_insertion` tries every `(pickup slot, dropoff slot)`
+pair with the pickup no later than the dropoff, discards pairs that violate a
+constraint, and keeps the one giving the lowest total sequence cost. Three
+constraints gate a placement:
+
+- **Capacity** — the running onboard load (starting from the passengers already
+  aboard) must never exceed the bus's total seats.
+- **Wait bound** — the along-route travel cost from the current position to the
+  newly served pickup must not exceed `max_wait_cost`.
+- **Ride bound** — after the insertion, *every* affected rider's along-route
+  pickup→dropoff cost must stay within `ride_factor` times their direct
+  shortest-path cost. Crucially this protects **all** riders, not just the new
+  one: any already-planned passenger the insertion would detour is checked too,
+  guarding mean ride time against excessive ride-sharing. An onboard rider (whose
+  pickup is already in the past) is measured from the current position to their
+  dropoff.
+
+A subtle but important interaction: with pure cheapest insertion, placing a
+pickup immediately followed by its dropoff is always ride-clean, so the ride
+bound can only ever reject a request in combination with the wait bound — the
+wait bound forbids the cheap adjacent placement, and the remaining wait-feasible
+slots are what risk over-detouring someone. The ride bound is therefore inert
+unless a finite wait bound is also in force.
+
+Note that "wait" here is the **forward** along-route time from the current
+position to the pickup, not the absolute wait since the request was created —
+`plan()` has no access to simulation time. The bound thus governs the
+routing-controlled portion of wait, not time already spent queueing.
+
+### Rejection and the progress guarantee
+
+A rejected request simply does not appear in the route and remains `PENDING`.
+If *every* pending request is rejected and the bus would otherwise idle, a
+progress fallback serves the nearest pending pickup anyway — without this, an
+all-rejected plan would return an empty route and freeze the bus at its position
+forever (its position never changes, so nothing new ever becomes feasible). This
+mirrors the progress guarantee in `NearestUnservedPolicy`.
+
+### Construction
+
+```python
+# Auto-derived wait bound (default): wait_factor × median inter-stop cost,
+# with ride_factor = 1.5.
+policy = ConstrainedInsertionPolicy(graph)
+
+# Explicit absolute wait bound (in travel-cost units):
+policy = ConstrainedInsertionPolicy(graph, max_wait_cost=0.4)
+
+# Tune the auto-derived wait bound and the ride detour allowance:
+policy = ConstrainedInsertionPolicy(graph, wait_factor=3.0, ride_factor=2.0)
+```
+
+When `max_wait_cost` is omitted, the wait bound is `wait_factor` (default `2.0`)
+times a graph-derived baseline — the median travel cost over all ordered stop
+pairs, the same baseline `MarginalCostFilterPolicy` uses. Auto-derivation raises
+`ValueError` if the graph has fewer than two stops; pass `max_wait_cost`
+explicitly in that case.
+
+Because it re-evaluates every slot pair for every request, this policy is the
+most computationally expensive of the family — a deliberate trade of planning
+cost for route quality and the ability to reason about service bounds.

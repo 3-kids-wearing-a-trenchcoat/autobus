@@ -15,3 +15,5 @@
 ::: src.algorithm.MarginalCostFilterPolicy.MarginalCostFilterPolicy
 
 ::: src.algorithm.RideBoundedGreedyPolicy.RideBoundedGreedyPolicy
+
+::: src.algorithm.ConstrainedInsertionPolicy.ConstrainedInsertionPolicy

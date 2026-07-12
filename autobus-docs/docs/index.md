@@ -20,9 +20,16 @@ src/
 │   ├── graph.py               # PlanarStreetGraph and supporting types
 │   └── map_data.py            # Data records: StopRecord, RoadNodeRecord, RoadEdgeRecord
 ├── algorithm/
-│   ├── RequestPool.py         # Passenger request data model and pool
-│   ├── DispatchPolicy.py      # Dispatch policy interface and bus state
-│   └── BusAgent.py            # Bus agent: state management and re-planning
+│   ├── RequestPool.py                 # Passenger request data model and pool
+│   ├── DispatchPolicy.py              # Dispatch policy interface and bus state
+│   ├── FixedRoutePolicy.py            # Baseline: fixed repeating cycle
+│   ├── SkipStopFixedRoutePolicy.py    # Fixed cycle, skipping stops with no demand
+│   ├── DeviatedFixedRoutePolicy.py    # Skip-stop backbone with detours (see caveat)
+│   ├── NearestUnservedPolicy.py       # Greedy: nearest demanded stop
+│   ├── MarginalCostFilterPolicy.py    # Greedy with a pickup-cost filter
+│   ├── RideBoundedGreedyPolicy.py     # Greedy with an onboard ride-slack gate
+│   ├── ConstrainedInsertionPolicy.py  # Cheapest-insertion with rejection
+│   └── BusAgent.py                    # Bus agent: state management and re-planning
 ├── metrics/
 │   └── MetricsTracker.py      # Per-tick snapshots and aggregate KPIs
 ├── simulation/

@@ -257,11 +257,13 @@ policy = MarginalCostFilterPolicy(graph, cost_factor=3.0)
 ```
 
 When `max_pickup_cost` is omitted, the threshold is `cost_factor` (default
-`2.0`) times a **graph-derived baseline**: the median over stops of each stop's
-nearest-neighbor travel cost — a scale-free proxy for typical inter-stop
-spacing. Auto-derivation raises `ValueError` if the graph has fewer than two
-stops (no baseline can be computed); pass `max_pickup_cost` explicitly in that
-case.
+`2.0`) times a **graph-derived baseline**: the median travel cost over all
+ordered pairs of stops — a scale-free proxy for the distance the bus typically
+covers to get from one stop to another. (A nearest-neighbor baseline was
+considered but rejected: it only measures how tightly stops cluster and badly
+underestimates the cost of reaching an arbitrary pending pickup.) Auto-derivation
+raises `ValueError` if the graph has fewer than two stops (no baseline can be
+computed); pass `max_pickup_cost` explicitly in that case.
 
 ### Routing behaviour
 
@@ -425,3 +427,50 @@ explicitly in that case.
 Because it re-evaluates every slot pair for every request, this policy is the
 most computationally expensive of the family — a deliberate trade of planning
 cost for route quality and the ability to reason about service bounds.
+
+## DeviatedFixedRoutePolicy
+
+`DeviatedFixedRoutePolicy` subclasses `SkipStopFixedRoutePolicy` and adds
+*detours*: before heading to the next demanded backbone stop, the bus may divert
+to serve a nearby demanded stop out of cycle order when doing so barely lengthens
+the current hop. The aim was to keep the fixed cycle's coverage while grabbing
+geographically near out-of-order demand — cutting wait and would-be
+cancellations relative to plain skip-stop.
+
+A stop `S` is a valid deviation from the current position `pos` toward the next
+backbone stop `B` when its extra cost stays within a cap:
+
+```
+extra(S) = cost(pos, S) + cost(S, B) − cost(pos, B)
+allowed  = max_detour_cost           if given
+           else (detour_factor − 1) × cost(pos, B)
+```
+
+The cheapest valid deviation (smallest `extra`) is served first, then the scan
+repeats with `B` still pending; a served stop later reached in cycle order has
+no demand and is skipped. A strict inequality makes `detour_factor = 1.0` (or
+`max_detour_cost = 0`) reduce the policy **exactly** to skip-stop, so
+`detour_factor` is a knob that starts from the skip-stop behaviour and loosens.
+
+### Construction
+
+```python
+policy = DeviatedFixedRoutePolicy(graph)                      # detour_factor=1.5
+policy = DeviatedFixedRoutePolicy(graph, detour_factor=2.0)   # looser detours
+policy = DeviatedFixedRoutePolicy(graph, max_detour_cost=0.4) # absolute cap
+```
+
+### Caveat — this does *not* preserve the ride bound
+
+The intent was to inherit skip-stop's bounded worst-case ride, but the mechanism
+does **not** achieve that. The cap is measured against the hop to the *next*
+backbone stop (which can be large when backbone stops are far apart), and
+deviations chain across the whole demand set, so the policy can admit large,
+repeated detours and a rider's ride can grow well beyond one cycle. In the
+campus-scale sweep its ride time collapsed toward the greedy
+`NearestUnservedPolicy` rather than staying near skip-stop's cycle bound, leaving
+it Pareto-dominated by the skip-stop / Nearest pair. `detour_factor` should be
+treated as an exploratory knob, not a ride guarantee. A variant that genuinely
+caps ride would need to track each onboard rider's accumulated ride explicitly
+(as `RideBoundedGreedyPolicy` does within a plan), rather than bounding a single
+hop's detour.

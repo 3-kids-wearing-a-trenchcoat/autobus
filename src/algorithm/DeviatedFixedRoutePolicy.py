@@ -13,16 +13,16 @@ _DEFAULT_DETOUR_FACTOR = 1.5
 
 class DeviatedFixedRoutePolicy(SkipStopFixedRoutePolicy):
     """
-    A skip-stop fixed route that additionally takes *bounded* detours to serve
-    nearby demand out of cycle order.
+    A skip-stop fixed route that additionally takes detours to serve nearby
+    demand out of cycle order.
 
     Plain SkipStopFixedRoutePolicy preserves the cycle order strictly, which
     bounds the worst-case ride at one cycle but makes passengers wait for the
     bus to come around in order. This policy keeps that backbone but, before
     heading to the next demanded backbone stop, may divert to a currently
-    demanded stop elsewhere if doing so barely lengthens the path. That grabs
-    geographically near out-of-order demand — cutting wait and would-be
-    cancellations — while the per-detour cap keeps the ride bounded.
+    demanded stop elsewhere if doing so barely lengthens the current hop. That
+    grabs geographically near out-of-order demand, cutting wait and would-be
+    cancellations.
 
     A stop ``S`` is a valid deviation from the current position ``pos`` toward
     the next backbone stop ``B`` when its extra cost stays within a bound::
@@ -32,10 +32,18 @@ class DeviatedFixedRoutePolicy(SkipStopFixedRoutePolicy):
                    else (detour_factor - 1) * cost(pos, B)
 
     The cheapest valid deviation (smallest ``extra``) is served first, then the
-    scan repeats with ``B`` still pending. Because the relative cap limits total
-    deviation over a cycle to ``(detour_factor - 1) * cycle``, a rider's ride
-    stays within ``detour_factor`` times the base cycle. ``detour_factor = 1.0``
-    (or ``max_detour_cost = 0``) reduces the policy exactly to skip-stop.
+    scan repeats with ``B`` still pending. ``detour_factor = 1.0`` (or
+    ``max_detour_cost = 0``) reduces the policy exactly to skip-stop.
+
+    CAVEAT — this does NOT preserve skip-stop's ride bound. The cap is measured
+    against the hop to the *next* backbone stop (which can be large) and
+    deviations chain over the whole demand set, so when backbone stops are far
+    apart the policy admits large, repeated detours and a rider's ride can grow
+    well beyond one cycle. Empirically (campus-scale sweep, 2026-07) its ride
+    time collapsed toward the greedy NearestUnservedPolicy rather than staying
+    near the cycle bound. Treat ``detour_factor`` as an exploratory knob, not a
+    ride guarantee; genuinely capping ride would require tracking each onboard
+    rider's accumulated ride explicitly.
     """
 
     def __init__(
@@ -61,8 +69,8 @@ class DeviatedFixedRoutePolicy(SkipStopFixedRoutePolicy):
 
     def plan(self, state: BusState, n_stops: int) -> list[str]:
         """
-        Return the next n_stops stops: the skip-stop backbone with bounded
-        detours to nearby out-of-order demand inserted along the way.
+        Return the next n_stops stops: the skip-stop backbone with detours to
+        nearby out-of-order demand inserted along the way.
         :param state: Current (or projected) bus state snapshot.
         :param n_stops: Maximum number of stops to include in the route.
         :return: Ordered list of stop node IDs to visit next.

@@ -1,10 +1,50 @@
 """Insertion policy that keeps a persistent schedule across planning calls."""
 
+import statistics
+from itertools import permutations
+
 from src.algorithm.DispatchPolicy import BusState, DispatchPolicy
 from src.algorithm.RequestPool import Request
 from src.algorithm.Schedule import Event, Schedule
 from src.algorithm.TravelModel import GraphTravelModel, TravelModel
 from src.map.TransitGraph import TransitGraph
+
+# The service window defaults to this multiple of the median inter-stop
+# travel cost. It is the policy's headline tunable, and the trade-off is
+# sharp: too tight and most requests are rejected, too loose and it
+# degenerates into unbounded waiting. On a 2000m planar map (median hop
+# ~132s) factors of 3/5/8 gave 33.6/41.0/39.9 mean fulfilled requests out of
+# 50, so 5 is a reasonable starting point — but it is exactly the kind of
+# knob worth sweeping per map.
+_DEFAULT_WAIT_FACTOR = 5.0
+
+
+class _InflatedTravelModel(TravelModel):
+    """
+    Wraps a travel model and pessimistically scales its driving times.
+
+    Feasibility is checked against these inflated estimates so that a
+    schedule proven feasible still holds when the real drive runs slow.
+    Dwell is left alone: it is a property of the stop, not of the traffic.
+    """
+
+    def __init__(self, base: TravelModel, factor: float) -> None:
+        """
+        :param base: The model supplying the underlying estimates.
+        :param factor: Multiplier applied to travel times; 1.0 is a no-op.
+        """
+        self._base = base
+        self._factor = factor
+
+    def travel_time(self, from_id: str, to_id: str) -> float:
+        """Return the base travel time scaled by the safety factor."""
+        return self._base.travel_time(from_id, to_id) * self._factor
+
+    def dwell_time(
+        self, stop_id: str, n_boarding: int, n_alighting: int
+    ) -> float:
+        """Return the base dwell time unchanged."""
+        return self._base.dwell_time(stop_id, n_boarding, n_alighting)
 
 
 class WindowInsertionPolicy(DispatchPolicy):
@@ -32,15 +72,28 @@ class WindowInsertionPolicy(DispatchPolicy):
     ``fulfilled_at`` are both stamped from stop-arrival times — so the policy
     optimises the reported KPI directly rather than a proxy for it.
 
-    Requests whose best insertion is infeasible are **rejected**: they are
-    left out of the schedule and stay PENDING (the soft-skip model), free to
-    be picked up by a later plan.
+    A request is accepted only if the bus can reach its pickup within the
+    **service window** — a hard deadline of ``max_wait_s`` after the request
+    was made. This is what fixed routes get for free by cycling, and what
+    every demand-responsive policy here has so far lacked: a bound on how long
+    anyone can be left waiting. Requests whose best insertion misses the
+    window are **rejected**, left out of the schedule and still PENDING (the
+    soft-skip model), free to be picked up by a later plan.
+
+    The window is the policy's own service promise, deliberately independent
+    of the backend's ``max_wait_s`` abandonment threshold. Setting it at or
+    below that threshold yields a testable claim: no accepted request is ever
+    abandoned. Setting it above buys higher acceptance at the cost of that
+    guarantee.
     """
 
     def __init__(
         self,
         graph: TransitGraph,
         travel_model: TravelModel | None = None,
+        max_wait_s: float | None = None,
+        wait_factor: float = _DEFAULT_WAIT_FACTOR,
+        safety_factor: float = 1.0,
     ) -> None:
         """
         :param graph: Transit graph representing the road network.
@@ -48,13 +101,37 @@ class WindowInsertionPolicy(DispatchPolicy):
             Defaults to reading the graph with zero dwell. Supply one
             explicitly whenever the simulation runs with non-zero dwell, so
             the policy's projections match what the bus will actually do.
+        :param max_wait_s: Service window — the longest a passenger may be
+            left waiting between making a request and being picked up. When
+            None, it is derived as wait_factor times the median inter-stop
+            travel cost.
+        :param safety_factor: Multiplier applied to travel estimates when
+            testing feasibility, so schedules survive drives that run slower
+            than predicted. 1.0 (the default) plans against the raw estimate,
+            which is exact in the mock simulation.
+        :param wait_factor: Multiplier on the graph-derived baseline used
+            when max_wait_s is None.
+        :raises ValueError: If max_wait_s is None and the graph has fewer
+            than two stops, so no baseline can be computed.
         """
         super().__init__(graph)
         self._travel_model = (
             travel_model if travel_model is not None
             else GraphTravelModel(graph)
         )
+        self._feasibility_model = _InflatedTravelModel(
+            self._travel_model, safety_factor
+        )
+        if max_wait_s is not None:
+            self._max_wait_s = max_wait_s
+        else:
+            self._max_wait_s = wait_factor * self._baseline_stop_cost()
         self._schedule = Schedule()
+
+    @property
+    def max_wait_s(self) -> float:
+        """The service window in seconds."""
+        return self._max_wait_s
 
     @property
     def schedule(self) -> Schedule:
@@ -101,6 +178,8 @@ class WindowInsertionPolicy(DispatchPolicy):
         3. ``BusAgent`` boards passengers opportunistically, so someone this
            policy deliberately rejected can end up aboard anyway. Their
            dropoff has to be adopted as a commitment.
+        4. A promise made earlier can have become unkeepable, if the bus is
+           running behind what was projected when the slot was handed out.
         :param schedule: The schedule as of the previous planning call.
         :param state: The state snapshot describing what is actually true.
         :return: A schedule consistent with the snapshot.
@@ -121,7 +200,8 @@ class WindowInsertionPolicy(DispatchPolicy):
             if request.id not in schedule.dropoff_owners():
                 schedule = self._adopt_dropoff(schedule, request, state)
 
-        return schedule
+        # 4. Promises the bus can no longer keep.
+        return self._drop_missed_windows(schedule, state)
 
     def _adopt_dropoff(
         self, schedule: Schedule, request: Request, state: BusState
@@ -210,15 +290,75 @@ class WindowInsertionPolicy(DispatchPolicy):
 
     def _feasible(self, schedule: Schedule, state: BusState) -> bool:
         """
-        Check any timing constraints beyond capacity.
-
-        No timing constraint is imposed yet, so every capacity-respecting
-        candidate is accepted. Time-window feasibility hooks in here.
+        Check that no rider's pickup misses their service window.
         :param schedule: Candidate schedule.
         :param state: Current bus state snapshot.
-        :return: True if the candidate is acceptable.
+        :return: True if every scheduled pickup lands inside its window.
         """
-        return True
+        arrivals, deadlines = self._timing(schedule, state)
+        slack = schedule.forward_slack(arrivals, deadlines)
+        # slack[0] is the running minimum over the whole schedule, so a
+        # single non-negative check covers every event at once.
+        return not slack or slack[0] >= 0.0
+
+    def _timing(
+        self, schedule: Schedule, state: BusState
+    ) -> tuple[list[float], list[float]]:
+        """
+        Project arrivals and the deadline each event must respect.
+
+        Arrivals use the inflated model, so feasibility is judged against a
+        pessimistic drive rather than the nominal one.
+        :param schedule: Schedule to project.
+        :param state: Current bus state snapshot.
+        :return: (arrival time per event, deadline per event).
+        """
+        arrivals = schedule.arrival_times(
+            state.position, state.now, self._feasibility_model
+        )
+        created_at = {
+            request.id: request.created_at
+            for request in state.pending_requests
+        }
+        deadlines = [
+            created_at[event.owner_id] + self._max_wait_s
+            if event.load_delta > 0 and event.owner_id in created_at
+            # Dropoffs carry no deadline: ride length is handled by the cost
+            # function, not by a hard bound. Onboard riders have no pickup
+            # event left, so they can never be dropped for missing a window.
+            else float("inf")
+            for event in schedule.events
+        ]
+        return arrivals, deadlines
+
+    def _drop_missed_windows(
+        self, schedule: Schedule, state: BusState
+    ) -> Schedule:
+        """
+        Release riders whose promised pickup has become unreachable.
+
+        Under exact travel estimates this never fires — an insertion proven
+        feasible stays feasible. It exists for the case the estimates are
+        wrong, which is what CARLA traffic will make routine: a commitment
+        made in good faith can quietly become impossible, and the policy has
+        to notice rather than drive a route it can no longer honour.
+
+        Dropping the offenders in one pass is enough. Removing a stop can
+        never delay the stops after it, because shortest-path costs obey the
+        triangle inequality and one fewer visit means one fewer dwell.
+        :param schedule: Schedule to repair.
+        :param state: Current bus state snapshot.
+        :return: A schedule whose remaining commitments are all reachable.
+        """
+        arrivals, deadlines = self._timing(schedule, state)
+        stranded = {
+            event.owner_id
+            for index, event in enumerate(schedule.events)
+            if arrivals[index] > deadlines[index]
+        }
+        for owner_id in stranded:
+            schedule = schedule.without_owner(owner_id)
+        return schedule
 
     # ------------------------------------------------------------------
     # Cost
@@ -292,3 +432,27 @@ class WindowInsertionPolicy(DispatchPolicy):
             ),
         )
         return [nearest.pickup_stop_id]
+
+    def _baseline_stop_cost(self) -> float:
+        """
+        Compute the median travel cost over all ordered pairs of stops.
+
+        This is the scale a service window should be judged against.
+        (Duplicated from ConstrainedInsertionPolicy, which in turn copied it
+        from MarginalCostFilterPolicy, to avoid touching either of them while
+        they serve as experimental baselines. Worth collapsing into one
+        helper once the comparison is finished.)
+        :return: Median ordered-pair stop-to-stop cost.
+        :raises ValueError: If the graph has fewer than two stops.
+        """
+        stop_ids = [stop.edge.id for stop in self._graph.get_stops()]
+        if len(stop_ids) < 2:
+            raise ValueError(
+                "Cannot derive a service window: the graph has fewer than "
+                "two stops. Pass max_wait_s explicitly."
+            )
+        pairwise_costs = [
+            self._graph.best_path_cost(origin, destination)
+            for origin, destination in permutations(stop_ids, 2)
+        ]
+        return statistics.median(pairwise_costs)

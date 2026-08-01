@@ -36,7 +36,9 @@ class TestWindowInsertionPolicy(unittest.TestCase):
 
     def setUp(self) -> None:
         self.graph = TransitGraph(_PROVIDER)
-        self.policy = WindowInsertionPolicy(self.graph)
+        # Travel on this map costs fractions of a second, so a window this
+        # wide never binds. Window behaviour is exercised separately below.
+        self.policy = WindowInsertionPolicy(self.graph, max_wait_s=1000.0)
 
     def _state(
         self,
@@ -223,3 +225,122 @@ class TestWindowInsertionPolicy(unittest.TestCase):
         ])
         self.policy.plan(state, 10)
         self.assertTrue(self.policy.schedule.precedence_ok())
+
+
+class TestServiceWindow(unittest.TestCase):
+    """
+    Verify the hard pickup deadline.
+
+    Relevant costs from _START on the test map: _S1 is ~0.083s away, _S3
+    ~0.194s, _S2 ~0.222s. Windows below are chosen against those.
+    """
+
+    def setUp(self) -> None:
+        self.graph = TransitGraph(_PROVIDER)
+
+    def _policy(self, **kwargs) -> WindowInsertionPolicy:
+        """Build a policy with the given window settings."""
+        return WindowInsertionPolicy(self.graph, **kwargs)
+
+    def _state(
+        self,
+        pending: list[Request] | None = None,
+        onboard: list[Request] | None = None,
+        now: float = 0.0,
+        position: str = _START,
+    ) -> BusState:
+        """Build a BusState with sensible defaults."""
+        return BusState(
+            position=position,
+            onboard=onboard or [],
+            pending_requests=pending or [],
+            remaining_capacity=4,
+            now=now,
+        )
+
+    def test_reachable_pickup_is_accepted(self) -> None:
+        policy = self._policy(max_wait_s=0.15)
+        policy.plan(self._state(pending=[_req("r1", _S1, _S2)]), 5)
+        self.assertEqual(policy.schedule.pickup_owners(), {"r1"})
+
+    def test_pickup_beyond_the_window_is_rejected(self) -> None:
+        policy = self._policy(max_wait_s=0.15)
+        policy.plan(self._state(pending=[_req("r1", _S3, _S2)]), 5)
+        self.assertEqual(len(policy.schedule), 0)
+
+    def test_window_runs_from_request_creation(self) -> None:
+        """An older request has less of its window left to spend."""
+        policy = self._policy(max_wait_s=0.15)
+        # Created at t=-1 relative to a bus departing at t=0, so the window
+        # closed before the bus could ever get there.
+        policy.plan(
+            self._state(pending=[_req("r1", _S1, _S2, created_at=-1.0)]), 5
+        )
+        self.assertEqual(len(policy.schedule), 0)
+
+    def test_rejected_request_does_not_block_a_reachable_one(self) -> None:
+        policy = self._policy(max_wait_s=0.15)
+        policy.plan(
+            self._state(pending=[
+                _req("r_far", _S3, _S2),
+                _req("r_near", _S1, _S2, created_at=1.0),
+            ]),
+            5,
+        )
+        self.assertEqual(policy.schedule.pickup_owners(), {"r_near"})
+
+    def test_default_window_derives_from_the_graph(self) -> None:
+        self.assertGreater(self._policy().max_wait_s, 0.0)
+
+    def test_explicit_window_overrides_the_default(self) -> None:
+        self.assertEqual(self._policy(max_wait_s=42.0).max_wait_s, 42.0)
+
+    # ------------------------------------------------------------------
+    # Safety factor
+    # ------------------------------------------------------------------
+
+    def test_safety_factor_rejects_a_marginal_request(self) -> None:
+        """Planning pessimistically refuses a pickup that only just fits."""
+        optimistic = self._policy(max_wait_s=0.1)
+        optimistic.plan(self._state(pending=[_req("r1", _S1, _S2)]), 5)
+        self.assertEqual(optimistic.schedule.pickup_owners(), {"r1"})
+
+        cautious = self._policy(max_wait_s=0.1, safety_factor=2.0)
+        cautious.plan(self._state(pending=[_req("r1", _S1, _S2)]), 5)
+        self.assertEqual(len(cautious.schedule), 0)
+
+    # ------------------------------------------------------------------
+    # Recovery from a commitment that became unkeepable
+    # ------------------------------------------------------------------
+
+    def test_commitment_released_when_bus_falls_behind(self) -> None:
+        """
+        The CARLA case: the bus runs slower than projected, so a promise made
+        in good faith becomes impossible and must be released rather than
+        driven to.
+        """
+        policy = self._policy(max_wait_s=0.15)
+        request = _req("r1", _S1, _S2)
+        policy.plan(self._state(pending=[request]), 5)
+        self.assertEqual(policy.schedule.pickup_owners(), {"r1"})
+
+        # Re-plan far later than projected: the window has since closed.
+        policy.plan(self._state(pending=[request], now=100.0), 5)
+        self.assertEqual(len(policy.schedule), 0)
+
+    def test_released_rider_is_not_stranded_by_an_empty_route(self) -> None:
+        """Dropping every commitment must not freeze the bus in place."""
+        policy = self._policy(max_wait_s=0.15)
+        request = _req("r1", _S1, _S2)
+        policy.plan(self._state(pending=[request]), 5)
+        route = policy.plan(self._state(pending=[request], now=100.0), 5)
+        self.assertEqual(route, [_S1])
+
+    def test_onboard_rider_is_never_released(self) -> None:
+        """A passenger already aboard cannot be un-boarded, ever."""
+        policy = self._policy(max_wait_s=0.15)
+        aboard = _req(
+            "r1", _S1, _S2, state=RequestState.ON_BUS, boarded_at=0.0
+        )
+        policy.plan(self._state(onboard=[aboard], now=100.0), 5)
+        self.assertEqual(policy.schedule.dropoff_owners(), {"r1"})

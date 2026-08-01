@@ -29,10 +29,14 @@ class Visit(NamedTuple):
 
     :param node_id: TransitGraph node ID of the stop.
     :param event_indices: Indices into the schedule's events served here.
+    :param n_boarding: Passengers boarding at this visit.
+    :param n_alighting: Passengers alighting at this visit.
     """
 
     node_id: str
     event_indices: tuple[int, ...]
+    n_boarding: int
+    n_alighting: int
 
 
 class Schedule:
@@ -169,13 +173,19 @@ class Schedule:
         """
         visits: list[Visit] = []
         for index, event in enumerate(self._events):
+            boarding = 1 if event.load_delta > 0 else 0
             if visits and visits[-1].node_id == event.node_id:
                 previous = visits[-1]
                 visits[-1] = Visit(
-                    previous.node_id, previous.event_indices + (index,)
+                    previous.node_id,
+                    previous.event_indices + (index,),
+                    previous.n_boarding + boarding,
+                    previous.n_alighting + (1 - boarding),
                 )
             else:
-                visits.append(Visit(event.node_id, (index,)))
+                visits.append(
+                    Visit(event.node_id, (index,), boarding, 1 - boarding)
+                )
         return visits
 
     def stop_sequence(self, position: str) -> list[str]:
@@ -222,7 +232,9 @@ class Schedule:
                 arrival = clock + model.travel_time(
                     previous_node, visit.node_id
                 )
-                clock = arrival + self._dwell_for(visit, model)
+                clock = arrival + model.dwell_time(
+                    visit.node_id, visit.n_boarding, visit.n_alighting
+                )
             for index in visit.event_indices:
                 arrivals[index] = arrival
             previous_node = visit.node_id
@@ -296,24 +308,3 @@ class Schedule:
                     return False
         return True
 
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
-
-    def _dwell_for(self, visit: Visit, model: TravelModel) -> float:
-        """
-        Return the dwell charged for one visit.
-
-        The boarding and alighting counts are derived from the events served
-        here, so a passenger-proportional dwell model would work without any
-        new plumbing.
-        :param visit: The visit being served.
-        :param model: Travel and dwell estimates.
-        :return: Dwell time in seconds for this stop.
-        """
-        boarding = sum(
-            1 for index in visit.event_indices
-            if self._events[index].load_delta > 0
-        )
-        alighting = len(visit.event_indices) - boarding
-        return model.dwell_time(visit.node_id, boarding, alighting)

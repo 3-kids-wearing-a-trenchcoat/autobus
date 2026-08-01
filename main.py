@@ -3,6 +3,7 @@
 from src.algorithm.BusAgent import BusAgent
 from src.algorithm.DispatchPolicy import PlaceholderPolicy
 from src.algorithm.RequestPool import RequestPool
+from src.algorithm.TravelModel import GraphTravelModel
 from src.map.PlanarMapProvider import PlanarMapProvider
 from src.map.TransitGraph import TransitGraph
 from src.map.graph import PlanarStreetGraph
@@ -53,9 +54,11 @@ def main() -> None:
     #    stops[0].id is now a valid TransitGraph node ID (edge ID "{u}_{v}"),
     #    so it can serve as the bus's starting position.
     policy = PlaceholderPolicy(transit_graph)
+    travel_model = GraphTravelModel(transit_graph)
     agent = BusAgent(
         pool=pool,
         policy=policy,
+        travel_model=travel_model,
         capacity=4,
         position=stops[0].id,
         n_stops=5,

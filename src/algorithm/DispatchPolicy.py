@@ -17,12 +17,19 @@ class BusState:
     :param pending_requests: Requests waiting at stops (state = PENDING).
     :param remaining_capacity: Number of additional passengers the bus can
         accept.
+    :param now: Simulation time in seconds at which the bus *departs*
+        ``position`` — not the time it arrived there. The distinction matters
+        once dwell time is non-zero: a policy adds travel time to ``now`` to
+        get the arrival time at its first planned stop, so anchoring on the
+        arrival instead would under-count every leg by one dwell period.
+        Defaults to 0.0 for policies that do not reason about time.
     """
 
     position: str
     onboard: list[Request]
     pending_requests: list[Request]
     remaining_capacity: int
+    now: float = 0.0
 
 
 class DispatchPolicy(ABC):

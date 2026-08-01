@@ -136,6 +136,7 @@ def run_trial(
     agent = BusAgent(
         pool=pool,
         policy=policy,
+        travel_model=travel_model,
         capacity=capacity,
         position=stops[0].id,
         n_stops=n_stops,

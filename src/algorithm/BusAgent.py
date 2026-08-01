@@ -2,6 +2,7 @@
 
 from src.algorithm.DispatchPolicy import BusState, DispatchPolicy
 from src.algorithm.RequestPool import Request, RequestPool, RequestState
+from src.algorithm.TravelModel import TravelModel
 
 
 class BusAgent:
@@ -17,6 +18,7 @@ class BusAgent:
         self,
         pool: RequestPool,
         policy: DispatchPolicy,
+        travel_model: TravelModel,
         capacity: int,
         position: str,
         n_stops: int,
@@ -25,6 +27,8 @@ class BusAgent:
         """
         :param pool: Shared passenger request pool.
         :param policy: Routing policy used to compute routes.
+        :param travel_model: Travel and dwell estimates, used to work out
+            what time the bus will finish the committed prefix.
         :param capacity: Maximum number of passengers the bus can carry.
         :param position: Initial TransitGraph node ID of the bus.
         :param n_stops: Number of stops to plan ahead on each re-plan.
@@ -33,12 +37,15 @@ class BusAgent:
         """
         self._pool = pool
         self._policy = policy
+        self._travel_model = travel_model
         self._capacity = capacity
         self._position = position
         self._n_stops = n_stops
         self._commitment = commitment
         self._route: list[str] = []
         self._onboard: list[Request] = []
+        # Time of the most recent arrival. The initial plan happens at t=0.
+        self._arrived_at: float = 0.0
         self._replan()
 
     def on_arrival(self, stop_id: str, sim_time: float) -> None:
@@ -53,6 +60,7 @@ class BusAgent:
         if self._route and self._route[0] == stop_id:
             self._route.pop(0)
         self._position = stop_id
+        self._arrived_at = sim_time
 
         self._alight(stop_id, sim_time)
         self._board(stop_id, sim_time)
@@ -104,16 +112,34 @@ class BusAgent:
         """
         Build a BusState that reflects the bus after executing the committed
         prefix of the current route, without mutating real state.
+
+        The projected clock mirrors the backend's leg arithmetic exactly: a
+        leg costs a dwell at the stop being left plus the drive to the next
+        one. So ``BusState.now`` comes out as the moment the bus *departs* the
+        projected position, which is what a policy needs in order to add its
+        own first leg on top.
         :return: Projected BusState from which the policy will plan the tail.
         """
         sim_position = self._position
         sim_onboard = list(self._onboard)
         sim_boarded_ids: set[str] = set()
+        # Boarding and alighting here already happened in on_arrival, so the
+        # counts are zero; the constant dwell model ignores them regardless.
+        departure = self._arrived_at + self._travel_model.dwell_time(
+            self._position, 0, 0
+        )
 
         for stop_id in self._route[:self._commitment]:
+            departure += self._travel_model.travel_time(
+                sim_position, stop_id
+            )
+            alighting = [
+                r for r in sim_onboard if r.dropoff_stop_id == stop_id
+            ]
             sim_onboard = [
                 r for r in sim_onboard if r.dropoff_stop_id != stop_id
             ]
+            boarding = 0
             for request in self._pool.get_pending():
                 if request.id in sim_boarded_ids:
                     continue
@@ -121,6 +147,10 @@ class BusAgent:
                     if len(sim_onboard) < self._capacity:
                         sim_onboard.append(request)
                         sim_boarded_ids.add(request.id)
+                        boarding += 1
+            departure += self._travel_model.dwell_time(
+                stop_id, boarding, len(alighting)
+            )
             sim_position = stop_id
 
         sim_pending = [
@@ -132,4 +162,5 @@ class BusAgent:
             onboard=sim_onboard,
             pending_requests=sim_pending,
             remaining_capacity=self._capacity - len(sim_onboard),
+            now=departure,
         )

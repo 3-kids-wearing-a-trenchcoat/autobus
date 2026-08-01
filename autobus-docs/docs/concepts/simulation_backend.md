@@ -38,9 +38,28 @@ post-boarding state.
 `SimulationBackend` tracks how far the bus has travelled toward the next stop
 using two fields:
 
-- `_time_to_next_stop` — the total travel time for the current leg, computed
-  once by calling `_travel_time(agent.position, next_stop)`.
+- `_time_to_next_stop` — the total time for the current leg, computed once as
+  `dwell_s + _travel_time(agent.position, next_stop)`.
 - `_elapsed_toward_next` — seconds accumulated across ticks toward that leg.
+
+### Dwell time
+
+`dwell_s` models the seconds a real bus spends pulled over while passengers
+board and alight. It is folded into the **leading** edge of each leg: the bus
+first spends `dwell_s` where it currently is, then drives. That is equivalent
+to holding it at the stop it just reached, and keeps the whole calculation to
+a single duration per leg.
+
+One consequence is that the bus also dwells at its initial position, before it
+has served anyone — harmless, and arguably right, since a real bus would be
+sitting at its first stop with the doors open.
+
+`dwell_s` defaults to `0.0`, which reproduces the original dwell-free timing
+exactly, so results recorded before dwell existed remain comparable.
+
+This is *ground truth*: it is what the simulation does. What a policy
+**believes** about travel and dwell times is a separate thing — see
+[Travel Model](travel_model.md).
 
 The bus's current position is owned by `BusAgent` (via its `position` property)
 and updated there on each `on_arrival` call. `SimulationBackend` reads it only

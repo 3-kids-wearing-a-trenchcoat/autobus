@@ -19,3 +19,15 @@
 ::: src.algorithm.RideBoundedGreedyPolicy.RideBoundedGreedyPolicy
 
 ::: src.algorithm.ConstrainedInsertionPolicy.ConstrainedInsertionPolicy
+
+::: src.algorithm.WindowInsertionPolicy.WindowInsertionPolicy
+
+::: src.algorithm.Schedule.Schedule
+
+::: src.algorithm.Schedule.Event
+
+::: src.algorithm.Schedule.Visit
+
+::: src.algorithm.TravelModel.TravelModel
+
+::: src.algorithm.TravelModel.GraphTravelModel

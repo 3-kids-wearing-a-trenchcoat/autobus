@@ -23,12 +23,24 @@ make a routing decision:
 | `onboard` | `list[Request]` | Passengers currently on the bus (`ON_BUS`). Their dropoff stops are obligations the route must eventually satisfy. |
 | `pending_requests` | `list[Request]` | Requests still waiting at stops (`PENDING`). The bus may choose to pick these up. |
 | `remaining_capacity` | `int` | How many more passengers the bus can accept before it is full. |
+| `now` | `float` | Simulation time at which the bus **departs** `position`. Defaults to `0.0`. |
 
 `BusState` is constructed by the bus agent, not by `DispatchPolicy`. When the
 agent has already committed to a sequence of upcoming stops, it passes the
 *projected* state after those stops have been completed — so the policy always
 plans forward from a clean starting point with no knowledge of prior
 commitments.
+
+### Why `now` is a departure time
+
+`now` is the moment the bus *leaves* `position`, not the moment it arrived
+there. Once dwell time is non-zero the two differ, and a policy that anchored
+on the arrival would under-count every leg by one dwell period. Adding the
+travel time to the first planned stop on top of `now` therefore gives the
+correct arrival time at that stop.
+
+Policies that do not reason about time can ignore the field entirely; it is
+defaulted so that hand-built `BusState` instances stay valid.
 
 ## DispatchPolicy
 
@@ -69,7 +81,33 @@ The bus agent is responsible for:
 - Projecting the post-commitment state before passing it to `plan`.
 
 `DispatchPolicy` has no knowledge of commitments; from its perspective it
-always receives a current state and returns a fresh route.
+always receives a current state and returns a route.
+
+## Stateless and stateful policies
+
+Most policies here are **stateless** across calls: every `self._*` attribute is
+configuration fixed at construction, and each `plan` call derives a route from
+the supplied `BusState` alone. Re-running `plan` on the same state twice gives
+the same answer.
+
+`WindowInsertionPolicy` is the exception. It keeps a **persistent schedule**
+between calls, so an accepted request holds the slot it was given instead of
+being re-derived every arrival. Statefulness comes with an obligation:
+
+> A stateful policy must treat its own stored plan as a *belief*, never as
+> fact, and reconcile it against the incoming `BusState` at the top of every
+> `plan` call.
+
+The simulation moves on without consulting the policy. Passengers abandon
+requests, and `BusAgent` boards **anyone** waiting at a stop the bus reaches —
+including riders the policy explicitly rejected. A stored plan therefore drifts
+away from reality between calls.
+
+No callbacks exist for this, deliberately: adding `on_board` / `on_cancel` to
+the interface would force every stateless policy to carry machinery it does not
+need. The `BusState` snapshot already carries everything required to
+reconcile — who is aboard, who is still waiting, where the bus is, and what
+time it is.
 
 ## Implementing a concrete policy
 

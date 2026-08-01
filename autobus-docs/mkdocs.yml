@@ -8,6 +8,10 @@ theme:
     - navigation.sections
     - search.suggest
 
+markdown_extensions:
+  # Renders the "!!! note" / "!!! warning" callouts used in the concept pages.
+  - admonition
+
 plugins:
   - search
   - mkdocstrings:
@@ -25,6 +29,8 @@ nav:
       - Requests: concepts/requests.md
       - Demand Generation: concepts/demand_generation.md
       - Dispatch Policy: concepts/dispatch_policy.md
+      - Window Insertion: concepts/window_insertion.md
+      - Travel Model: concepts/travel_model.md
       - Bus Agent: concepts/bus_agent.md
       - Metrics: concepts/metrics.md
       - Simulation Backend: concepts/simulation_backend.md

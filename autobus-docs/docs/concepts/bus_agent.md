@@ -14,7 +14,13 @@ The runner interacts with `BusAgent` through three methods/properties:
 - **`on_arrival(stop_id, sim_time)`** — notify the agent that the bus has
   arrived; the agent handles boarding/alighting and re-plans before returning.
   `sim_time` is the current simulation time in seconds, used to stamp
-  `boarded_at` and `fulfilled_at` on the affected requests.
+  `boarded_at` and `fulfilled_at` on the affected requests, and retained as the
+  anchor for the projected planning clock.
+
+`BusAgent` is also given a `TravelModel` at construction. It needs one to work
+out *when* the bus will finish the committed prefix — projecting past those
+stops means adding up travel and dwell times, which the agent has no other way
+to measure.
 
 ## Re-planning cycle
 
@@ -57,10 +63,34 @@ will be *after* executing the committed prefix:
 - Passengers that would alight at committed stops are removed from `onboard`.
 - Passengers that would board at committed stops are added to `onboard`
   (respecting capacity), and removed from `pending_requests`.
+- The projected `now` is the time the bus **departs** the projected position.
+
+### The projected clock
+
+Starting from the arrival time handed to `on_arrival`, the agent walks the
+committed prefix and accumulates one dwell plus one drive per stop:
+
+```
+now = arrival_time + dwell(position)
+for each committed stop:
+    now += travel(previous, stop) + dwell(stop)
+```
+
+This mirrors `SimulationBackend`'s per-leg arithmetic exactly — the backend
+charges `dwell + travel` for every leg — so a schedule projected here matches
+what the simulation will actually execute, rather than approximating it.
 
 This means `DispatchPolicy` always plans from a clean starting point with no
 knowledge of the agent's internal commitments. The projection logic lives
 entirely inside `BusAgent`.
+
+!!! note "Opportunistic boarding"
+    `_board` boards **every** pending passenger waiting at the arrival stop, up
+    to capacity — not only those the policy planned for. A policy that keeps a
+    persistent schedule must therefore expect riders it never scheduled, and
+    even riders it deliberately rejected, to turn up onboard. See
+    [Dispatch Policy](dispatch_policy.md) for the reconciliation obligation
+    this creates.
 
 ## Relationship to other components
 

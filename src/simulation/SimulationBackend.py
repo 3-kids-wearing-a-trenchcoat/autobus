@@ -26,6 +26,11 @@ class SimulationBackend(ABC):
     :param max_wait_s: Maximum time a request may stay PENDING before the
         passenger gives up and the request is cancelled. None disables
         abandonment (requests wait indefinitely). Defaults to None.
+    :param dwell_s: Seconds the bus is held at every stop it visits, modelling
+        the time a real bus spends pulled over while passengers board and
+        alight. This is *ground truth*, as opposed to a policy's estimate of
+        it (see ``TravelModel``). Defaults to 0.0, which reproduces the
+        original dwell-free timing exactly.
     """
 
     def __init__(
@@ -36,6 +41,7 @@ class SimulationBackend(ABC):
         pool: RequestPool,
         recorder: AnimationRecorder | None = None,
         max_wait_s: float | None = None,
+        dwell_s: float = 0.0,
     ) -> None:
         self._agent = agent
         self._demand_generator = demand_generator
@@ -43,6 +49,7 @@ class SimulationBackend(ABC):
         self._pool = pool
         self._recorder = recorder
         self._max_wait_s = max_wait_s
+        self._dwell_s = dwell_s
         self._sim_time: float = 0.0
         self._elapsed_toward_next: float = 0.0
         self._time_to_next_stop: float | None = (
@@ -119,11 +126,27 @@ class SimulationBackend(ABC):
                 self._pool.cancel(request.id)
 
     def _compute_next_travel_time(self) -> float | None:
-        """Return travel time to the next stop, or None if route is empty."""
+        """
+        Return the time to reach the next stop, or None if the route is empty.
+
+        Dwell is folded into the *leading* edge of the leg — the bus first
+        spends ``dwell_s`` pulled over where it currently is, then drives.
+        That is equivalent to holding it at the stop it just reached, and it
+        keeps the whole calculation to a single duration per leg.
+
+        One consequence: the bus also dwells at its initial position, before
+        it has served anyone. Harmless, and arguably right, since a real bus
+        would be sitting at its first stop with the doors open.
+        :return: Dwell plus travel time in seconds, or None if there is no
+            next stop.
+        """
         next_stop = self._agent.next_stop()
         if next_stop is None:
             return None
-        return self._travel_time(self._agent.position, next_stop)
+        return (
+            self._dwell_s
+            + self._travel_time(self._agent.position, next_stop)
+        )
 
     def _process_movement(self, dt: float) -> None:
         """Process bus movement, firing on_arrival for each stop reached."""

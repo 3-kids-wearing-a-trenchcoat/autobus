@@ -9,6 +9,7 @@ from typing import Callable
 from src.algorithm.BusAgent import BusAgent
 from src.algorithm.DispatchPolicy import DispatchPolicy
 from src.algorithm.RequestPool import RequestPool
+from src.algorithm.TravelModel import GraphTravelModel
 from src.map.PlanarMapProvider import PlanarMapProvider
 from src.map.TransitGraph import TransitGraph
 from src.map.graph import PlanarStreetGraph
@@ -65,6 +66,7 @@ def run_trial(
     record_animation: bool = False,
     keep_tick_history: bool = False,
     max_wait_s: float | None = None,
+    dwell_s: float = 0.0,
 ) -> TrialResult:
     """
     Run one simulation trial and return the results.
@@ -101,6 +103,9 @@ def run_trial(
         passenger abandons it (the request is cancelled). None disables
         abandonment, so unserved requests wait indefinitely and the run
         continues until max_time. Defaults to None.
+    :param dwell_s: Seconds the bus spends stopped at each stop it visits.
+        Defaults to 0.0, which reproduces the original dwell-free timing
+        exactly — existing baselines stay comparable.
     :return: TrialResult with KPIs, tick history, and timing
         distributions.
     """
@@ -122,6 +127,11 @@ def run_trial(
     demand_gen = DemandGenerator(pool, gen_policy, stops)
     demand_gen.update(0.0)
 
+    # One model shared by the policy's projections and the backend's physics.
+    # In the mock simulation estimate and ground truth are the same object, so
+    # a projected schedule is exactly what gets executed.
+    travel_model = GraphTravelModel(transit_graph, dwell_s=dwell_s)
+
     policy = policy_factory(transit_graph)
     agent = BusAgent(
         pool=pool,
@@ -141,6 +151,7 @@ def run_trial(
         provider=provider,
         recorder=recorder,
         max_wait_s=max_wait_s,
+        travel_model=travel_model,
     )
     runner = SimulationRunner(backend=backend, dt=dt, max_time=max_time)
 

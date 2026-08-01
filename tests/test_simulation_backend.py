@@ -27,9 +27,12 @@ class _ConcreteBackend(SimulationBackend):
 
 def make_backend(
     next_stop: str | None = "stop_B",
+    dwell_s: float = 0.0,
 ) -> tuple[_ConcreteBackend, MagicMock, MagicMock, MagicMock, MagicMock]:
     """
     Build a _ConcreteBackend with all components mocked.
+    :param next_stop: Stop the mocked agent reports as next.
+    :param dwell_s: Seconds spent stopped at each stop.
     :return: (backend, agent, demand_gen, metrics, pool)
     """
     agent = MagicMock(spec=BusAgent)
@@ -44,6 +47,7 @@ def make_backend(
         demand_generator=demand_gen,
         metrics_tracker=metrics,
         pool=pool,
+        dwell_s=dwell_s,
     )
     return backend, agent, demand_gen, metrics, pool
 
@@ -185,6 +189,57 @@ def test_two_arrivals_in_one_step() -> None:
     assert agent.on_arrival.call_count == 2
     agent.on_arrival.assert_any_call("stop_B", pytest.approx(10.0))
     agent.on_arrival.assert_any_call("stop_C", pytest.approx(20.0))
+
+
+# ---------------------------------------------------------------------------
+# Dwell time
+# ---------------------------------------------------------------------------
+
+def test_zero_dwell_reproduces_original_timing() -> None:
+    """The default must leave existing baselines byte-comparable."""
+    backend, agent, *_ = make_backend(next_stop="stop_B", dwell_s=0.0)
+    agent.next_stop.side_effect = ["stop_B", None]
+    backend.step(10.0)
+    agent.on_arrival.assert_called_once_with("stop_B", pytest.approx(10.0))
+
+
+def test_dwell_delays_arrival() -> None:
+    # dwell=5 + travel=10 → the bus reaches stop_B at t=15, not t=10.
+    backend, agent, *_ = make_backend(next_stop="stop_B", dwell_s=5.0)
+    agent.next_stop.side_effect = ["stop_B", None]
+    backend.step(15.0)
+    agent.on_arrival.assert_called_once_with("stop_B", pytest.approx(15.0))
+
+
+def test_no_arrival_before_dwell_has_elapsed() -> None:
+    """At t=10 the bus is still pulled over; without dwell it would arrive."""
+    backend, agent, *_ = make_backend(next_stop="stop_B", dwell_s=5.0)
+    agent.next_stop.side_effect = ["stop_B", None]
+    backend.step(10.0)
+    agent.on_arrival.assert_not_called()
+
+
+def test_dwell_charged_on_every_leg() -> None:
+    # Two legs of dwell(5) + travel(10) → arrivals at t=15 and t=30.
+    backend, agent, *_ = make_backend(next_stop="stop_B", dwell_s=5.0)
+
+    stops = ["stop_B", "stop_C", None]
+    idx = [0]
+
+    def next_stop_fn() -> str | None:
+        return stops[min(idx[0], len(stops) - 1)]
+
+    def on_arrival_fn(stop_id: str, sim_time: float) -> None:
+        idx[0] += 1
+
+    agent.next_stop.side_effect = next_stop_fn
+    agent.on_arrival.side_effect = on_arrival_fn
+
+    backend.step(30.0)
+
+    assert agent.on_arrival.call_count == 2
+    agent.on_arrival.assert_any_call("stop_B", pytest.approx(15.0))
+    agent.on_arrival.assert_any_call("stop_C", pytest.approx(30.0))
 
 
 # ---------------------------------------------------------------------------

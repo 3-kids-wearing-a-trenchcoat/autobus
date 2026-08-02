@@ -22,6 +22,8 @@
 
 ::: src.algorithm.WindowInsertionPolicy.WindowInsertionPolicy
 
+::: src.algorithm.ReorderingInsertionPolicy.ReorderingInsertionPolicy
+
 ::: src.algorithm.Schedule.Schedule
 
 ::: src.algorithm.Schedule.Event

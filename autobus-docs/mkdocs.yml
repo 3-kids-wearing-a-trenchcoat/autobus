@@ -30,6 +30,7 @@ nav:
       - Demand Generation: concepts/demand_generation.md
       - Dispatch Policy: concepts/dispatch_policy.md
       - Window Insertion: concepts/window_insertion.md
+      - Route Reordering: concepts/route_reordering.md
       - Travel Model: concepts/travel_model.md
       - Bus Agent: concepts/bus_agent.md
       - Metrics: concepts/metrics.md

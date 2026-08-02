@@ -49,9 +49,62 @@ current route are treated as locked when a re-plan fires. These stops are not
 replaced by the new plan — only the stops beyond them are updated.
 
 A commitment of `0` means the route is fully re-planned on every arrival
-(maximum responsiveness). A larger commitment trades responsiveness for
-stability: the bus will not abandon stops it is already committed to reaching
-even when new requests arrive.
+(maximum responsiveness). A larger commitment was intended to trade
+responsiveness for stability: the bus would not abandon stops it is already
+committed to reaching even when new requests arrive.
+
+**Measurement did not support that trade.** Sweeping `commitment` over
+`{0, 1, 2, 4, 8}` on the campus map found it monotonically harmful, with `0`
+best on every KPI:
+
+| `commitment` | 0 | 1 | 2 | 4 | 8 |
+|---|---|---|---|---|---|
+| Served fraction | **93.4 %** | 91.6 % | 91.3 % | 88.8 % | 63.4 % |
+| Mean wait | **469.6 s** | 490.1 s | 504.7 s | 532.3 s | 535.5 s |
+| Mean ride | **543.6 s** | 549.8 s | 564.5 s | 612.5 s | 610.6 s |
+
+A paired comparison against the previous default of `2` puts the gain at
+**+2.0 pp served (p = 0.002)** and **−35 s mean wait (p < 0.0001)** at 200
+requests, holding at 500. No policy tested was harmed by dropping to `0`:
+`FixedRoutePolicy` is exactly indifferent (a locked prefix of a fixed cycle is
+what the policy would have returned anyway), `NearestUnservedPolicy` is flat,
+and `SkipStopFixedRoutePolicy` *gains* 4.4 pp — a locked prefix forces it to
+visit stops whose demand has since been served or abandoned.
+
+`run_trial` therefore defaults `commitment` to `0`. It should only be raised if
+re-planning moves off stop arrivals: today `on_arrival` is the sole trigger, so
+the bus is stationary whenever it plans and can freely change its next
+destination. A vehicle re-planning mid-leg under CARLA could not, and would
+need at least `1`.
+
+### The upper bound
+
+Commitment does not merely cost a little more as it grows — past a threshold
+the policy stops functioning. The projected clock advances by roughly one leg
+per committed stop, so the policy plans from about `commitment × median_leg`
+seconds into the future, while a request's deadline is measured from when it
+was *made*. Once the projection runs further ahead than the service window is
+wide, every newly created request is already expired before the insertion
+search begins, and acceptance collapses.
+
+Sweeping `commitment` at three service windows confirmed the breakdown point
+moves with the window rather than sitting at a fixed number of stops:
+
+| Service window | `window / median_pair_cost` | Rejection rate passes 90% at |
+|---|---|---|
+| 600 s | 4.5 | ~4.5 stops |
+| 900 s | 6.8 | ~8 stops |
+| 1350 s | 10.2 | ~13 stops |
+
+!!! warning "Keep the prefix short relative to the window"
+    `commitment × median_leg` must stay well below the policy's service window.
+    The observed breakdown sits at about 1.0–1.25× the ratio tabulated above,
+    because the median cost over *all* stop pairs overstates the leg the bus
+    actually drives — a policy picks nearby stops, not random ones.
+
+Measured on the campus map (21 stops, 2000 m square, median ordered-pair cost
+132 s). See `notebooks/commitment-sweep.ipynb` and
+`notebooks/commitment-confirmation.ipynb`.
 
 ## Projected state
 
@@ -64,6 +117,15 @@ will be *after* executing the committed prefix:
 - Passengers that would board at committed stops are added to `onboard`
   (respecting capacity), and removed from `pending_requests`.
 - The projected `now` is the time the bus **departs** the projected position.
+
+That third bullet has a consequence worth stating plainly: a pending request
+whose pickup falls inside the committed prefix is handed to the policy as
+*already aboard*. It never appears in `pending_requests`, so a scheduling
+policy never gets the chance to plan it and must adopt its dropoff after the
+fact. This is the dominant source of unscheduled riders — measured at ~5
+adoptions per 100 plan calls at `commitment=0` rising to ~63 at
+`commitment=8`, roughly 5 per committed stop. It is one more reason the
+default is `0`.
 
 ### The projected clock
 
@@ -86,11 +148,18 @@ entirely inside `BusAgent`.
 
 !!! note "Opportunistic boarding"
     `_board` boards **every** pending passenger waiting at the arrival stop, up
-    to capacity — not only those the policy planned for. A policy that keeps a
-    persistent schedule must therefore expect riders it never scheduled, and
-    even riders it deliberately rejected, to turn up onboard. See
-    [Dispatch Policy](dispatch_policy.md) for the reconciliation obligation
-    this creates.
+    to capacity — not only those the policy planned for. Boarding also happens
+    *before* `_replan`, so a request created during the leg into a stop is
+    already `ON_BUS` by the time the policy next sees the world. A policy that
+    keeps a persistent schedule must therefore expect riders it never
+    scheduled to turn up onboard. See [Dispatch Policy](dispatch_policy.md)
+    for the reconciliation obligation this creates.
+
+    Riders the policy *deliberately rejected* can also turn up this way, but
+    they are the minority path: at `commitment=0` none of the measured
+    adoptions were requests the policy had previously been offered, and at
+    `commitment=2` only about 12% were. The rest are requests it never got to
+    see at all.
 
 ## Relationship to other components
 

@@ -59,7 +59,7 @@ def run_trial(
     max_requests: int = 100,
     capacity: int = 16,
     n_stops: int = 20,
-    commitment: int = 2,
+    commitment: int = 0,
     dt: float = 1.0,
     max_time: float = 36000.0,
     silent: bool = False,
@@ -85,7 +85,14 @@ def run_trial(
     :param capacity: Maximum simultaneous passengers on the bus.
     :param n_stops: Number of stops to plan ahead each re-plan cycle.
     :param commitment: Number of leading stops locked in during
-        re-planning.
+        re-planning. Defaults to 0, which measured best on the campus map
+        for every policy tried and harmed none of them — locking a prefix
+        makes the policy plan from a projected future while deadlines are
+        still measured from now, and past roughly
+        ``window / median_leg`` stops it collapses outright. Raise it only
+        if re-planning ever moves off stop arrivals: today the bus is
+        stationary whenever it plans, so it can freely change its next
+        destination. See the Bus Agent concept doc for the measurements.
     :param dt: Simulation time step in seconds.
     :param max_time: Safety ceiling in seconds; run ends if sim_time
         reaches this before all requests are served.

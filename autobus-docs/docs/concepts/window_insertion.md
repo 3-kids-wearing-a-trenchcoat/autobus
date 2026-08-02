@@ -142,7 +142,8 @@ Setting it above buys higher acceptance at the cost of that guarantee.
 
 The window is the headline knob and the trade-off is sharp. Measured on a
 2000m planar map (median inter-stop hop ~132s, 50 requests, capacity 40,
-abandonment at 900s, 8 seeds):
+abandonment at 900s, 8 seeds, at the then-default `commitment=2` — see below,
+the numbers shift with that setting):
 
 | `wait_factor` | window | fulfilled | cancelled | mean wait | p90 wait |
 |---------------|--------|-----------|-----------|-----------|----------|
@@ -155,3 +156,17 @@ Too tight and most requests are rejected; too loose and it degenerates into
 unbounded waiting, converging on the no-window behaviour. The default is a
 reasonable starting point, not a universal answer — it is exactly the kind of
 value worth sweeping per map.
+
+### Interaction with the commitment window
+
+The service window also bounds how long `BusAgent`'s committed prefix may be.
+The agent hands this policy a state projected `commitment` stops into the
+future, but a request's deadline is measured from when it was *made* — so once
+the projection runs further ahead than the window is wide, every new request
+arrives already expired and acceptance collapses. At `commitment=8` on the
+campus map the served fraction falls from 93.4% to 63.4% and 89% of insertion
+attempts are rejected.
+
+`commitment` now defaults to `0`, so this does not bite unless it is raised
+deliberately. If it is, check it against the window first — see
+[Bus Agent](bus_agent.md#the-upper-bound) for the measured rule.

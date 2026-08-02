@@ -140,22 +140,44 @@ Setting it above buys higher acceptance at the cost of that guarantee.
 
 ## Tuning
 
-The window is the headline knob and the trade-off is sharp. Measured on a
-2000m planar map (median inter-stop hop ~132s, 50 requests, capacity 40,
-abandonment at 900s, 8 seeds, at the then-default `commitment=2` — see below,
-the numbers shift with that setting):
+The window is the headline knob and the trade-off is sharp. Measured on the
+campus map (21 stops, 2000 m square, 200 requests, capacity 40, abandonment at
+900 s, **800 trials**, `commitment=0`), against the two fixed-route baselines:
 
-| `wait_factor` | window | fulfilled | cancelled | mean wait | p90 wait |
-|---------------|--------|-----------|-----------|-----------|----------|
-| 3             | 396s   | 33.6      | 16.4      | 339s      | 550s     |
-| 5 (default)   | 660s   | 41.0      | 9.0       | 426s      | 642s     |
-| 8             | 1057s  | 39.9      | 10.1      | 422s      | 742s     |
-| 20            | 2642s  | 39.9      | 10.1      | 402s      | 727s     |
+| | Fixed | Skip | No window | W450 | W600 | W750 | W900 |
+|---|---|---|---|---|---|---|---|
+| Served | 68.6 % | 74.8 % | 82.6 % | 82.8 % | 87.5 % | 91.1 % | **93.1 %** |
+| Mean wait | 451 s | 447 s | 379 s | **316 s** | 375 s | 424 s | 466 s |
+| P90 wait | 804 s | 792 s | 735 s | **463 s** | 587 s | 723 s | 849 s |
+| Mean ride | 654 s | 587 s | **356 s** | 874 s | 710 s | 596 s | 521 s |
+| Max ride | 1302 s | **1261 s** | 1536 s | 4756 s | 3802 s | 3154 s | 2591 s |
 
-Too tight and most requests are rejected; too loose and it degenerates into
-unbounded waiting, converging on the no-window behaviour. The default is a
-reasonable starting point, not a universal answer — it is exactly the kind of
-value worth sweeping per map.
+Every interval is under ±2% of its mean, so the ordering is not in doubt.
+
+Three things to read off it:
+
+- **Coverage rises with the window**, peaking where the window equals the
+  abandonment threshold. Beyond that it falls away sharply — see
+  `notebooks/window-width-sweep-2.ipynb` for why.
+- **The ride tail is worst at the tight end, not the loose end.** `W450` posts
+  the best wait figures on the page and by far the worst max ride (4756 s). A
+  tight deadline makes the bus chase expiring pickups, which defers dropoffs
+  and drags whoever is already aboard.
+- **The unbounded ablation is the ride-quality winner** — 356 s mean ride,
+  better than every windowed column and than both fixed-route baselines, while
+  still serving 82.6%. It is the only demand-responsive column whose max ride
+  lands anywhere near the fixed-route cycle cap.
+
+Against the project's goal of beating fixed-route, **`W750` is the strongest
+single answer**: better on served (91.1% vs 68.6%), mean wait, P90 wait *and*
+mean ride, losing only on max ride. No windowed column beats fixed-route's
+structural 1302 s ride cap — that comes free from cycling, and is hard to buy
+any other way. [Route reordering](route_reordering.md) closes part of the gap.
+
+The `wait_factor` default of 5.0 derives a window from the graph alone
+(≈660 s here, between the `W600` and `W750` columns). When the abandonment
+threshold is known, set `max_wait_s` to it explicitly rather than relying on
+the derived value.
 
 ### Interaction with the commitment window
 

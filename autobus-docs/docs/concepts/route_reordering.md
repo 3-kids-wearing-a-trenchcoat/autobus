@@ -56,9 +56,49 @@ travel geometry is what binds.
     most 9% of rejections are terminal — the rest are requests that got in
     later, having waited longer than they needed to. Widening the abandonment
     threshold to 1350 s reaches 99.3% served, which shows the ceiling at W900
-    is passenger patience rather than the algorithm. Reordering should be
-    judged on **wait and ride time**, with rejection count as the direct
-    mechanistic readout.
+    is passenger patience rather than the algorithm.
+
+## What it actually buys
+
+Measured at 200 paired trials, `commitment=0`, W900, 200 requests
+(`notebooks/reordering-l1-ablation.ipynb`). Every column is a paired
+per-trial difference against L0, and **every one is significant with no
+regression anywhere**:
+
+| | L0 | L1 | delta |
+|---|---|---|---|
+| Served fraction | 93.3 % | 94.0 % | **+0.8 ± 0.3 pp** |
+| Mean wait | 465.7 s | 456.4 s | **−9.3 ± 3.2 s** |
+| P90 wait | 849.6 s | 840.2 s | **−9.3 ± 2.8 s** |
+| Mean ride | 523.3 s | 459.6 s | **−63.7 ± 6.9 s** (−12 %) |
+| Max ride | 2617 s | 2326 s | **−291 ± 108 s** (−11 %) |
+
+Max ride was the risk worth watching, since the cost function is a *total*
+and indifferent to how it is distributed — a large search space could have
+shaved the sum by lengthening one rider's journey. It moved the other way.
+
+### It works through ride quality, not through slack
+
+The obvious theory before running this was that reordering frees capacity,
+which lets more requests in, which shortens waits. **That is not what
+happens.** The refusal rate barely moves:
+
+| | L0 | L1 |
+|---|---|---|
+| Share of waiting requests left unscheduled | 11.2 % | 10.6 % |
+| First-pass insertion rejections | 47.6 % | 46.5 % |
+
+A 2.3% relative drop in refusals against a 12% improvement in ride time. The
+benefit is overwhelmingly a better visit order for the riders **already
+aboard** — which is exactly the pathology the direction was proposed to
+attack, before the argument drifted toward the slack story.
+
+### The cost function is measuring the right thing
+
+The policy reported 78 s of internal cost improvement per fulfilled
+passenger. The measured improvement in wait plus ride is 73 s per passenger —
+agreement within 6%. Whatever `_cost` saves shows up in the KPIs rather than
+leaking into quantities nobody reports.
 
 ## How L1 works
 
@@ -102,16 +142,22 @@ pairs to 7 dropoffs, so neither operator is a rounding error.
   abandoned, and a repair pass must not quietly break that promise to save a
   few seconds.
 
-### The retry step
+### The retry step (off by default)
 
-Reordering frees slack, and freed slack is only worth having if something uses
-it. With `retry_rejected` (the default), requests refused earlier in the same
-call are offered again against the repaired schedule.
+`retry_rejected` re-offers the requests refused earlier in the same call
+against the repaired schedule, on the theory that reordering frees slack worth
+collecting immediately rather than one arrival later.
 
-Without it the gain is deferred rather than lost — a rejected request stays
-`PENDING` and is retried on the next arrival anyway — but taking it here
-shortens the very wait it was refused over. The flag exists so that pure
-reordering can be measured separately from re-admission.
+**It was measured and it does not pay.** Retry admitted 263 of 31,074 attempts
+(0.9%), moved no KPI by a measurable amount — mean ride −63.7 s with it and
+−63.7 s without — and cost about 13% more planning time. That follows from the
+finding above: reordering improves the order for riders already aboard rather
+than freeing room for new ones, so there is very little for a retry to pick
+up.
+
+The flag is kept because it isolates re-admission from pure reordering, which
+is worth being able to measure again on a different map or at a different
+service window.
 
 ## Tuning
 
@@ -119,12 +165,18 @@ reordering can be measured separately from re-admission.
 |---|---|---|
 | `max_relocations` | `None` (all) | Requests to try relocating per pass. `0` reproduces `WindowInsertionPolicy` exactly. |
 | `n_passes` | `1` | Repair sweeps per call. Converges quickly, since each sweep only accepts strict improvements. |
-| `retry_rejected` | `True` | Whether freed slack is used within the same call. |
+| `retry_rejected` | `False` | Whether freed slack is used within the same call. Measured not to pay; see above. |
 
-Cost is not expected to be the binding concern. Planning runs well under 7 ms
-per call, and L1 prices at roughly 3.7× the insertion work it adds to — only
-about 6 of a median 13 requests carry a relocatable pair, the rest being
-single-event dropoffs.
+L1 costs **3.4×** a plain insertion trial (3.9× with retry enabled), matching
+the ~3.7× predicted from the headroom measurements.
+
+!!! note "Most of that cost is wasted, and that is the obvious thing to fix"
+    550,202 relocation attempts produced 13,905 accepted moves — a **2.5%
+    acceptance rate** (3.8% for pairs, 1.3% for dropoffs). Nearly all of the
+    3.4× goes into evaluating moves that turn out not to be improvements.
+    Predicting which requests are worth relocating would recover most of the
+    benefit for a fraction of the work, and is a better next step than a more
+    expensive neighbourhood search.
 
 ## Why a subclass
 

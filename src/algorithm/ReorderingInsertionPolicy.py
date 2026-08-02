@@ -39,11 +39,13 @@ class ReorderingInsertionPolicy(WindowInsertionPolicy):
     splits roughly 6 pairs to 7 dropoffs, so neither operator is a rounding
     error.
 
-    Reordering frees slack, and freed slack is only worth having if something
-    uses it. With ``retry_rejected`` the requests refused earlier in the same
-    call are offered again against the repaired schedule, which is what turns
-    a better order into more passengers served now rather than one planning
-    call later.
+    What the repair buys, measured at 200 paired trials against the parent, is
+    **ride quality**: mean ride down 12% and the worst ride down 11%, with
+    wait down 2% and coverage up 0.8 points, every one of them significant and
+    none of them a regression. The refusal rate barely moves — 47.6% to 46.5%
+    — so the gain comes from serving the people already aboard in a better
+    order, not from freeing slack for new ones. That also explains why
+    ``retry_rejected`` defaults to off.
 
     The policy never trades away the parent's guarantee: a relocation whose
     request cannot be placed back is discarded outright, so no accepted
@@ -61,7 +63,7 @@ class ReorderingInsertionPolicy(WindowInsertionPolicy):
         safety_factor: float = 1.0,
         max_relocations: int | None = None,
         n_passes: int = 1,
-        retry_rejected: bool = True,
+        retry_rejected: bool = False,
     ) -> None:
         """
         :param graph: Transit graph representing the road network.
@@ -80,8 +82,12 @@ class ReorderingInsertionPolicy(WindowInsertionPolicy):
             usually enough; more costs proportionally more and converges
             quickly, since each sweep can only accept strict improvements.
         :param retry_rejected: Whether to offer previously rejected requests
-            another chance after repair. Turning it off isolates the effect
-            of reordering alone.
+            another chance after repair. Defaults to False because it was
+            measured not to pay: it admitted 263 of 31,074 attempts (0.9%)
+            and moved no KPI measurably, while costing about 13% more
+            planning time. Reordering turns out to improve the order for
+            riders already aboard rather than to free up slack for new ones,
+            so there is little for a retry to collect.
         :raises ValueError: If max_relocations or n_passes is negative.
         """
         super().__init__(

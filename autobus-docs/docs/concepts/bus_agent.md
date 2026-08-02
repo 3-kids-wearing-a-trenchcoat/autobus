@@ -55,7 +55,7 @@ committed to reaching even when new requests arrive.
 
 **Measurement did not support that trade.** Sweeping `commitment` over
 `{0, 1, 2, 4, 8}` on the campus map found it monotonically harmful, with `0`
-best on every KPI:
+best on every KPI (20 trials, W900, 200 requests):
 
 | `commitment` | 0 | 1 | 2 | 4 | 8 |
 |---|---|---|---|---|---|
@@ -63,13 +63,35 @@ best on every KPI:
 | Mean wait | **469.6 s** | 490.1 s | 504.7 s | 532.3 s | 535.5 s |
 | Mean ride | **543.6 s** | 549.8 s | 564.5 s | 612.5 s | 610.6 s |
 
-A paired comparison against the previous default of `2` puts the gain at
-**+2.0 pp served (p = 0.002)** and **−35 s mean wait (p < 0.0001)** at 200
-requests, holding at 500. No policy tested was harmed by dropping to `0`:
-`FixedRoutePolicy` is exactly indifferent (a locked prefix of a fixed cycle is
-what the policy would have returned anyway), `NearestUnservedPolicy` is flat,
-and `SkipStopFixedRoutePolicy` *gains* 4.4 pp — a locked prefix forces it to
-visit stops whose demand has since been served or abandoned.
+Re-measured at **800 paired trials**, the ordering holds and every difference
+is significant at p < 0.001, but the size of the step from `2` to `0` is
+smaller than the 20-trial sweep suggested — **+1.4 pp served and −27.8 s mean
+wait** for `Window 900s`, against the +2.0 pp / −35 s first estimated. Treat
+the sweep table above as the shape and the figures here as the magnitude.
+
+Every policy tested improved or was unaffected by dropping to `0`
+(800 trials, paired, `commitment=0` minus `commitment=2`):
+
+| Policy | Served | Mean wait | Mean ride |
+|---|---|---|---|
+| Fixed route | +0.0 ± 0.0 | +0.0 ± 0.0 | +0.0 ± 0.0 |
+| Fixed route w/ skip | **+3.0 pp** | **−13.6 s** | +0.5 s (ns) |
+| Insertion (no window) | **+2.5 pp** | **−37.0 s** | **−9.1 s** |
+| Window 600s | **+3.8 pp** | **−30.0 s** | **−82.8 s** |
+| Window 750s | **+2.1 pp** | **−28.0 s** | **−46.0 s** |
+| Window 900s | **+1.4 pp** | **−27.8 s** | **−26.3 s** |
+
+`FixedRoutePolicy` is *exactly* indifferent — a locked prefix of a fixed cycle
+is what the policy would have returned anyway, so the paired differences are
+identically zero. `NearestUnservedPolicy` is flat (p = 0.96).
+`SkipStopFixedRoutePolicy` gains, because a locked prefix forces it to visit
+stops whose demand has since been served or abandoned.
+
+!!! warning "One exception: a tight window plus full responsiveness costs ride time"
+    `Window 450s` gains the most coverage of any column (+8.7 pp) but its mean
+    ride gets **worse** by 49.9 s (p < 0.001) — the only regression in the
+    table. A tight deadline combined with the freedom to re-plan every arrival
+    means more chasing of expiring pickups, which defers dropoffs.
 
 `run_trial` therefore defaults `commitment` to `0`. It should only be raised if
 re-planning moves off stop arrivals: today `on_arrival` is the sole trigger, so

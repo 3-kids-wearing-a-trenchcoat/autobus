@@ -69,8 +69,25 @@ anything else.
      animation recording — none of it is world-specific.
    - Strangler-style: build the new sequence alongside the old `step()`, then
      switch over once the golden master agrees.
-   - `tests/test_simulation_backend.py` tests `step()` orchestration directly;
-     those tests move to the runner. They do not change meaning.
+   - `tests/test_simulation_backend.py` holds **22 tests** exercising `step()`
+     orchestration directly; they move to the runner without changing
+     meaning. `tests/test_mock_backend.py` has 1 and should stay put.
+   - **Concrete surface to rehome.** `SimulationRunner.run()` is only a while
+     loop today, and it reaches through the backend for three things:
+     `backend.is_done()`, `backend.sim_time`, and `backend.metrics` — the
+     runner gets the `MetricsTracker` *via the backend*. All three move: the
+     runner should hold the pool and the tracker directly, and own the clock.
+   - **`BusAgent` needs no changes.** Its entire public surface is
+     `on_arrival(stop_id, sim_time)`, the `position` property, and
+     `next_stop()` — exactly the three things the runner needs to mediate
+     between agent and backend.
+   - **Preserve the tick order exactly, including its wart.** Demand is
+     generated *before* movement is processed, so a request created this tick
+     can be boarded at an `arrival_time` computed to fall slightly earlier —
+     which is where the small negative wait times come from (0.05% of
+     requests, worst −0.49 s, bounded by `dt`). Do not "fix" this during the
+     refactor; it would show up as a golden-master failure and confuse the
+     signal. Fix it separately, afterwards, if at all.
 4. [ ] **Reduce `MockBackend` to a pure adapter**
    - Keeps only dead reckoning (`_time_to_next_stop`, `_elapsed_toward_next`,
      travel model) as its own private implementation.
@@ -183,6 +200,9 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 | Trials in CARLA | Sequential only; one server | hosting CARLA is heavy |
 | Commitment window | Default 0 | measured monotonically harmful; see `bus_agent.md` |
 | `retry_rejected` | Default off | 0.9% admissions, no KPI change, ~13% more compute |
+| `n_passes` | Default 1 — L1 is finished | Converging adds nothing (all p>0.4); the second sweep accepts 0.086% of attempts |
+| Does L1 survive CARLA-like driving? | **Yes, and its advantage grows** | Under execution noise L1's mean-ride lead widens −92 s → −136 s; L0 degrades ~5× faster. Do not re-litigate in Phase 3 |
+| `safety_factor` | Default 1.0, but it is the CARLA lever | At σ=0.2, 1.25 cuts breaches 4.9%→2.0% free of coverage cost, for +107 s ride (L0) / +67 s (L1) |
 
 ## Open questions
 

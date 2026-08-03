@@ -37,9 +37,17 @@ a later plan, when the bus is somewhere more convenient.
     (which is what `NoisyTravelModel` simulates, and what CARLA will do for
     real), an insertion certified feasible can still be executed late.
 
-    Measured on the campus map at W750 with exact driving, the fallback alone
-    breaches the window for roughly 1–2% of fulfilled requests. See
-    `notebooks/execution-noise.ipynb`.
+    Measured on the campus map at W750 over 250 trials, the fallback alone
+    breaches the window for **2.3%** of fulfilled requests *with exact
+    driving*. Execution noise adds to that: +1.3 pp at σ=0.1, +2.5 at σ=0.2,
+    +3.3 at σ=0.3 — decelerating rather than compounding, because re-planning
+    on each arrival re-anchors on the real clock.
+
+    `safety_factor` is the lever if that matters. At σ=0.2, raising it to 1.25
+    cuts the breach rate from 4.9% to 2.0% at **no cost in coverage**
+    (+0.1 pp, not significant) — but pays about +107 s of mean ride for L0,
+    and +67 s for L1. Since ride time is a graded KPI and breach rate is not,
+    the default stays 1.0. See `notebooks/execution-noise.ipynb`.
 
 ## `Schedule`
 

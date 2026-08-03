@@ -185,7 +185,65 @@ it was given unless it accepted something, so "nothing moved" needs no
 schedule comparison.
 
 `repair_passes / repair_calls` is the readout that answers whether one sweep
-was enough.
+was enough. Note the floor is **1**, not 2: a call whose first sweep accepts
+nothing has converged already and stops there, so this figure really reports
+what fraction of calls found anything to do.
+
+!!! success "One pass is all there is — measured, 300 paired trials"
+    Neither `n_passes=2` nor sweeping to convergence improves any KPI over a
+    single pass at W750: served p=0.91, mean wait p=0.57, mean ride p=0.69,
+    max ride p=0.44. The intervals are tight enough for the null to carry
+    weight — any gain from converging is under about 3 s of mean ride, against
+    the **92 s** L1 itself buys over L0.
+
+    The counters say why. The second sweep roughly doubles relocation attempts
+    (788,611 → 1,572,866) and buys **673 extra acceptances** — an acceptance
+    rate of **0.086%**, against 3.2% for the first sweep. Convergence averages
+    **1.26 passes per call**, so about three quarters of repair calls relocate
+    nothing at all.
+
+    So the relocate neighbourhood is genuinely exhausted after one sweep, and
+    the ceiling is a property of the operators rather than of the budget.
+    Improving further needs a move that displaces several requests at once —
+    L2. `n_passes=1` stays the default; `None` remains available for
+    re-testing on another map or window.
+
+    One curiosity, not a defect: total `cost_improvement` *falls* as passes
+    increase (6.62M → 6.57M → 6.56M s). A better-maintained schedule leaves
+    each later plan call less to improve, so the accumulated total shrinks
+    while the schedules themselves are equal or better.
+    See `notebooks/reordering-n-passes.ipynb`.
+
+## Reordering under unreliable driving
+
+Everything above is measured in a simulation where the bus drives exactly as
+predicted. `notebooks/execution-noise.ipynb` breaks that, handing the backend
+a [`NoisyTravelModel`](travel_model.md) while the policy keeps planning
+against the clean graph.
+
+The prediction going in was that **L1 would be the more fragile of the two**:
+repair works by tightening the schedule, and the slack it removes is also the
+buffer that absorbs execution error. That was refuted. L1's advantage *grows*
+with noise, monotonically:
+
+| σ | 0.0 | 0.1 | 0.2 | 0.3 |
+|---|---|---|---|---|
+| Mean ride, L1 − L0 | −92 s | −108 s | −124 s | **−136 s** |
+| Max ride, L1 − L0 | −250 s | −358 s | −492 s | −416 s |
+
+All at p<0.0001. Seen as two columns rather than a difference it is starker:
+L0's mean ride degrades 596 → 607 → 629 → **653 s**, while L1's moves only
+505 → 499 → 505 → **517 s**. **L0 degrades roughly five times faster.**
+
+L1 does not buy this by breaking more promises — the breach-rate difference is
+non-significant at every noise level (+0.05, +0.12, +0.03, +0.20 pp).
+
+The likely mechanism, which has **not** been measured directly: L1 re-sorts
+the remaining schedule against the *current* clock on every planning call,
+while L0 keeps the order that arrival sequence happened to produce. That makes
+reordering an adaptive advantage precisely when the world departs from the
+plan — which would mean L1 is worth *more* under CARLA than the noiseless
+figures suggest, not less.
 
 L1 costs **3.4×** a plain insertion trial (3.9× with retry enabled), matching
 the ~3.7× predicted from the headroom measurements.

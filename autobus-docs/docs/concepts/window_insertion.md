@@ -26,6 +26,21 @@ be served in time are **rejected** rather than served late.
 Rejection is a *soft skip*: the request stays `PENDING` and remains eligible for
 a later plan, when the bus is somewhere more convenient.
 
+!!! note "The deadline binds insertions, not boardings"
+    The guarantee is narrower than "nobody is picked up late". It is: *no
+    request is accepted into a schedule that predicts a late pickup*.
+
+    Two things can still produce a late boarding. The **progress fallback**
+    drives to the nearest pending pickup whenever nothing at all can be
+    scheduled, deliberately ignoring the window — a late pickup beats a
+    stalled bus. And under a backend whose driving is slower than the estimate
+    (which is what `NoisyTravelModel` simulates, and what CARLA will do for
+    real), an insertion certified feasible can still be executed late.
+
+    Measured on the campus map at W750 with exact driving, the fallback alone
+    breaches the window for roughly 1–2% of fulfilled requests. See
+    `notebooks/execution-noise.ipynb`.
+
 ## `Schedule`
 
 An immutable, ordered list of `Event`s — a node, a load delta (`+1` boarding,

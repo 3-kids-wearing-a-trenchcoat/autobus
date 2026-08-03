@@ -147,23 +147,86 @@ Sized against the design review's §5.2 ("Phase 2 should be complete by early
 August") and the 31 August deadline. Sequence so a crude end-to-end run exists
 as early as possible; treat everything after Phase 3.4 as optional depth.
 
-1. [ ] **Spike: throughput and capability** (no production code)
-   - Synchronous mode, fixed delta, no-rendering; measure sim-seconds per
-     wall-second on the target town, with and without NPC traffic.
-   - Confirm a bus blueprint exists in 0.9.16.
-   - Resolve the `agents` package gap (see Risks).
-   - Output: the one number every later step is sized against, and a
-     CARLA-specific scaled-down `LOAD`.
+1. [X] **Spike: throughput and capability** — measured 2026-08-03
+
+   **Throughput** at `fixed_delta_seconds=0.05`, Town10HD_Opt, 300 ticks:
+
+   | | 0 NPCs | 20 NPCs | 50 NPCs |
+   |---|---|---|---|
+   | rendering | 2.30× real | 2.26× | 1.98× |
+   | no-rendering | 50.1× | **13.4×** | 6.1× |
+
+   Rendering costs ~6×, and is the single biggest lever. **Town choice is
+   irrelevant to speed** (Town01 11.0×, Town02 11.8×, Town04 11.4×,
+   Town10HD_Opt 13.0×) — choose a town on authoring effort, not performance.
+
+   **AI degradation is caused by the delta, not by wall speed.** Net
+   displacement of 30 autopilot vehicles over 60 simulated seconds:
+   112 m at delta 0.025/0.05/0.1, but **51 m at 0.5** — and CARLA warns once
+   `fixed_delta_seconds > max_substep_delta_time * max_substeps` (0.01 × 10 =
+   0.1). At a *fixed* delta of 0.05, rendering on (2×) and off (13×) gave
+   121 m and 113 m — indistinguishable. So `no_rendering_mode` is free:
+   in synchronous mode the world advances by exactly `delta` per tick no
+   matter how long the tick took. **Keep delta at 0.05; never above 0.1.**
+
+   **Sizing.** A 40-request trial (~2000–4000 sim-s) is 2.5–5 wall-minutes at
+   13×, so a 30-trial campaign is under 2.5 hours and 100 trials is an
+   overnight run. The design review's §3.2 statistical bar is therefore
+   *affordable* on CARLA — the conflict with §5.1 need not be resolved by
+   giving up. With rendering on for a demo the same trial is 17–33 minutes.
+
+   **Bus blueprint: `vehicle.mitsubishi.fusorosa`** (`base_type=Bus`).
+
+   **Steering: `traffic_manager.set_path(actor, [locations])` works**, and
+   keeps CARLA's built-in driving in charge as design review §4 intended. One
+   bus completed a six-leg tour of Town01 with the path re-issued per leg;
+   3/6 legs landed within 6 m, two of the misses stopping 32–54 m short.
+   Expected to improve now that targets are authored stops rather than
+   arbitrary spawn points. **Decision: use `set_path`; revisit only if it
+   stays unreliable.**
+
+   **The `agents` package** is confirmed absent from the wheel and present in
+   the image at `/workspace/PythonAPI/carla/agents` (2262 LOC). Vendoring it
+   would need **shapely** (not in `environment.yml`) and its `requirements.txt`
+   pins `numpy<2.0.0` against our 2.5.1. Not needed unless `set_path` fails.
 2. [ ] **`CarlaMapProvider`**
    - `carla.Map.get_topology()` → `RoadNodeRecord` / `RoadEdgeRecord`; edge
      cost from segment length and speed limit.
    - Dump the map to a fixture once, then build and test the provider
      **offline** — otherwise every map test needs a live server.
-3. [ ] **Bus stops** (its own discussion)
-   - Working assumption: hand-authored and version-controlled, in the shape
-     `StaticMapProvider.StopInput` already establishes.
-   - Needs a small authoring aid (dump coordinates from a spectator camera).
-   - Stops must be reachable and have a legal pull-over point.
+3. [X] **Bus stops** — authored 2026-08-03, pending review
+
+   Stops are an **input** to the map layer, never derived from it: in a real
+   deployment you name the map and its stops rather than let a program guess.
+   Hand-authored, version-controlled, one file per town under
+   `src/map/carla_maps/<Town>.stops.json`.
+
+   **Addressed by OpenDRIVE identity** — `road_id`, `lane_id`, `s` — which
+   `Map.get_waypoint_xodr` resolves back exactly (worst drift measured on
+   Town01: **0.0006 m**). World coordinates are cached alongside for offline
+   plotting and as a load-time check that the file matches the town. The sign
+   of `lane_id` carries direction, so a stop serves one direction of its
+   road — consistent with `TransitGraph` nodes being directed road edges.
+
+   `src/map/carla_stops.py` holds the schema and IO and **imports no carla**,
+   so the provider and its tests can read stops with no server running.
+   `notebooks/carla-stop-authoring.ipynb` is the aid: it proposes sites,
+   plots them, draws them into the world for inspection, and writes the file.
+
+   **A legal site** is on a Driving lane, off-junction, ≥10 m clear of both
+   segment ends, with a Shoulder immediately to the right (CARLA's way of
+   saying a bus can pull over), on a segment ≥24 m long. Town01 yields 3318
+   such sites across 44 road-lanes.
+
+   **Trap, already paid for once:** the junction test belongs on the *stop
+   position*, not on the segment endpoints. `get_topology()` segments run
+   junction to junction, so their endpoints are junction waypoints by
+   construction — testing them discarded 144 of Town01's 160 segments and
+   left stops only on the four perimeter roads.
+
+   Town01 draft: 15 stops, 11 road-lanes, min spacing 92 m, median
+   stop-to-stop road distance 555 m (~93 s at 6 m/s, against the campus
+   map's ~130 s). All 15 mutually reachable.
 4. [ ] **The bus, no passengers** — the walking skeleton
    - Spawn, drive to a stop, detect arrival (proximity + near-zero speed,
      never exact waypoint equality), stop, continue.
@@ -211,13 +274,16 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 | `n_passes` | Default 1 — L1 is finished | Converging adds nothing (all p>0.4); the second sweep accepts 0.086% of attempts |
 | Does L1 survive CARLA-like driving? | **Yes, and its advantage grows** | Under execution noise L1's mean-ride lead widens −92 s → −136 s; L0 degrades ~5× faster. Do not re-litigate in Phase 3 |
 | `safety_factor` | Default 1.0, but it is the CARLA lever | At σ=0.2, 1.25 cuts breaches 4.9%→2.0% free of coverage cost, for +107 s ride (L0) / +67 s (L1) |
+| Which CARLA town? | **Town01** for now, but nothing may hard-code it — several maps are wanted eventually | Town choice does not affect throughput; Town01 drives a bus well, Town10HD_Opt barely moves one even on plain autopilot |
+| How is the bus steered? | `traffic_manager.set_path` | Works, no new dependencies, keeps CARLA's own driving in charge per design review §4. Vendoring `agents` is the fallback only |
+| `fixed_delta_seconds` | **0.05**, never above 0.1 | Above `max_substep_delta_time × max_substeps` the physics silently stops keeping up; at 0.5 vehicles cover half the ground per simulated second |
+| Where do bus stops come from? | Hand-authored per town, an input to the provider | A real deployment names its maps and stops rather than generating them |
 
 ## Open questions
 
-- **Which town?** Affects stop-authoring effort most. Small (Town01/02) is the
-  cheap default.
 - **NPC traffic?** Empty is fastest and most reproducible; light traffic is
   more realistic and is what the execution-noise study models synthetically.
+  20 vehicles costs 4× throughput (50×→13×) and still leaves headroom.
 - **Which reading of CARLA's role governs?** §3.2 says runs "will be done on
   the CARLA server as well" at the same statistical bar (CI half-width < 5% of
   mean); §5.1 says CARLA is for demonstrations. These conflict, and the

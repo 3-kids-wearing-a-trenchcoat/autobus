@@ -1,0 +1,37 @@
+name: carla-autobus
+
+services:
+  carla:
+    image: carlasim/carla:0.9.16
+    container_name: carla
+    network_mode: host
+    tty: true
+    stdin_open: true
+    user: "1000:1000"
+
+    devices:
+      - /dev/dri:/dev/dri
+
+    group_add:
+      - video
+
+    environment:
+      DISPLAY: ${DISPLAY}
+      XAUTHORITY: /tmp/.Xauthority
+      SDL_VIDEODRIVER: x11
+      # sanity check
+      # LIBGL_ALWAYS_SOFTWARE: "1"
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /usr/lib:/usr/lib:ro
+      - /usr/lib64:/usr/lib64:ro
+
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:rw # Map host auth to container
+
+      - /usr/lib/libdrm.so.2:/usr/lib/libdrm.so.2:ro
+      - /usr/lib/libdrm_amdgpu.so.1:/usr/lib/libdrm_amdgpu.so.1:ro
+      - /usr/lib/libvulkan.so.1:/usr/lib/libvulkan.so.1:ro
+      - /usr/share/vulkan:/usr/share/vulkan:ro
+
+    command: ["bash", "CarlaUE4.sh", "-nosound"]

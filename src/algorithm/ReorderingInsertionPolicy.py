@@ -10,6 +10,12 @@ from src.algorithm.WindowInsertionPolicy import (
 )
 from src.map.TransitGraph import TransitGraph
 
+# Ceiling on the sweeps a converging repair may run. Convergence is already
+# guaranteed — every accepted relocation strictly lowers a cost that is
+# bounded below — so this only bounds the damage if that invariant is ever
+# broken by a future operator. Measured convergence takes very few passes.
+_MAX_CONVERGE_PASSES = 20
+
 
 class ReorderingInsertionPolicy(WindowInsertionPolicy):
     """
@@ -62,7 +68,7 @@ class ReorderingInsertionPolicy(WindowInsertionPolicy):
         wait_factor: float = _DEFAULT_WAIT_FACTOR,
         safety_factor: float = 1.0,
         max_relocations: int | None = None,
-        n_passes: int = 1,
+        n_passes: int | None = 1,
         retry_rejected: bool = False,
     ) -> None:
         """
@@ -78,9 +84,11 @@ class ReorderingInsertionPolicy(WindowInsertionPolicy):
             None (the default) tries every one. 0 disables repair entirely,
             which reproduces WindowInsertionPolicy exactly and exists so the
             two can be compared through one code path.
-        :param n_passes: Repair sweeps per planning call. One sweep is
-            usually enough; more costs proportionally more and converges
-            quickly, since each sweep can only accept strict improvements.
+        :param n_passes: Repair sweeps per planning call. None sweeps until
+            a pass accepts nothing, leaving the schedule at a local optimum
+            for this neighbourhood — the most the relocate operators can do
+            before a larger move is needed. A fixed count costs proportionally
+            more per sweep and is the cheaper way to bound planning time.
         :param retry_rejected: Whether to offer previously rejected requests
             another chance after repair. Defaults to False because it was
             measured not to pay: it admitted 263 of 31,074 attempts (0.9%)
@@ -101,7 +109,7 @@ class ReorderingInsertionPolicy(WindowInsertionPolicy):
             raise ValueError(
                 f"max_relocations must not be negative (got {max_relocations})"
             )
-        if n_passes < 0:
+        if n_passes is not None and n_passes < 0:
             raise ValueError(
                 f"n_passes must not be negative (got {n_passes})"
             )
@@ -135,8 +143,7 @@ class ReorderingInsertionPolicy(WindowInsertionPolicy):
             return route
 
         self._stats["repair_calls"] += 1
-        for _ in range(self._n_passes):
-            self._schedule = self._repair(self._schedule, state)
+        self._schedule = self._sweep(self._schedule, state)
         if self._retry_rejected:
             self._schedule = self._retry(self._schedule, state)
 
@@ -149,6 +156,36 @@ class ReorderingInsertionPolicy(WindowInsertionPolicy):
     # ------------------------------------------------------------------
     # Repair
     # ------------------------------------------------------------------
+
+    def _sweep(self, schedule: Schedule, state: BusState) -> Schedule:
+        """
+        Run repair passes over one schedule, as ``n_passes`` directs.
+
+        A fixed count runs every pass, including ones that change nothing.
+        ``None`` stops as soon as a pass accepts no relocation, which leaves
+        the schedule at a local optimum for the relocate operators: no single
+        request can be moved anywhere cheaper, and improving further would
+        take a move that displaces several at once.
+        :param schedule: Schedule to repair.
+        :param state: Current bus state snapshot.
+        :return: A schedule no more expensive than the one passed in.
+        """
+        if self._n_passes is None:
+            budget = _MAX_CONVERGE_PASSES
+        else:
+            budget = self._n_passes
+
+        for _ in range(budget):
+            repaired = self._repair(schedule, state)
+            self._stats["repair_passes"] += 1
+            # _repair hands back the very object it was given unless it
+            # accepted something, so identity is an exact "nothing moved"
+            # test — no schedule comparison needed.
+            converged = repaired is schedule
+            schedule = repaired
+            if self._n_passes is None and converged:
+                break
+        return schedule
 
     def _repair(self, schedule: Schedule, state: BusState) -> Schedule:
         """
@@ -340,11 +377,14 @@ def _empty_stats() -> dict[str, float]:
 
     ``repair_calls`` counts planning calls that actually reached the repair
     stage, which is fewer than the total: a call whose schedule came out
-    empty has no order to improve and is skipped.
+    empty has no order to improve and is skipped. ``repair_passes`` counts
+    the sweeps those calls ran, so their ratio is the mean number of passes a
+    repair took — the readout that says whether one sweep was enough.
     :return: Counter name to 0.0.
     """
     return {
         "repair_calls": 0.0,
+        "repair_passes": 0.0,
         "pair_attempts": 0.0,
         "pair_accepted": 0.0,
         "dropoff_attempts": 0.0,

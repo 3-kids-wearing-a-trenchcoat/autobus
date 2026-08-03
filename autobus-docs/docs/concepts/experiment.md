@@ -73,6 +73,27 @@ Passing `record_animation=True` enables animation recording (see
 [`animate_trial`](#animate_trial) below). This has no effect on the KPI or
 tick-history data.
 
+### Simulating unreliable driving
+
+`travel_noise` perturbs the travel times the bus **actually experiences**,
+while the policy keeps planning against the unperturbed graph:
+
+```python
+result = run_trial(..., travel_noise=0.2, noise_seed=1)
+```
+
+It is the sigma of a lognormal factor with median 1.0, so it reads roughly as
+a proportional spread. `0.0` — the default — returns the planning model itself
+to the backend, so estimate and ground truth remain the same object and every
+existing result is reproduced exactly.
+
+`noise_seed` seeds a generator private to the travel model, which never touches
+the global one `run_trial` seeds for demand. It defaults to `seed`; setting it
+independently resamples execution luck while holding the request stream fixed.
+
+See [Travel Model](travel_model.md) for why the distribution is lognormal and
+what failure mode this opens up.
+
 ## compare_policies
 
 `compare_policies` runs every policy for a fixed number of trials on the same

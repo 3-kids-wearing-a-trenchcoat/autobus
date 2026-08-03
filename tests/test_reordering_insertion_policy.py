@@ -3,8 +3,12 @@
 import unittest
 
 from src.algorithm.DispatchPolicy import BusState
-from src.algorithm.ReorderingInsertionPolicy import ReorderingInsertionPolicy
+from src.algorithm.ReorderingInsertionPolicy import (
+    _MAX_CONVERGE_PASSES,
+    ReorderingInsertionPolicy,
+)
 from src.algorithm.RequestPool import Request, RequestState
+from src.algorithm.Schedule import Schedule
 from src.algorithm.WindowInsertionPolicy import WindowInsertionPolicy
 from src.map.TransitGraph import TransitGraph
 from test_transit_graph import _PROVIDER
@@ -405,9 +409,9 @@ class TestStatsAndConstruction(unittest.TestCase):
         )
         stats = policy.stats()
         self.assertEqual(set(stats), {
-            "repair_calls", "pair_attempts", "pair_accepted",
-            "dropoff_attempts", "dropoff_accepted", "cost_improvement",
-            "retry_attempts", "retry_admitted",
+            "repair_calls", "repair_passes", "pair_attempts",
+            "pair_accepted", "dropoff_attempts", "dropoff_accepted",
+            "cost_improvement", "retry_attempts", "retry_admitted",
         })
         self.assertEqual(set(stats.values()), {0.0})
 
@@ -436,6 +440,88 @@ class TestStatsAndConstruction(unittest.TestCase):
             ReorderingInsertionPolicy(
                 self.graph, max_wait_s=_WIDE_WINDOW, n_passes=-1
             )
+
+
+class TestConvergence(unittest.TestCase):
+    """n_passes=None must sweep to a fixed point and then stop."""
+
+    def setUp(self) -> None:
+        self.graph = TransitGraph(_PROVIDER)
+
+    def _policy(self, n_passes: int | None) -> ReorderingInsertionPolicy:
+        """Build a policy with repair configured to the given pass count."""
+        return ReorderingInsertionPolicy(
+            self.graph, max_wait_s=_WIDE_WINDOW,
+            n_passes=n_passes, retry_rejected=False,
+        )
+
+    def test_converged_schedule_is_a_fixed_point(self) -> None:
+        policy = self._policy(None)
+        state = _state(pending=_improvable_requests())
+        policy.plan(state, 10)
+        # A further sweep over a converged schedule must find nothing, and
+        # _repair signals "nothing moved" by handing back the same object.
+        self.assertIs(policy._repair(policy.schedule, state), policy.schedule)
+
+    def test_convergence_costs_exactly_one_confirming_pass(self) -> None:
+        # This fixture improves on the first sweep and has nothing left for
+        # the second, so converging must cost exactly two passes. Asserted
+        # exactly rather than as a range: a loop that never detects its fixed
+        # point still lands inside any range bounded by _MAX_CONVERGE_PASSES.
+        policy = self._policy(None)
+        policy.plan(_state(pending=_improvable_requests()), 10)
+        stats = policy.stats()
+        self.assertEqual(stats["repair_calls"], 1.0)
+        self.assertEqual(stats["repair_passes"], 2.0)
+
+    def test_cap_bounds_a_repair_that_never_settles(self) -> None:
+        # Convergence is guaranteed by strictly decreasing cost, so force the
+        # pathology the cap exists for: a repair that reports a change every
+        # time. Without the cap this would not terminate.
+        class NeverSettles(ReorderingInsertionPolicy):
+            def _repair(self, schedule, state):  # type: ignore[no-untyped-def]
+                return Schedule(schedule.events)
+
+        policy = NeverSettles(
+            self.graph, max_wait_s=_WIDE_WINDOW,
+            n_passes=None, retry_rejected=False,
+        )
+        policy.plan(_state(pending=_improvable_requests()), 10)
+        self.assertEqual(
+            policy.stats()["repair_passes"], float(_MAX_CONVERGE_PASSES)
+        )
+
+    def test_fixed_count_runs_exactly_that_many_passes(self) -> None:
+        policy = self._policy(2)
+        policy.plan(_state(pending=_improvable_requests()), 10)
+        stats = policy.stats()
+        self.assertEqual(stats["repair_passes"], 2.0 * stats["repair_calls"])
+
+    def test_zero_passes_runs_no_sweeps(self) -> None:
+        policy = self._policy(0)
+        policy.plan(_state(pending=_improvable_requests()), 10)
+        self.assertEqual(policy.stats()["repair_passes"], 0.0)
+
+    def test_converging_is_never_worse_than_one_pass(self) -> None:
+        state = _state(pending=_improvable_requests())
+        one_pass, converging = self._policy(1), self._policy(None)
+        one_pass.plan(state, 10)
+        converging.plan(state, 10)
+        self.assertLessEqual(
+            converging._cost(converging.schedule, state),
+            one_pass._cost(one_pass.schedule, state),
+        )
+
+    def test_converging_drops_nobody(self) -> None:
+        policy = self._policy(None)
+        requests = _improvable_requests()
+        policy.plan(_state(pending=requests), 10)
+        self.assertEqual(policy.schedule.owners(), {r.id for r in requests})
+
+    def test_none_passes_is_accepted_by_validation(self) -> None:
+        # None means "until converged", so it must survive the negativity
+        # check that guards the integer form.
+        self._policy(None)
 
 
 if __name__ == "__main__":

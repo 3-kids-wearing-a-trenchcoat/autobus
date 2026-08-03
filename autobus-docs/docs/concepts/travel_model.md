@@ -40,7 +40,7 @@ silent bug, and yields a rule policies can be held to:
 
 ## `GraphTravelModel`
 
-The only concrete implementation. Travel time is the shortest-path cost through
+The base implementation. Travel time is the shortest-path cost through
 the `TransitGraph`, whose edge weights are already in seconds. Dwell is a
 single constant charged once per stop **visit**, independent of how many
 passengers board or alight.
@@ -55,11 +55,67 @@ constant model ignores them, so a passenger-proportional dwell model can be
 dropped in without new plumbing. `Schedule` already derives and passes the real
 counts.
 
+## `NoisyTravelModel`
+
+A `GraphTravelModel` whose `travel_time` is multiplied by a random factor on
+every query. It exists to break the identity described above *on purpose*,
+before CARLA breaks it for real.
+
+```python
+model = NoisyTravelModel(graph, sigma=0.2, seed=1)
+```
+
+Given only to the **backend**, it opens a gap between what a schedule promises
+and what the bus delivers. That gap makes a failure mode reachable that cannot
+occur today: a request is accepted, promised a pickup inside the service
+window, and then delivered late. In the noiseless simulation the only way to
+fail a passenger is to refuse them up front.
+
+**The factor is lognormal with median 1.0** — `exp(N(0, sigma))`. Three
+properties motivate that choice over a symmetric one:
+
+- It cannot go negative, whatever the spread.
+- Its median is the unperturbed time, so `sigma` reads as a spread rather than
+  a slowdown: at `sigma=0.2` roughly two thirds of legs land within ±20% of
+  prediction.
+- It is right-skewed, so its **mean sits above 1.0**. A bus loses more time to
+  congestion than it can win back by driving fast, so delay accumulates along
+  a route instead of cancelling out. A mean-preserving noise model would
+  flatter the policies by letting early legs pay for late ones.
+
+The simulation turns one draw per *query* into one draw per *leg driven*:
+`SimulationBackend` asks for a leg's duration when the leg begins and caches it
+in `_time_to_next_stop` until the bus arrives, so a leg never re-rolls
+underneath the bus.
+
+!!! warning "Noise draws from a private generator, never the global one"
+    `run_trial` seeds the module-level `random` for demand generation. If
+    noise drew from it too, switching noise on would shift the demand stream
+    and a noisy run could never be compared against the baseline it is meant
+    to be measured against — the experiment would silently answer a different
+    question. `NoisyTravelModel` therefore owns a `random.Random(seed)`.
+
 ## Wiring
 
-`run_trial` builds one model and hands it to both `BusAgent` and `MockBackend`,
-so in the mock simulation estimate and ground truth are literally the same
-object. A CARLA backend is what would eventually break that identity.
+`run_trial` builds one model for planning and hands it to `BusAgent`, then asks
+`_execution_model` what the backend should drive against. With
+`travel_noise=0.0` — the default — that returns **the very same object**, so
+estimate and ground truth stay literally identical and every existing result is
+reproduced bit for bit. With noise it returns a `NoisyTravelModel` instead,
+while the policy and agent keep the clean one:
+
+```python
+run_trial(..., travel_noise=0.0)              # the ideal: today's behaviour
+run_trial(..., travel_noise=0.2, noise_seed=1)  # degraded execution
+```
+
+`noise_seed` defaults to the trial `seed`, so a trial stays reproducible as a
+whole. Passing it explicitly resamples execution luck against **fixed demand**,
+which is what lets a paired comparison vary the driving without varying the
+requests.
+
+A CARLA backend is what would eventually break the identity for real; this is
+the dress rehearsal.
 
 !!! warning "Keep the policy's dwell in step with the simulation's"
     A policy constructs its own `GraphTravelModel` by default, with **zero**

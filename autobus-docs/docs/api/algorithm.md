@@ -33,3 +33,5 @@
 ::: src.algorithm.TravelModel.TravelModel
 
 ::: src.algorithm.TravelModel.GraphTravelModel
+
+::: src.algorithm.TravelModel.NoisyTravelModel

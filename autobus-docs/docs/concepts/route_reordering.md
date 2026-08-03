@@ -164,8 +164,28 @@ service window.
 | Parameter | Default | Effect |
 |---|---|---|
 | `max_relocations` | `None` (all) | Requests to try relocating per pass. `0` reproduces `WindowInsertionPolicy` exactly. |
-| `n_passes` | `1` | Repair sweeps per call. Converges quickly, since each sweep only accepts strict improvements. |
+| `n_passes` | `1` | Repair sweeps per call. `None` sweeps to a fixed point; see below. |
 | `retry_rejected` | `False` | Whether freed slack is used within the same call. Measured not to pay; see above. |
+
+### Sweeping to convergence
+
+Each accepted relocation changes the schedule the next candidate is judged
+against, so one sweep already compounds — but it need not exhaust the
+neighbourhood. `n_passes=None` repeats until a sweep accepts nothing, leaving
+the schedule at a **local optimum for the relocate operators**: no single
+request can be moved anywhere cheaper, and improving further would require a
+move that displaces several at once, which is what L2 is for.
+
+Termination is guaranteed rather than hoped for — every acceptance strictly
+lowers a cost bounded below — so the `_MAX_CONVERGE_PASSES` ceiling only bounds
+the damage if a future operator ever breaks that invariant.
+
+The fixed-point test is an identity check: `_repair` hands back the very object
+it was given unless it accepted something, so "nothing moved" needs no
+schedule comparison.
+
+`repair_passes / repair_calls` is the readout that answers whether one sweep
+was enough.
 
 L1 costs **3.4×** a plain insertion trial (3.9× with retry enabled), matching
 the ~3.7× predicted from the headroom measurements.
@@ -189,8 +209,9 @@ here are built — `SkipStopFixedRoutePolicy` extends `FixedRoutePolicy`,
 
 ## Instrumentation
 
-`stats()` returns counters — relocations attempted and accepted per operator,
-cumulative cost improvement, and retry attempts and admissions.
+`stats()` returns counters — repair calls and the sweeps they ran, relocations
+attempted and accepted per operator, cumulative cost improvement, and retry
+attempts and admissions.
 
 They are reported on the policy rather than accumulated in a module-level
 global, so they travel with the instance. That matters for more than tidiness:
@@ -206,4 +227,5 @@ policy.stats()
 
 `repair_calls` counts planning calls that reached the repair stage, which is
 fewer than the total: a call whose schedule came out empty has no order to
-improve.
+improve. `repair_passes` counts the sweeps those calls ran, so the ratio of
+the two is the mean number of passes a repair took.

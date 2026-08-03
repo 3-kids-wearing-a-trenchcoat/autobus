@@ -9,7 +9,7 @@ from typing import Callable
 from src.algorithm.BusAgent import BusAgent
 from src.algorithm.DispatchPolicy import DispatchPolicy
 from src.algorithm.RequestPool import RequestPool
-from src.algorithm.TravelModel import GraphTravelModel
+from src.algorithm.TravelModel import GraphTravelModel, NoisyTravelModel
 from src.map.PlanarMapProvider import PlanarMapProvider
 from src.map.TransitGraph import TransitGraph
 from src.map.graph import PlanarStreetGraph
@@ -51,6 +51,38 @@ class TrialResult:
     transit_graph: TransitGraph | None = field(default=None)
 
 
+def _execution_model(
+    planning_model: GraphTravelModel,
+    travel_noise: float,
+    noise_seed: int | None,
+    seed: int | None,
+) -> GraphTravelModel:
+    """
+    Return the travel model the simulation executes against.
+
+    Without noise this is the planning model itself rather than a copy of it,
+    so estimate and ground truth stay literally the same object and every
+    existing result is reproduced bit for bit. With noise the backend gets a
+    perturbed model of its own while the policy keeps the clean one, and that
+    asymmetry is the whole point: the schedule is still planned against a
+    world the bus no longer quite lives in.
+    :param planning_model: The model the policy and agent plan against.
+    :param travel_noise: Sigma of the lognormal factor; 0.0 means no noise.
+    :param noise_seed: Explicit seed for the noise generator, or None to
+        reuse the trial seed.
+    :param seed: The trial seed, used when noise_seed is None.
+    :return: The travel model to hand to the backend.
+    """
+    if travel_noise == 0.0:
+        return planning_model
+    return NoisyTravelModel(
+        planning_model.graph,
+        dwell_s=planning_model.dwell_s,
+        sigma=travel_noise,
+        seed=seed if noise_seed is None else noise_seed,
+    )
+
+
 def run_trial(
     policy_factory: Callable[[TransitGraph], DispatchPolicy],
     graph: PlanarStreetGraph,
@@ -67,6 +99,8 @@ def run_trial(
     keep_tick_history: bool = False,
     max_wait_s: float | None = None,
     dwell_s: float = 0.0,
+    travel_noise: float = 0.0,
+    noise_seed: int | None = None,
 ) -> TrialResult:
     """
     Run one simulation trial and return the results.
@@ -113,6 +147,16 @@ def run_trial(
     :param dwell_s: Seconds the bus spends stopped at each stop it visits.
         Defaults to 0.0, which reproduces the original dwell-free timing
         exactly — existing baselines stay comparable.
+    :param travel_noise: Spread of the random factor applied to the
+        *executed* travel time, as the sigma of a lognormal with median 1.0.
+        The policy keeps planning against the unperturbed graph, so this
+        opens a gap between what a schedule promises and what the bus
+        delivers — the gap CARLA will open for real. Defaults to 0.0, which
+        reproduces existing results exactly.
+    :param noise_seed: Seed for the travel-noise generator, which is private
+        and never touches the global one used for demand. Defaults to None,
+        which reuses ``seed`` so a trial stays reproducible as a whole; pass
+        a different value to resample execution luck against fixed demand.
     :return: TrialResult with KPIs, tick history, and timing
         distributions.
     """
@@ -134,10 +178,14 @@ def run_trial(
     demand_gen = DemandGenerator(pool, gen_policy, stops)
     demand_gen.update(0.0)
 
-    # One model shared by the policy's projections and the backend's physics.
-    # In the mock simulation estimate and ground truth are the same object, so
-    # a projected schedule is exactly what gets executed.
+    # What the policy and the agent believe will happen.
     travel_model = GraphTravelModel(transit_graph, dwell_s=dwell_s)
+    # What the simulation actually does. Without noise this is the very same
+    # object, so estimate and ground truth coincide and a projected schedule
+    # is exactly what gets executed.
+    execution_model = _execution_model(
+        travel_model, travel_noise, noise_seed, seed
+    )
 
     policy = policy_factory(transit_graph)
     agent = BusAgent(
@@ -159,7 +207,7 @@ def run_trial(
         provider=provider,
         recorder=recorder,
         max_wait_s=max_wait_s,
-        travel_model=travel_model,
+        travel_model=execution_model,
     )
     runner = SimulationRunner(backend=backend, dt=dt, max_time=max_time)
 

@@ -65,20 +65,24 @@ def main() -> None:
         commitment=2,
     )
 
-    # 8. Passive observers and the backend that ties the tick loop
-    #    together.  MockBackend computes travel times via Dijkstra on
-    #    the TransitGraph (as opposed to a CARLA physics simulation).
+    # 8. The world the bus drives in.  MockBackend computes travel times
+    #    via Dijkstra on the TransitGraph (as opposed to a CARLA physics
+    #    simulation).  It knows nothing about passengers or the clock — it
+    #    only takes destinations and reports arrivals.
     metrics = MetricsTracker(pool)
-    backend = MockBackend(
+    backend = MockBackend(position=stops[0].id, provider=provider)
+
+    # 9. The runner owns the clock and the tick order, and mediates between
+    #    the agent and the backend: 1-second ticks, 1-hour safety ceiling.
+    runner = SimulationRunner(
+        backend=backend,
         agent=agent,
+        pool=pool,
         demand_generator=demand_gen,
         metrics_tracker=metrics,
-        pool=pool,
-        provider=provider,
+        dt=1.0,
+        max_time=3600.0,
     )
-
-    # 9. Drive the loop: 1-second ticks, 1-hour safety ceiling.
-    runner = SimulationRunner(backend=backend, dt=1.0, max_time=3600.0)
     runner.run()
 
 

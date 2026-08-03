@@ -1,173 +1,119 @@
-"""Abstract simulation backend: time advancement and stop-arrival logic."""
+"""Abstract simulation backend: the seam between the project and a world."""
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
-from src.algorithm.BusAgent import BusAgent
 from src.algorithm.RequestPool import RequestPool
-from src.metrics.MetricsTracker import MetricsTracker
-from src.simulation.AnimationRecorder import AnimationRecorder
-from src.simulation.DemandGenerator import DemandGenerator
+
+
+@dataclass(frozen=True)
+class AdvanceResult:
+    """
+    Outcome of one ``advance`` call.
+
+    :param arrived_at: Stop ID the bus reached, or None if it was still en
+        route when the time budget ran out.
+    :param consumed: Seconds of simulation time actually spent. Equals the
+        requested budget unless an arrival cut the call short.
+    """
+
+    arrived_at: str | None
+    consumed: float
 
 
 class SimulationBackend(ABC):
     """
-    Abstract controller that receives ticks and advances simulation state.
+    Adapter between the simulation and whatever world the bus drives in.
 
-    Coordinates BusAgent, DemandGenerator, and MetricsTracker in the correct
-    per-tick order. Subclasses supply only one method — ``_travel_time`` —
-    which encapsulates all environment-specific movement physics.
+    The backend answers questions and takes commands; it never orchestrates.
+    Everything that is not world-specific — the tick order, the clock, demand,
+    abandonment, metrics — belongs to ``SimulationRunner``, which is what
+    keeps the rest of the project indifferent to whether the world is a
+    synthetic graph, CARLA, or a scripted timetable.
 
-    :param agent: The bus agent that manages routing and passenger state.
-    :param demand_generator: Generates new passenger requests each tick.
-    :param metrics_tracker: Passive observer that records per-tick snapshots.
-    :param pool: Shared request pool; read here only for ``is_done``.
-    :param recorder: Optional animation recorder; when provided, captures a
-        frame on each stop arrival. Defaults to None.
-    :param max_wait_s: Maximum time a request may stay PENDING before the
-        passenger gives up and the request is cancelled. None disables
-        abandonment (requests wait indefinitely). Defaults to None.
-    :param dwell_s: Seconds the bus is held at every stop it visits, modelling
-        the time a real bus spends pulled over while passengers board and
-        alight. This is *ground truth*, as opposed to a policy's estimate of
-        it (see ``TravelModel``). Defaults to 0.0, which reproduces the
-        original dwell-free timing exactly.
+    Three methods are abstract because only the world can answer them. The
+    other three have no-op defaults, because a world that needs no setup and
+    has no passengers to render should not have to say so.
     """
 
-    def __init__(
-        self,
-        agent: BusAgent,
-        demand_generator: DemandGenerator,
-        metrics_tracker: MetricsTracker,
-        pool: RequestPool,
-        recorder: AnimationRecorder | None = None,
-        max_wait_s: float | None = None,
-        dwell_s: float = 0.0,
-    ) -> None:
-        self._agent = agent
-        self._demand_generator = demand_generator
-        self._metrics_tracker = metrics_tracker
-        self._pool = pool
-        self._recorder = recorder
-        self._max_wait_s = max_wait_s
-        self._dwell_s = dwell_s
-        self._sim_time: float = 0.0
-        self._elapsed_toward_next: float = 0.0
-        self._time_to_next_stop: float | None = (
-            self._compute_next_travel_time()
-        )
-
     # ------------------------------------------------------------------
-    # Abstract interface
+    # Abstract interface — genuinely world-specific
     # ------------------------------------------------------------------
 
     @abstractmethod
-    def _travel_time(self, from_id: str, to_id: str) -> float:
+    def set_destination(self, stop_id: str) -> None:
         """
-        Return the travel time in seconds between two TransitGraph node IDs.
-        :param from_id: TransitGraph node ID of the origin stop.
-        :param to_id: TransitGraph node ID of the destination stop.
-        :return: Travel time in seconds (must be strictly positive).
+        Command the bus to drive to a stop.
+
+        Must be **idempotent**: re-commanding the stop the bus is already
+        heading for leaves the leg untouched, which is how partial progress
+        survives across ticks. The runner re-issues the destination on every
+        pass of its movement loop rather than tracking what it last said.
+
+        A destination equal to the bus's current location is legal — a policy
+        may re-issue the stop the bus is standing on — and must start a fresh
+        leg rather than being ignored as unchanged.
+        :param stop_id: TransitGraph node ID of the stop to drive to.
+        """
+
+    @abstractmethod
+    def advance(self, dt: float) -> AdvanceResult:
+        """
+        Advance the world until ``dt`` is spent or one stop is reached.
+
+        **One arrival at most, never a batch.** Arrivals within a single tick
+        are sequentially dependent: the agent boards, alights and re-plans on
+        each one, and the leg that follows is not known until it has. A
+        backend that reported several arrivals at once would be answering for
+        a route the agent had not yet chosen.
+
+        When no arrival occurs the whole budget must be consumed, so the
+        runner's clock and the world's stay in step. For a tick-based world
+        that means ``dt`` should be a whole multiple of its tick length.
+        :param dt: Time budget in seconds.
+        :return: AdvanceResult naming the stop reached, if any, and the time
+            actually spent.
+        """
+
+    @abstractmethod
+    def current_location(self) -> str:
+        """
+        Return where the bus is now.
+
+        Between stops this is the last stop reached, so it is only exact at
+        arrivals. That is enough for today, where the bus is stationary
+        whenever it plans; a world that supports re-planning mid-leg would
+        report a finer position here.
+        :return: TransitGraph node ID of the bus's position.
         """
 
     # ------------------------------------------------------------------
-    # Public API
+    # Optional hooks — no-ops unless the world needs them
     # ------------------------------------------------------------------
 
-    def step(self, dt: float) -> None:
+    def start(self) -> None:
         """
-        Advance the simulation by dt seconds.
+        Prepare the world for a run; called once before the first tick.
 
-        Per-tick order: advance time → generate demand → expire long-waiting
-        requests → process movement (firing on_arrival for each stop reached)
-        → record metrics snapshot.
-        :param dt: Time delta in seconds.
+        This is where a world with actors creates them. Deliberately separate
+        from ``__init__`` so that constructing a backend stays cheap and
+        failure-free — CARLA has no vehicle to place until it has a server.
         """
-        self._sim_time += dt
-        self._demand_generator.update(self._sim_time)
-        self._expire_pending()
-        self._process_movement(dt)
-        self._metrics_tracker.record_tick(self._sim_time)
 
-    def is_done(self) -> bool:
-        """Return True when no requests remain pending or on the bus."""
-        return (
-            len(self._pool.get_pending()) == 0
-            and len(self._pool.get_on_bus()) == 0
-        )
-
-    @property
-    def sim_time(self) -> float:
-        """Current simulation time in seconds."""
-        return self._sim_time
-
-    @property
-    def metrics(self) -> MetricsTracker:
-        """The MetricsTracker for reading KPIs."""
-        return self._metrics_tracker
-
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
-
-    def _expire_pending(self) -> None:
+    def close(self) -> None:
         """
-        Cancel PENDING requests whose passengers have waited too long.
+        Release the world's resources; called once after the last tick.
 
-        A request is abandoned once it has been PENDING for at least
-        ``max_wait_s`` seconds (measured from ``created_at``). Onboard
-        (ON_BUS) requests are committed and never abandoned. No-op when
-        ``max_wait_s`` is None. ``get_pending`` returns a fresh list, so
-        cancelling under it is safe.
+        Called from a ``finally`` block, so it runs even when a trial fails
+        part-way. Leaked actors are the classic cross-trial contaminant.
         """
-        if self._max_wait_s is None:
-            return
-        for request in self._pool.get_pending():
-            if self._sim_time - request.created_at >= self._max_wait_s:
-                self._pool.cancel(request.id)
 
-    def _compute_next_travel_time(self) -> float | None:
+    def sync_passengers(self, pool: RequestPool) -> None:
         """
-        Return the time to reach the next stop, or None if the route is empty.
+        Mirror the request pool onto whatever the world renders passengers as.
 
-        Dwell is folded into the *leading* edge of the leg — the bus first
-        spends ``dwell_s`` pulled over where it currently is, then drives.
-        That is equivalent to holding it at the stop it just reached, and it
-        keeps the whole calculation to a single duration per leg.
-
-        One consequence: the bus also dwells at its initial position, before
-        it has served anyone. Harmless, and arguably right, since a real bus
-        would be sitting at its first stop with the doors open.
-        :return: Dwell plus travel time in seconds, or None if there is no
-            next stop.
+        Takes the pool and diffs it rather than subscribing to it, which keeps
+        the algorithm layer free of observer hooks: ``RequestPool`` does not
+        know that anything is watching.
+        :param pool: The shared request pool, read-only from here.
         """
-        next_stop = self._agent.next_stop()
-        if next_stop is None:
-            return None
-        return (
-            self._dwell_s
-            + self._travel_time(self._agent.position, next_stop)
-        )
-
-    def _process_movement(self, dt: float) -> None:
-        """Process bus movement, firing on_arrival for each stop reached."""
-        remaining = dt
-        while remaining > 0.0:
-            next_stop = self._agent.next_stop()
-            if next_stop is None:
-                break
-            if self._time_to_next_stop is None:
-                self._time_to_next_stop = self._compute_next_travel_time()
-                if self._time_to_next_stop is None:
-                    break
-            time_left = self._time_to_next_stop - self._elapsed_toward_next
-            if remaining >= time_left:
-                arrival_time = self._sim_time - (remaining - time_left)
-                remaining -= time_left
-                self._elapsed_toward_next = 0.0
-                self._agent.on_arrival(next_stop, arrival_time)
-                if self._recorder is not None:
-                    self._recorder.record_arrival(next_stop, arrival_time)
-                self._time_to_next_stop = self._compute_next_travel_time()
-            else:
-                self._elapsed_toward_next += remaining
-                remaining = 0.0

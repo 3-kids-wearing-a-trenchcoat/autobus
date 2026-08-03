@@ -200,16 +200,20 @@ def run_trial(
 
     metrics = MetricsTracker(pool)
     backend = MockBackend(
-        agent=agent,
-        demand_generator=demand_gen,
-        metrics_tracker=metrics,
-        pool=pool,
-        provider=provider,
-        recorder=recorder,
-        max_wait_s=max_wait_s,
+        position=stops[0].id,
         travel_model=execution_model,
     )
-    runner = SimulationRunner(backend=backend, dt=dt, max_time=max_time)
+    runner = SimulationRunner(
+        backend=backend,
+        agent=agent,
+        pool=pool,
+        demand_generator=demand_gen,
+        metrics_tracker=metrics,
+        dt=dt,
+        max_time=max_time,
+        recorder=recorder,
+        max_wait_s=max_wait_s,
+    )
 
     if silent:
         with contextlib.redirect_stdout(io.StringIO()):
@@ -228,7 +232,5 @@ def run_trial(
         wait_times=wait_times,
         ride_times=ride_times,
         animation_frames=recorder.frames if recorder is not None else [],
-        transit_graph=(
-            backend._transit_graph if record_animation else None
-        ),
+        transit_graph=transit_graph if record_animation else None,
     )

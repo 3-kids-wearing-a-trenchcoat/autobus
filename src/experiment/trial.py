@@ -21,7 +21,12 @@ from src.metrics.MetricsTracker import (
 from src.simulation.AnimationRecorder import AnimationFrame, AnimationRecorder
 from src.simulation.DemandGenerator import DemandGenerator, PeriodicPolicy
 from src.simulation.MockBackend import MockBackend
+from src.simulation.SimulationBackend import SimulationBackend
 from src.simulation.SimulationRunner import SimulationRunner
+
+# Mirrors policy_factory: the harness supplies the graph and where the bus
+# starts, and the caller decides what world answers for them.
+BackendFactory = Callable[[TransitGraph, str], SimulationBackend]
 
 
 @dataclass
@@ -101,6 +106,7 @@ def run_trial(
     dwell_s: float = 0.0,
     travel_noise: float = 0.0,
     noise_seed: int | None = None,
+    backend_factory: BackendFactory | None = None,
 ) -> TrialResult:
     """
     Run one simulation trial and return the results.
@@ -157,6 +163,13 @@ def run_trial(
         and never touches the global one used for demand. Defaults to None,
         which reuses ``seed`` so a trial stays reproducible as a whole; pass
         a different value to resample execution luck against fixed demand.
+    :param backend_factory: Callable that accepts the TransitGraph and the
+        bus's starting stop ID and returns the world to simulate in. Defaults
+        to None, which builds a MockBackend driving against this trial's own
+        travel model. Supply one to run somewhere else — CARLA, or a
+        ScriptedBackend with no map at all. ``travel_noise``, ``noise_seed``
+        and ``dwell_s`` describe the *default* world only; a caller who
+        brings their own backend owns its physics.
     :return: TrialResult with KPIs, tick history, and timing
         distributions.
     """
@@ -198,11 +211,20 @@ def run_trial(
         commitment=commitment,
     )
 
+    if backend_factory is None:
+        # Closed over execution_model rather than rebuilt from the graph, so
+        # that with travel_noise=0.0 the backend drives against the very
+        # object the policy plans with.
+        def backend_factory(
+            _graph: TransitGraph, start_stop_id: str
+        ) -> SimulationBackend:
+            """Build the default dead-reckoning backend."""
+            return MockBackend(
+                position=start_stop_id, travel_model=execution_model
+            )
+
     metrics = MetricsTracker(pool)
-    backend = MockBackend(
-        position=stops[0].id,
-        travel_model=execution_model,
-    )
+    backend = backend_factory(transit_graph, stops[0].id)
     runner = SimulationRunner(
         backend=backend,
         agent=agent,

@@ -1,9 +1,9 @@
-"""Tests for run_trial's execution-noise wiring.
+"""Tests for run_trial's wiring: execution noise, and the backend seam.
 
-Focused on one claim, because the whole execution-noise experiment rests on
-it: the policy plans against the clean graph while the backend drives a
-perturbed one. A unit test of NoisyTravelModel cannot establish that — only
-assembling the stack can.
+Two claims that only assembling the stack can establish. First, that the
+policy plans against the clean graph while the backend drives a perturbed
+one — a unit test of NoisyTravelModel cannot show that. Second, that the
+harness does not care which world it is given.
 """
 
 import pytest
@@ -14,6 +14,9 @@ from src.experiment.trial import _execution_model, run_trial
 from src.map.PlanarMapProvider import PlanarMapProvider
 from src.map.TransitGraph import TransitGraph
 from src.map.graph import PlanarStreetGraph
+from src.simulation.MockBackend import MockBackend
+from src.simulation.ScriptedBackend import ScriptedBackend
+from src.simulation.SimulationBackend import SimulationBackend
 
 # Small map and light demand: this file is about wiring, not about routing
 # quality, so the runs only need to be long enough to differ.
@@ -136,3 +139,88 @@ def test_noise_seed_resamples_execution_luck(
         _policy, street_graph, travel_noise=0.3, noise_seed=2, **_TRIAL
     )
     assert first.ride_times != second.ride_times
+
+
+# ---------------------------------------------------------------------------
+# backend_factory — the harness does not care where the world comes from
+# ---------------------------------------------------------------------------
+
+def test_default_factory_reproduces_the_hardwired_backend(
+    street_graph: PlanarStreetGraph,
+) -> None:
+    """
+    Passing an explicit mock factory must match the default exactly.
+
+    The default closes over the trial's own travel model, so this also pins
+    that the two build the same world rather than merely similar ones.
+    """
+    default = run_trial(_policy, street_graph, **_TRIAL)
+    explicit = run_trial(
+        _policy,
+        street_graph,
+        backend_factory=lambda graph, start: MockBackend(
+            position=start, travel_model=GraphTravelModel(graph)
+        ),
+        **_TRIAL,
+    )
+    assert explicit.wait_times == default.wait_times
+    assert explicit.ride_times == default.ride_times
+
+
+def test_a_trial_runs_against_a_backend_with_no_map(
+    street_graph: PlanarStreetGraph,
+) -> None:
+    """
+    The modularity claim, stated as a test.
+
+    ScriptedBackend has no graph, no travel model and no geometry — every leg
+    takes ninety seconds regardless of where the bus is going. If a full
+    trial still completes and serves passengers, then nothing above the
+    backend depends on where the world comes from, which is the whole point
+    of the seam.
+    """
+    result = run_trial(
+        _policy,
+        street_graph,
+        backend_factory=lambda graph, start: ScriptedBackend(
+            start, leg_durations=(90.0,)
+        ),
+        **_TRIAL,
+    )
+    assert result.kpi.fulfilled_count > 0
+    assert len(result.wait_times) == result.kpi.fulfilled_count
+
+
+def test_the_scripted_world_really_is_a_different_world(
+    street_graph: PlanarStreetGraph,
+) -> None:
+    """A flat 90 s per leg cannot coincide with shortest-path driving."""
+    on_the_map = run_trial(_policy, street_graph, **_TRIAL)
+    off_the_map = run_trial(
+        _policy,
+        street_graph,
+        backend_factory=lambda graph, start: ScriptedBackend(
+            start, leg_durations=(90.0,)
+        ),
+        **_TRIAL,
+    )
+    assert off_the_map.ride_times != on_the_map.ride_times
+
+
+def test_the_factory_is_given_the_graph_and_the_starting_stop(
+    street_graph: PlanarStreetGraph,
+) -> None:
+    seen: list[tuple[TransitGraph, str]] = []
+
+    def factory(graph: TransitGraph, start: str) -> SimulationBackend:
+        """Record the arguments, then build an ordinary mock."""
+        seen.append((graph, start))
+        return MockBackend(
+            position=start, travel_model=GraphTravelModel(graph)
+        )
+
+    run_trial(_policy, street_graph, backend_factory=factory, **_TRIAL)
+
+    graph, start = seen[0]
+    assert len(seen) == 1
+    assert start in {stop.id for stop in graph.get_stops()}

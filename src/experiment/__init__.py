@@ -12,9 +12,10 @@ from src.experiment.plots import (
     plot_wait_distribution,
 )
 from src.experiment.summary import ComparisonSummary, summarize_comparison
-from src.experiment.trial import TrialResult, run_trial
+from src.experiment.trial import BackendFactory, TrialResult, run_trial
 
 __all__ = [
+    "BackendFactory",
     "TrialResult",
     "run_trial",
     "compare_policies",

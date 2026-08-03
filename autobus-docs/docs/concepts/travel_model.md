@@ -14,9 +14,9 @@ Both return seconds.
 
 ## Why this exists separately from the backend
 
-The simulation already knows how long driving takes —
-`SimulationBackend._travel_time` is the ground truth, supplied per backend. So
-why add a second source for the same quantity?
+The simulation already knows how long driving takes — the backend is the
+ground truth, and reports it a leg at a time through `advance`. So why add a
+second source for the same quantity?
 
 Because they are not the same quantity. One is **what happens**; the other is
 **what the policy believes will happen**.
@@ -84,8 +84,8 @@ properties motivate that choice over a symmetric one:
   flatter the policies by letting early legs pay for late ones.
 
 The simulation turns one draw per *query* into one draw per *leg driven*:
-`SimulationBackend` asks for a leg's duration when the leg begins and caches it
-in `_time_to_next_stop` until the bus arrives, so a leg never re-rolls
+`MockBackend` asks for a leg's duration on the first `advance` toward a
+destination and caches it until the bus arrives, so a leg never re-rolls
 underneath the bus.
 
 !!! warning "Noise draws from a private generator, never the global one"

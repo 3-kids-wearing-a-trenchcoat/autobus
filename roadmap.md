@@ -1,6 +1,6 @@
 # Autobus roadmap
 
-Living document. Phase 1 is complete; Phase 2 is the current work.
+Living document. Phases 1 and 2 are complete; Phase 3 (CARLA) is next.
 Last updated 2026-08-03.
 
 ---
@@ -34,7 +34,7 @@ experiment harness, and the concept documentation under `autobus-docs/`.
 
 ---
 
-## Phase 2 — Restore backend modularity (**current**)
+## Phase 2 — Restore backend modularity (**complete**)
 
 **Why.** The design review specifies `BusAgent → SimulationBackend`, with
 `SimulationRunner` orchestrating and the backend as an "abstract execution
@@ -48,73 +48,68 @@ seam.
 **Goal.** The project does not care whether the world is synthetic, CARLA, or
 anything else.
 
-1. [ ] **Freeze current behaviour with a golden master**
+1. [X] **Freeze current behaviour with a golden master**
    - `notebooks/golden-master.ipynb` + `notebooks/golden_master.py`
-   - Captures full KPIs, `wait_times`, `ride_times`, tick counts and arrival
-     sequences across scenarios chosen to cover the code paths the refactor
-     touches.
-   - Every later step is checked by re-running it and demanding
-     **bit-identical** output.
-2. [ ] **Settle the adapter contract on paper** (no code)
-   - Lifecycle: `start()` / `close()`
-   - Clock: `now()`
-   - Command: `set_destination(stop_id)`
-   - Observation: `advance(dt) -> (arrival | None, time_consumed)`
-   - Position: `current_location()`
-   - Passengers: `sync_passengers(pool)`
-   - Sign-off needed here before any code: the `advance` semantics determine
-     everything downstream.
-3. [ ] **Move orchestration out of the backend into `SimulationRunner`**
-   - Tick order, demand generation, `_expire_pending`, `record_tick`,
-     animation recording — none of it is world-specific.
-   - Strangler-style: build the new sequence alongside the old `step()`, then
-     switch over once the golden master agrees.
-   - `tests/test_simulation_backend.py` holds **22 tests** exercising `step()`
-     orchestration directly; they move to the runner without changing
-     meaning. `tests/test_mock_backend.py` has 1 and should stay put.
-   - **Concrete surface to rehome.** `SimulationRunner.run()` is only a while
-     loop today, and it reaches through the backend for three things:
-     `backend.is_done()`, `backend.sim_time`, and `backend.metrics` — the
-     runner gets the `MetricsTracker` *via the backend*. All three move: the
-     runner should hold the pool and the tracker directly, and own the clock.
-   - **`BusAgent` needs no changes.** Its entire public surface is
-     `on_arrival(stop_id, sim_time)`, the `position` property, and
-     `next_stop()` — exactly the three things the runner needs to mediate
-     between agent and backend.
-   - **Preserve the tick order exactly, including its wart.** Demand is
-     generated *before* movement is processed, so a request created this tick
-     can be boarded at an `arrival_time` computed to fall slightly earlier —
-     which is where the small negative wait times come from (0.05% of
-     requests, worst −0.49 s, bounded by `dt`). Do not "fix" this during the
-     refactor; it would show up as a golden-master failure and confuse the
-     signal. Fix it separately, afterwards, if at all.
-4. [ ] **Reduce `MockBackend` to a pure adapter**
-   - Keeps only dead reckoning (`_time_to_next_stop`, `_elapsed_toward_next`,
-     travel model) as its own private implementation.
-   - Remove the construction-order trap: `SimulationBackend.__init__` calls
-     `_compute_next_travel_time()` → the abstract `_travel_time`, forcing
-     `MockBackend` to set `_travel_model` before `super().__init__()`. CARLA
-     cannot compute an initial leg at construction time (no vehicle yet);
-     that work belongs in `start()`.
-5. [ ] **Add the hooks CARLA needs, as no-ops in the mock**
-   - `start()` / `close()` and `sync_passengers(pool)`.
-   - `sync_passengers` taking the pool and diffing it keeps the algorithm
-     layer untouched — no observer hooks on `RequestPool`.
-6. [ ] **Un-hardwire the experiment harness**
-   - `run_trial` gains a **backend factory** parameter defaulting to the mock,
-     mirroring the existing `policy_factory`.
-   - Stop reaching into `backend._transit_graph` for animation
-     (`src/experiment/trial.py`); the graph is built in `run_trial` anyway.
-   - This is the step that actually delivers the goal.
-7. [ ] **Delete the old seam**
-   - Remove `_travel_time` as the abstract method and the orchestration
-     remnants. Golden master must still match.
-8. [ ] **Prove modularity with a scripted backend**
-   - A test-only backend with no graph, no travel model, no geometry, that
-     replays a hand-written list of "at t=10 the bus arrives at stop A".
-   - If a full simulation runs against it and produces the expected KPIs,
-     the project demonstrably does not care where the world comes from.
-   - Doubles as the cheapest stand-in for CARLA while the container is down.
+   - 11 scenarios × 3 seeds; full KPIs, `wait_times`, `ride_times`, tick
+     counts and arrival sequences. Every step below was checked by re-running
+     it and demanding **bit-identical** output. All of them passed.
+2. [X] **Settle the adapter contract**
+   - Command: `set_destination(stop_id)` — abstract, and **idempotent**
+   - Observation: `advance(dt) -> AdvanceResult(arrived_at, consumed)` —
+     abstract
+   - Position: `current_location()` — abstract
+   - Lifecycle: `start()` / `close()` — no-op defaults
+   - Passengers: `sync_passengers(pool)` — no-op default
+   - **`now()` was dropped from the sketched contract.** The runner owns
+     `sim_time` and derives arrival stamps from `consumed`; a second clock in
+     the backend would only be something to drift. It also made the arrival
+     arithmetic bit-identical, since `sim_time - remaining` is the same
+     subtraction the old code performed.
+3. [X] **Move orchestration out of the backend into `SimulationRunner`**
+   - The runner now owns the clock, the tick order, `_expire_pending`,
+     `is_done`, the `MetricsTracker` and the recorder, and mediates between
+     agent and backend.
+   - `BusAgent` needed **no changes**, as expected.
+   - **Preserved the tick order exactly, including its wart.** Demand is
+     still generated *before* movement, so a request created this tick can be
+     boarded at an `arrival_time` computed to fall slightly earlier — the
+     source of the small negative wait times (0.05% of requests, worst
+     −0.49 s, bounded by `dt`). Documented in `simulation_runner.md`. Fix it
+     separately, if at all.
+   - **Done as a direct switch, not strangler-style.** The old `step()` could
+     not coexist with the new runner — its existence *was* the coupling under
+     repair, and keeping it alive would have required the backend to retain
+     its agent reference. The golden master provided the safety that
+     strangler was meant to buy.
+4. [X] **Reduce `MockBackend` to a pure adapter**
+   - Dead reckoning only; it tracks its own position rather than reading the
+     agent's.
+   - Construction-order trap gone: leg durations are computed lazily on the
+     first `advance` toward a destination, so constructing a backend does no
+     movement arithmetic.
+5. [X] **Add the hooks CARLA needs, as no-ops**
+   - `start()` / `close()` / `sync_passengers(pool)`, with `close()` called
+     from a `finally` block so a failed trial still releases its actors.
+6. [X] **Un-hardwire the experiment harness**
+   - `run_trial(backend_factory=...)`, mirroring `policy_factory`; takes the
+     `TransitGraph` and the starting stop ID.
+   - The default is a closure over the trial's own execution model, which is
+     what preserves object identity at `travel_noise=0.0`.
+   - `backend._transit_graph` reach-through removed.
+7. [X] **Delete the old seam** — `_travel_time`, `step()`, and the
+   orchestration remnants are gone.
+8. [X] **Prove modularity with a scripted backend**
+   - `src/simulation/ScriptedBackend.py`: no graph, no travel model, no
+     geometry, just a cycling timetable of leg durations.
+   - `tests/test_trial.py` runs a full `run_trial` against it and asserts
+     passengers are served. The project demonstrably does not care where the
+     world comes from.
+   - The runner's own tests drive it too, so they exercise a real
+     implementation of the contract rather than a mock.
+
+**Outcome.** 292 → 356 tests; abandonment gained its first direct unit tests.
+Golden master bit-identical throughout. Adding `CarlaBackend` is now a matter
+of writing one class against three abstract methods.
 
 ### Deliberately out of scope for Phase 2
 
@@ -172,6 +167,19 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 4. [ ] **The bus, no passengers** — the walking skeleton
    - Spawn, drive to a stop, detect arrival (proximity + near-zero speed,
      never exact waypoint equality), stop, continue.
+   - **`CarlaBackend` is now a single class against three abstract methods**
+     (Phase 2 delivered the seam):
+     - `start()` — connect, set synchronous mode and `fixed_delta_seconds`,
+       spawn the bus at `position`.
+     - `set_destination(stop_id)` — hand the target to the controller.
+       Must be idempotent: the runner re-issues it every loop pass.
+     - `advance(dt)` — tick `round(dt / fixed_delta)` times, checking
+       proximity after each; return on the first arrival with
+       `consumed = ticks_done * fixed_delta`, else consume all of `dt`.
+     - `current_location()` — the last stop reached.
+     - `close()` — destroy actors; the runner calls it from `finally`.
+   - Develop it against `ScriptedBackend` semantics first: anything that
+     works there is the runner's problem, not CARLA's.
 5. [ ] **Passengers as walkers**
    - `RequestPool` stays authoritative; `sync_passengers` mirrors pool state
      onto walker actors. Spawn at pickup stop on creation, destroy on
@@ -223,11 +231,15 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 
 ## Known traps
 
-- **`advance()` cannot return a batch of arrivals.** Today's
-  `_process_movement` loops within one tick, and each arrival calls
-  `agent.on_arrival(...)` *before* the next leg is computed — arrivals inside
-  a tick are sequentially dependent on the agent re-planning. The contract
-  must be "advance until `dt` is exhausted **or** one arrival occurs".
+- **`advance()` must never return a batch of arrivals.** Arrivals inside one
+  tick are sequentially dependent: the agent boards, alights and re-plans on
+  each one, and the leg that follows is not known until it has. The contract
+  is "advance until `dt` is exhausted **or** one arrival occurs", and any new
+  backend has to honour it. The `coarse_tick` golden-master scenario (dt=120,
+  more arrivals than ticks) is what catches a violation.
+- **`advance()` must consume the whole budget when it does not arrive**, or
+  the runner's clock and the world's drift apart. For CARLA that means `dt`
+  has to be a whole multiple of `fixed_delta_seconds`.
 - **`PYTHONHASHSEED` is not pinned.** `run_trial(seed=N)` is not reproducible
   across processes: several policies `min()` over a `set[str]`, and tie-breaks
   follow hash order. `jupyter-run.sh` does not set it. Any golden master or
@@ -240,11 +252,15 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
   is approximately repeatable, not bit-identical. The bit-identical goal in
   the parallel-trials plan does not transfer.
 - **Sub-tick arrival precision is a mock capability.** `arrival_time` is
-  computed by subtraction in `_process_movement`; CARLA observes arrivals at
-  tick boundaries. (Also the source of the small negative wait times.)
+  derived from the leftover budget in `SimulationRunner._process_movement`,
+  so it is exact only because `MockBackend` can report a fractional
+  `consumed`. CARLA observes arrivals at tick boundaries and will quantise
+  them. (The pre-movement demand generation is the source of the small
+  negative wait times, and it survived the refactor deliberately.)
 - **The service window is not a hard guarantee.** The progress fallback drives
   to the nearest pending pickup when nothing can be scheduled, ignoring the
-  window — roughly 1–2% of fulfilled requests at W750 with exact driving.
+  window — **2.3%** of fulfilled requests at W750 with exact driving, rising
+  to 4.9% at σ=0.2. `safety_factor` is the lever; see `window_insertion.md`.
 - **Real-time requirement is unverified.** Design review §1.1.2 requires
   routing to be fast enough that the bus never waits. We have only measured
   wall-clock per *trial*, never latency per *plan call*. Rough arithmetic puts

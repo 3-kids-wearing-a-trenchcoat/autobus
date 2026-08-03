@@ -160,9 +160,10 @@ for each committed stop:
     now += travel(previous, stop) + dwell(stop)
 ```
 
-This mirrors `SimulationBackend`'s per-leg arithmetic exactly — the backend
-charges `dwell + travel` for every leg — so a schedule projected here matches
-what the simulation will actually execute, rather than approximating it.
+This mirrors `MockBackend`'s per-leg arithmetic exactly — that backend charges
+`dwell + travel` for every leg — so a schedule projected here matches what the
+simulation will actually execute, rather than approximating it. Under a
+backend whose driving is not known in advance, it becomes an estimate again.
 
 This means `DispatchPolicy` always plans from a clean starting point with no
 knowledge of the agent's internal commitments. The projection logic lives

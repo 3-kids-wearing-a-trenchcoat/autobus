@@ -94,6 +94,36 @@ independently resamples execution luck while holding the request stream fixed.
 See [Travel Model](travel_model.md) for why the distribution is lognormal and
 what failure mode this opens up.
 
+### Running somewhere other than the graph
+
+`backend_factory` mirrors `policy_factory`: it takes the `TransitGraph` and
+the bus's starting stop ID, and returns the world the bus drives in.
+
+```python
+from src.simulation.ScriptedBackend import ScriptedBackend
+
+result = run_trial(
+    policy_factory=lambda g: FixedRoutePolicy(g),
+    graph=graph,
+    backend_factory=lambda g, start: ScriptedBackend(
+        start, leg_durations=(90.0,)
+    ),
+)
+```
+
+It defaults to `None`, which builds a `MockBackend` driving against this
+trial's own travel model — closed over the model rather than rebuilt from the
+graph, so at `travel_noise=0.0` the backend and the policy share one object
+and every existing result reproduces exactly.
+
+`travel_noise`, `noise_seed` and `dwell_s` describe that default world only.
+A caller who brings their own backend owns its physics.
+
+The example above is not a toy: `ScriptedBackend` has no graph, no travel
+model and no geometry, and a full trial still completes against it. That is
+the test the seam has to pass, and it is what makes a CARLA backend a matter
+of writing one class rather than of rewiring the harness.
+
 ## compare_policies
 
 `compare_policies` runs every policy for a fixed number of trials on the same
@@ -378,8 +408,9 @@ TrialResult.animation_frames ──► animate_trial ──────► FuncA
                               └──► show_animations (dict[label, TrialResult])
 ```
 
-`run_trial` depends on the full simulation stack (`BusAgent`, `MockBackend`,
-`SimulationRunner`, etc.) but hides that wiring from the caller.
+`run_trial` depends on the full simulation stack (`BusAgent`,
+`SimulationRunner`, a `SimulationBackend`, etc.) but hides that wiring from
+the caller.
 `compare_policies` depends only on `run_trial`. `summarize_comparison` wraps
 `compare_policies`, returning its results alongside a formatted Markdown table.
 The plot helpers depend only on `TrialResult` and `matplotlib`. `animate_trial`, `show_animation`, and

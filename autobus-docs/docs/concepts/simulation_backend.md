@@ -2,57 +2,104 @@
 
 ## Overview
 
-`SimulationBackend` is the abstract controller that sits between
-`SimulationRunner` and the individual simulation components. It owns the
-per-tick sequencing and the bus movement model.
+`SimulationBackend` is the seam between the project and the world the bus
+drives in. It answers questions and takes commands; it does not orchestrate.
 
-The class is abstract so that `SimulationRunner` can be written against a
-single interface and work equally with a planar-graph backend, a test mock, or
-eventually the CARLA backend — without knowing or caring which one it has.
+That distinction is the whole point of the class. Everything that is *not*
+world-specific — the clock, the tick order, demand, abandonment, metrics,
+animation — belongs to [`SimulationRunner`](simulation_runner.md). What is
+left below the seam is small enough that a new world is a short class:
+`MockBackend` is dead reckoning over a graph, `ScriptedBackend` is a
+timetable, and a CARLA backend would be a vehicle and a proximity check.
 
-## Per-tick sequence
+!!! note "This is a repair, not the original design"
+    Until Phase 2 the backend owned the tick order and called *into*
+    `BusAgent`, and its single abstract method was
+    `_travel_time(from, to) -> float`. That signature encodes "a leg's
+    duration is known before departure", which CARLA cannot answer — so no
+    CARLA backend was implementable against it. The interface below replaces
+    it.
 
-Every call to `step(dt)` advances simulation time by `dt` seconds and executes
-the following sequence in order:
+## The interface
 
+```python
+set_destination(stop_id: str) -> None       # abstract
+advance(dt: float) -> AdvanceResult         # abstract
+current_location() -> str                   # abstract
+
+start() -> None                             # no-op by default
+close() -> None                             # no-op by default
+sync_passengers(pool: RequestPool) -> None  # no-op by default
 ```
-step(dt)
-    │
-    ├─ sim_time += dt
-    ├─ demand_generator.update(sim_time)   # new passengers become available
-    ├─ _process_movement(dt)               # for each stop reached:
-    │       └─ agent.on_arrival()          #   board/alight passengers
-    │           └─ recorder.record_arrival() #   (if recorder attached) capture frame
-    └─ metrics_tracker.record_tick(sim_time)
+
+Only three methods are abstract, because only three questions genuinely need
+the world to answer them. The rest have inert defaults so a world with no
+setup and nothing to render does not have to say so.
+
+### `advance` returns one arrival at most
+
+```python
+@dataclass(frozen=True)
+class AdvanceResult:
+    arrived_at: str | None   # stop reached, or None if still en route
+    consumed: float          # seconds actually spent
 ```
 
-Demand is generated before movement so that passengers created in this tick can
-board at stops the bus visits within the same tick.
-`record_tick` is called last so that the snapshot reflects the final pool state
-after all boardings and alightings. `recorder.record_arrival` is called
-immediately after each `on_arrival` for the same reason — frames capture
-post-boarding state.
+**`advance(dt)` means: advance until `dt` is exhausted or one stop is
+reached, whichever comes first.**
 
-## Movement model
+The single-arrival rule is the load-bearing part of the contract. Arrivals
+within one tick are *sequentially dependent*: the agent boards, alights and
+re-plans on each arrival, and the leg that follows is not known until it has.
+A batch API — `poll_arrivals() -> list[...]` — would look tidier and would be
+wrong, because the backend would be answering for a route the agent has not
+chosen yet.
 
-`SimulationBackend` tracks how far the bus has travelled toward the next stop
-using two fields:
+When no arrival occurs the whole budget must be consumed, so the runner's
+clock and the world's stay in step. For a tick-based world such as CARLA that
+means `dt` should be a whole multiple of the simulator's tick length.
 
-- `_time_to_next_stop` — the total time for the current leg, computed once as
-  `dwell_s + _travel_time(agent.position, next_stop)`.
-- `_elapsed_toward_next` — seconds accumulated across ticks toward that leg.
+There is deliberately no `now()`. The runner owns simulation time and derives
+arrival timestamps from `consumed`; a second clock in the backend would only
+be something to drift.
 
-### Dwell time
+### `set_destination` is idempotent
+
+The runner re-issues the destination on every pass of its movement loop
+rather than tracking what it last said. Re-commanding the stop the bus is
+already heading for must therefore leave the leg untouched — otherwise
+partial progress would be discarded every tick and the bus would never
+arrive.
+
+The exception that matters: a destination equal to the bus's current position
+is legal, because a policy may re-issue the stop the bus is standing on, and
+it must start a fresh leg rather than being ignored as unchanged. `MockBackend`
+handles both by clearing its cached leg duration on arrival as well as on a
+change of destination.
+
+### `current_location`
+
+Between stops this reports the last stop reached, so it is exact only at
+arrivals. That is enough today, because the bus is stationary whenever it
+plans. A world that supported re-planning mid-leg would report a finer
+position here — the method exists so that change would not need a new one.
+
+## Implementations
+
+### `MockBackend`
+
+A world made of shortest paths. Travel times come from the `TransitGraph`
+built off a `MapProvider`, so a leg's duration is known the moment it starts
+and the bus covers it at a constant rate. No vehicle, no geometry, nothing to
+spawn — which is what makes it the fast test bed.
 
 `dwell_s` models the seconds a real bus spends pulled over while passengers
 board and alight. It is folded into the **leading** edge of each leg: the bus
 first spends `dwell_s` where it currently is, then drives. That is equivalent
 to holding it at the stop it just reached, and keeps the whole calculation to
-a single duration per leg.
-
-One consequence is that the bus also dwells at its initial position, before it
-has served anyone — harmless, and arguably right, since a real bus would be
-sitting at its first stop with the doors open.
+a single duration per leg. One consequence is that the bus also dwells at its
+initial position, before it has served anyone — harmless, and arguably right,
+since a real bus would be sitting at its first stop with the doors open.
 
 `dwell_s` defaults to `0.0`, which reproduces the original dwell-free timing
 exactly, so results recorded before dwell existed remain comparable.
@@ -61,75 +108,44 @@ This is *ground truth*: it is what the simulation does. What a policy
 **believes** about travel and dwell times is a separate thing — see
 [Travel Model](travel_model.md).
 
-The bus's current position is owned by `BusAgent` (via its `position` property)
-and updated there on each `on_arrival` call. `SimulationBackend` reads it only
-when computing the travel time to the next stop.
+Leg durations are computed lazily, on the first `advance` toward a
+destination rather than when it is set. That keeps construction free of
+movement arithmetic, which matters for CARLA: there is no vehicle to measure
+from until `start()` has run.
 
-When `_elapsed_toward_next` reaches `_time_to_next_stop`, the bus has arrived.
-`on_arrival` is fired with the **exact** arrival timestamp rather than the tick
-boundary, keeping KPI timestamps accurate when `dt` overshoots a stop.
+### `ScriptedBackend`
 
-### Multiple arrivals in one step
+A world with no graph, no travel model and no geometry. Every leg takes
+however long its timetable says, regardless of where the bus is or where it
+was told to go, and the bus then "arrives" at whatever stop it was commanded
+to. The timetable cycles, so a one-entry list means a constant leg time and a
+trial never runs out of schedule.
 
-If `dt` is large enough to span more than one stop, `_process_movement` loops
-until the remaining time budget is exhausted or the route runs out:
+Its purpose is to make the modularity claim testable rather than merely
+asserted: a full `run_trial` runs against it and produces ordinary KPIs, with
+no map anywhere below the runner. It doubles as a stand-in for CARLA while
+the server is unavailable.
 
-```
-remaining = dt
-while remaining > 0:
-    if remaining >= time_left_to_next:
-        fire on_arrival at exact arrival_time
-        recompute time_to_next_stop for new next stop
-    else:
-        accumulate partial progress, done
-```
+## Termination is not the backend's business
 
-## The abstract method: `_travel_time`
-
-```python
-_travel_time(from_id: str, to_id: str) -> float
-```
-
-This is the only method subclasses must implement. It returns the travel time in
-seconds between two TransitGraph node IDs and encapsulates all
-environment-specific movement physics:
-
-- **`MockBackend`** — the concrete implementation for non-CARLA map sources
-  (`PlanarMapProvider` or `StaticMapProvider`). Calls
-  `TransitGraph.best_path_cost(from_id, to_id)`, which computes travel time
-  from road lengths and speed limits via Dijkstra.
-- **CARLA backend** — would query the simulator to obtain the actual travel time
-  for the vehicle on that road segment.
-
-Everything else — tick sequencing, movement accounting, termination — is
-implemented once in the base class.
-
-## Termination
-
-`is_done()` returns `True` when the `RequestPool` contains no `PENDING` and no
-`ON_BUS` requests. If the demand generator will eventually create more requests
-they will appear in the pool; once it is exhausted and the bus has dropped off
-all passengers, `is_done()` becomes `True`.
+`is_done()` lives on the runner and reads the `RequestPool`: no `PENDING` and
+no `ON_BUS` requests means the run is over. The world has no opinion about
+when a simulation should stop.
 
 ## Relationship to other components
 
 ```
 SimulationRunner
       │
-      │ step(dt)
+      │  set_destination(stop) ─┐
+      │  advance(dt) ───────────┤
+      │  sync_passengers(pool) ─┤
+      │  start() / close() ─────┘
       ▼
 SimulationBackend (abstract)
-      │
-      ├─ demand_generator.update()      ──►  DemandGenerator   ──►  RequestPool
-      ├─ agent.on_arrival()             ──►  BusAgent          ──►  RequestPool
-      │    └─ recorder.record_arrival()  ──►  AnimationRecorder ◄──  RequestPool
-      └─ metrics_tracker.record_tick()  ──►  MetricsTracker    ◄──  RequestPool
+      ├── MockBackend       — shortest paths over a TransitGraph
+      ├── ScriptedBackend   — a timetable, no map at all
+      └── CarlaBackend      — a vehicle, walkers, and world.tick()
 ```
 
-`SimulationBackend` is the only component that knows about simulation time
-advancement. `SimulationRunner` only needs to call `step(dt)` in a loop and
-check `is_done()` to decide when to stop.
-
-`AnimationRecorder` is an optional passive observer — it is only attached when
-`run_trial` is called with `record_animation=True`, and it never modifies the
-pool.
+Nothing above the backend knows which of these it holds.

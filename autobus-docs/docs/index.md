@@ -33,9 +33,10 @@ src/
 ├── metrics/
 │   └── MetricsTracker.py      # Per-tick snapshots and aggregate KPIs
 ├── simulation/
-│   ├── SimulationBackend.py   # Abstract simulation controller
-│   ├── MockBackend.py         # SimulationBackend for non-CARLA map sources
-│   ├── SimulationRunner.py    # Tick loop driver and result reporter
+│   ├── SimulationBackend.py   # Abstract adapter: the seam to a world
+│   ├── MockBackend.py         # Dead reckoning over a TransitGraph
+│   ├── ScriptedBackend.py     # A timetable; no map at all
+│   ├── SimulationRunner.py    # Owns the clock, tick order and orchestration
 │   └── DemandGenerator.py     # Synthetic demand: GenerationPolicy and DemandGenerator
 └── experiment/
     ├── trial.py               # TrialResult dataclass and run_trial()

@@ -368,6 +368,7 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 | How is the bus steered? | `traffic_manager.set_path` | Works, no new dependencies, keeps CARLA's own driving in charge per design review §4. Vendoring `agents` is the fallback only |
 | `fixed_delta_seconds` | **0.05**, never above 0.1 | Above `max_substep_delta_time × max_substeps` the physics silently stops keeping up; at 0.5 vehicles cover half the ground per simulated second |
 | Where do bus stops come from? | Hand-authored per town, an input to the provider | A real deployment names its maps and stops rather than generating them |
+| Does running faster cause vehicles to get stuck? | **No.** Wall-clock rate has no effect at all, and a finer physics step does not help either | Measured; see below |
 
 ## Open questions
 
@@ -387,6 +388,29 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 
 ## Known traps
 
+- **Simulation speed does not cause the stalls.** Two different things get
+  called "speed" and they have to be separated. Measured on an identical
+  six-stop Town01 tour:
+
+  | Same `delta` = 0.05, different wall rate | legs | unwedges/min | stalled | speed |
+  |---|---|---|---|---|
+  | no rendering | 3/6 | 0.31 | 44% | 37.4× |
+  | rendering on | 3/6 | 0.31 | 45% | 3.9× |
+  | throttled | 3/6 | 0.15 | 44% | 3.6× |
+
+  A **10× spread in wall-clock rate changes nothing** — same legs, same
+  1.59 km driven. That is what synchronous mode means: the world advances by
+  exactly `fixed_delta_seconds` per tick however long the tick took in real
+  time. Slowing the simulation down will not make the driving better.
+
+  Varying the physics step does not help either: 0.025 s and 0.05 s are
+  identical (3/6, 0.31, 44%), 0.1 s is marginally worse, and the *finest*
+  step tried — 0.0125 s — is the **worst** of the four (2/6 legs, 0.86
+  unwedges/min, 54% stalled). So there is nothing to buy by stepping finer,
+  and 0.05 stays the right default.
+
+  The stalls are geometric — the vehicle physically wedges against kerbs —
+  which is consistent with the blueprint width finding in Phase 3.4.
 - **`advance()` must never return a batch of arrivals.** Arrivals inside one
   tick are sequentially dependent: the agent boards, alights and re-plans on
   each one, and the leg that follows is not known until it has. The contract

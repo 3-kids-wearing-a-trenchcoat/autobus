@@ -40,6 +40,11 @@ MAX_SAFE_DELTA_S = 0.1
 # own body. This pushes them properly out of the road.
 WALKER_LATERAL_OFFSET_M = 1.0
 
+# Chase camera placement, relative to the bus.
+CAMERA_BEHIND_M = 9.0
+CAMERA_ABOVE_M = 4.5
+CAMERA_PITCH_DEG = -14.0
+
 
 class CarlaBackend(SimulationBackend):
     """
@@ -78,6 +83,10 @@ class CarlaBackend(SimulationBackend):
         for the rest of the run; without this a trial silently dies. Every
         use is counted in ``stats()`` because it is a departure from
         physical simulation. Set to 0 to disable.
+    :param follow_camera: Move the spectator camera to sit behind and above
+        the bus on every tick, so a rendering server shows a chase view.
+        Pointless with ``no_rendering=True``, where there is nothing to look
+        at. Defaults to False.
     :raises ValueError: If ``fixed_delta_s`` exceeds the safe limit.
     """
 
@@ -98,6 +107,7 @@ class CarlaBackend(SimulationBackend):
         blueprint_id: str = DEFAULT_BUS_ID,
         repath_after_s: float = 10.0,
         unwedge_after_s: float = 30.0,
+        follow_camera: bool = False,
     ) -> None:
         if fixed_delta_s > MAX_SAFE_DELTA_S:
             raise ValueError(
@@ -125,6 +135,7 @@ class CarlaBackend(SimulationBackend):
         self._blueprint_id = blueprint_id
         self._repath_after_s = repath_after_s
         self._unwedge_after_s = unwedge_after_s
+        self._follow_camera = follow_camera
 
         self._client: carla.Client | None = None
         self._world: carla.World | None = None
@@ -374,12 +385,38 @@ class CarlaBackend(SimulationBackend):
                 self._dwell_remaining = 0.0
                 bus.apply_control(carla.VehicleControl(brake=0.0))
 
+        if self._follow_camera:
+            self._point_camera_at(bus)
+
         here = bus.get_location()
         if self._last_location is not None:
             step = here.distance(self._last_location)
             self._stats["distance_m"] += step
             self._track_stall(bus, step)
         self._last_location = here
+
+    def _point_camera_at(self, bus: "carla.Actor") -> None:
+        """
+        Park the spectator camera behind and above the bus.
+
+        Only worth enabling on a server that renders — with
+        ``no_rendering`` there is nothing to look at, and the extra call per
+        tick is pure cost.
+        :param bus: The bus actor to follow.
+        """
+        transform = bus.get_transform()
+        forward = transform.get_forward_vector()
+        self._world.get_spectator().set_transform(carla.Transform(
+            carla.Location(
+                x=transform.location.x - forward.x * CAMERA_BEHIND_M,
+                y=transform.location.y - forward.y * CAMERA_BEHIND_M,
+                z=transform.location.z + CAMERA_ABOVE_M,
+            ),
+            carla.Rotation(
+                pitch=CAMERA_PITCH_DEG,
+                yaw=transform.rotation.yaw,
+            ),
+        ))
 
     def _track_stall(self, bus: "carla.Actor", step: float) -> None:
         """

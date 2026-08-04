@@ -12,4 +12,22 @@
 
 ::: src.map.StaticMapProvider.StaticMapProvider
 
+::: src.map.CarlaMapProvider.CarlaMapProvider
+
+::: src.map.carla_stops.CarlaStop
+
+::: src.map.carla_stops.load_stops
+
+::: src.map.carla_stops.save_stops
+
+::: src.map.carla_topology.SegmentPoint
+
+::: src.map.carla_topology.RoadSegment
+
+::: src.map.carla_topology.CarlaTopology
+
+::: src.map.carla_topology.load_topology
+
+::: src.map.carla_topology.save_topology
+
 ::: src.map.TransitGraph.TransitGraph

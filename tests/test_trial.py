@@ -11,6 +11,7 @@ import pytest
 from src.algorithm.TravelModel import GraphTravelModel, NoisyTravelModel
 from src.algorithm.WindowInsertionPolicy import WindowInsertionPolicy
 from src.experiment.trial import _execution_model, run_trial
+from src.map.CarlaMapProvider import CarlaMapProvider
 from src.map.PlanarMapProvider import PlanarMapProvider
 from src.map.TransitGraph import TransitGraph
 from src.map.graph import PlanarStreetGraph
@@ -224,3 +225,40 @@ def test_the_factory_is_given_the_graph_and_the_starting_stop(
     graph, start = seen[0]
     assert len(seen) == 1
     assert start in {stop.id for stop in graph.get_stops()}
+
+
+# ---------------------------------------------------------------------------
+# provider — the harness does not care which map it is given
+# ---------------------------------------------------------------------------
+
+def test_a_provider_replaces_the_planar_graph(
+    street_graph: PlanarStreetGraph,
+) -> None:
+    """Passing the provider run_trial would have built itself must match."""
+    from_graph = run_trial(_policy, street_graph, **_TRIAL)
+    from_provider = run_trial(
+        _policy, provider=PlanarMapProvider(street_graph), **_TRIAL
+    )
+    assert from_provider.wait_times == from_graph.wait_times
+    assert from_provider.ride_times == from_graph.ride_times
+
+
+def test_a_trial_runs_on_a_carla_town(
+    street_graph: PlanarStreetGraph,
+) -> None:
+    """
+    The payoff of the whole map layer: a real CARLA town, routed with the
+    synthetic backend and no server anywhere. If this passes but step 4
+    fails, the problem is the driving rather than the map.
+    """
+    result = run_trial(
+        _policy, provider=CarlaMapProvider("Town01"),
+        seed=7, max_requests=8, n_stops=10, silent=True, max_time=20000.0,
+    )
+    assert result.kpi.fulfilled_count > 0
+    assert len(result.wait_times) == result.kpi.fulfilled_count
+
+
+def test_neither_graph_nor_provider_is_an_error() -> None:
+    with pytest.raises(ValueError, match="graph or a provider"):
+        run_trial(_policy, silent=True)

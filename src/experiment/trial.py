@@ -10,6 +10,7 @@ from src.algorithm.BusAgent import BusAgent
 from src.algorithm.DispatchPolicy import DispatchPolicy
 from src.algorithm.RequestPool import RequestPool
 from src.algorithm.TravelModel import GraphTravelModel, NoisyTravelModel
+from src.map.MapProvider import MapProvider
 from src.map.PlanarMapProvider import PlanarMapProvider
 from src.map.TransitGraph import TransitGraph
 from src.map.graph import PlanarStreetGraph
@@ -90,7 +91,7 @@ def _execution_model(
 
 def run_trial(
     policy_factory: Callable[[TransitGraph], DispatchPolicy],
-    graph: PlanarStreetGraph,
+    graph: PlanarStreetGraph | None = None,
     seed: int | None = None,
     demand_interval_s: float = 60.0,
     max_requests: int = 100,
@@ -107,6 +108,7 @@ def run_trial(
     travel_noise: float = 0.0,
     noise_seed: int | None = None,
     backend_factory: BackendFactory | None = None,
+    provider: MapProvider | None = None,
 ) -> TrialResult:
     """
     Run one simulation trial and return the results.
@@ -116,7 +118,8 @@ def run_trial(
 
     :param policy_factory: Callable that accepts a TransitGraph and
         returns a DispatchPolicy instance.
-    :param graph: Pre-built street graph to simulate on.
+    :param graph: Pre-built planar street graph to simulate on. Ignored when
+        ``provider`` is given; required otherwise.
     :param seed: Random seed for demand generation.
         None = non-deterministic.
     :param demand_interval_s: Seconds between successive demand
@@ -170,13 +173,21 @@ def run_trial(
         ScriptedBackend with no map at all. ``travel_noise``, ``noise_seed``
         and ``dwell_s`` describe the *default* world only; a caller who
         brings their own backend owns its physics.
+    :param provider: Map source to simulate on. Defaults to None, which wraps
+        ``graph`` in a PlanarMapProvider — the synthetic map every experiment
+        so far has used. Pass a CarlaMapProvider to run the same trial on a
+        real CARLA town; nothing above this line knows the difference.
     :return: TrialResult with KPIs, tick history, and timing
         distributions.
+    :raises ValueError: If neither ``graph`` nor ``provider`` is given.
     """
     if seed is not None:
         random.seed(seed)
 
-    provider = PlanarMapProvider(graph)
+    if provider is None:
+        if graph is None:
+            raise ValueError("run_trial needs either a graph or a provider")
+        provider = PlanarMapProvider(graph)
     transit_graph = TransitGraph(provider)
     stops = provider.get_stops()
 

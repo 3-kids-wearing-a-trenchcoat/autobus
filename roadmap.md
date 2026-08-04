@@ -189,11 +189,46 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    the image at `/workspace/PythonAPI/carla/agents` (2262 LOC). Vendoring it
    would need **shapely** (not in `environment.yml`) and its `requirements.txt`
    pins `numpy<2.0.0` against our 2.5.1. Not needed unless `set_path` fails.
-2. [ ] **`CarlaMapProvider`**
-   - `carla.Map.get_topology()` → `RoadNodeRecord` / `RoadEdgeRecord`; edge
-     cost from segment length and speed limit.
-   - Dump the map to a fixture once, then build and test the provider
-     **offline** — otherwise every map test needs a live server.
+2. [X] **`CarlaMapProvider`** — built 2026-08-04
+
+   Reads two files from `src/map/carla_maps/` and **imports no carla**, so a
+   CARLA town is routable, testable and experimentable with no server:
+   `<Town>.topology.json` (machine-dumped by `src.map.carla_dump`) and
+   `<Town>.stops.json` (hand-authored). Separate on purpose — re-dumping
+   roads must never destroy stop authoring.
+
+   `run_trial` gained a `provider` parameter, so a trial runs on Town01 with
+   the mock backend and no CARLA at runtime. Measured: 40/40 served, L1 at
+   232 s mean wait / 172 s mean ride against fixed-route's 301 s / 325 s.
+
+   **Three silent-failure traps, each now covered by a mutation-tested
+   regression test.** They are properties of `TransitGraph._build_map` and
+   will bite anyone writing another provider:
+
+   1. **A TransitGraph node *is* a road edge and holds one stop.**
+      `stops_by_edge = {stop.edge: stop for stop in stops}` overwrites
+      silently. Four of Town01's fifteen stops sit in pairs on a single
+      topology segment, so the provider **splits segments at stops**, giving
+      each its own edge.
+   2. **A stop belongs to the edge that *begins* at its split node.** Edge
+      `A → B` is weighted `length(A)`, so arriving at `B` means arriving at
+      the *start* of `B`. Attaching a stop to the edge that ends at its node
+      is the intuitive reading and is wrong by one edge length on every
+      estimate.
+   3. **`RoadEdgeRecord` equality is exact and `metadata` must be `None`.**
+      A dict makes the record unhashable and `_build_map` raises; a float
+      differing in its last bit detaches the stop. The provider shares the
+      *same object* between `get_stops` and `get_road_edges`.
+
+   **Two CARLA facts worth keeping.** `get_topology()` returns **adjacency
+   pairs**, not segments: the exit waypoint is the start of the *following*
+   road, so its `s` belongs to that road (the dumper interpolates the
+   terminus instead), and one physical stretch appears once per downstream
+   branch (the dumper deduplicates — Town01 drops 160 → 124).
+
+   Town01: 124 segments, 6.4 km, 103 nodes, 139 edges, all 15 stops
+   surviving, one strongly connected component, median leg 72 s.
+   `provider.validate()` returns empty.
 3. [X] **Bus stops** — authored 2026-08-03, pending review
 
    Stops are an **input** to the map layer, never derived from it: in a real

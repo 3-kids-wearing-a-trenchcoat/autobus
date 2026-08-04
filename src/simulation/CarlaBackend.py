@@ -13,6 +13,8 @@ autopilot vehicle that happens to be told where to go next.
 nothing above the backend imports this.
 """
 
+import random
+
 from src.algorithm.RequestPool import RequestPool
 from src.simulation.SimulationBackend import AdvanceResult, SimulationBackend
 
@@ -31,6 +33,12 @@ DEFAULT_BUS_ID = "vehicle.mercedes.sprinter"
 # 0.01 * 10) the physics silently stops keeping up and vehicle AI degrades —
 # measured: at 0.5 s vehicles cover half the ground per simulated second.
 MAX_SAFE_DELTA_S = 0.1
+
+# How far right of the shoulder's centre a waiting passenger stands.
+# Measured on Town01: the shoulder centre sits 2.15 m from a 4.0 m lane's
+# centre, which clears the lane edge by only 0.15 m -- less than a walker's
+# own body. This pushes them properly out of the road.
+WALKER_LATERAL_OFFSET_M = 1.0
 
 
 class CarlaBackend(SimulationBackend):
@@ -131,6 +139,11 @@ class CarlaBackend(SimulationBackend):
         self._stalled_s = 0.0
         self._since_repath_s = 0.0
 
+        # Request ID to walker actor ID, and to the stop it waits at.
+        self._walkers: dict[str, int] = {}
+        self._walker_stops: dict[str, str] = {}
+        self._walker_rng = random.Random(seed)
+
         self._stats = {
             "ticks": 0,
             "arrivals": 0,
@@ -138,6 +151,10 @@ class CarlaBackend(SimulationBackend):
             "distance_m": 0.0,
             "repaths": 0,
             "unwedges": 0,
+            "walkers_spawned": 0,
+            "walkers_removed": 0,
+            "walker_spawn_failures": 0,
+            "stops_without_shoulder": 0,
         }
         self._last_location: carla.Location | None = None
 
@@ -185,14 +202,19 @@ class CarlaBackend(SimulationBackend):
         """
         if self._client is None or self._world is None:
             return
-        actor_ids = [i for i in ([self._bus_id] + self._npc_ids)
-                     if i is not None]
+        actor_ids = [
+            i for i in ([self._bus_id] + self._npc_ids
+                        + list(self._walkers.values()))
+            if i is not None
+        ]
         if actor_ids:
             self._client.apply_batch_sync(
                 [carla.command.DestroyActor(i) for i in actor_ids], True
             )
         self._bus_id = None
         self._npc_ids = []
+        self._walkers = {}
+        self._walker_stops = {}
 
         if self._traffic_manager is not None:
             self._traffic_manager.set_synchronous_mode(False)
@@ -270,12 +292,40 @@ class CarlaBackend(SimulationBackend):
 
     def sync_passengers(self, pool: RequestPool) -> None:
         """
-        No-op until passengers become walker actors.
+        Mirror waiting passengers onto walker actors.
 
-        Left explicit rather than inherited so the walking skeleton says out
-        loud that it carries nobody yet.
-        :param pool: The shared request pool, ignored here.
+        The pool stays authoritative; walkers are only how it is rendered.
+        A walker appears when a request starts waiting and disappears when it
+        stops — whether it was picked up or the passenger gave up. Nothing
+        here feeds back into the simulation, so a failed spawn costs a
+        visual, never a result.
+
+        Diffed against the pool rather than driven by callbacks, which keeps
+        ``RequestPool`` unaware that anything is watching it.
+        :param pool: The shared request pool.
         """
+        if self._world is None:
+            return
+
+        waiting = {
+            request.id: request.pickup_stop_id
+            for request in pool.get_pending()
+        }
+
+        gone = [rid for rid in self._walkers if rid not in waiting]
+        if gone:
+            commands = []
+            for request_id in gone:
+                commands.append(
+                    carla.command.DestroyActor(self._walkers.pop(request_id))
+                )
+                self._walker_stops.pop(request_id, None)
+            self._client.apply_batch_sync(commands, True)
+            self._stats["walkers_removed"] += len(gone)
+
+        for request_id, stop_id in waiting.items():
+            if request_id not in self._walkers:
+                self._spawn_walker(request_id, stop_id)
 
     # ------------------------------------------------------------------
     # Diagnostics
@@ -469,12 +519,91 @@ class CarlaBackend(SimulationBackend):
             self._world.tick()
             self._stats["ticks"] += 1
 
+    def _waiting_spot(self, stop_id: str) -> "carla.Transform":
+        """
+        Return where a passenger waits for the bus at a stop.
+
+        **On the shoulder, never the lane centre.** A pedestrian standing in
+        the road makes the traffic manager brake for them, and a walker with
+        no AI controller will not move aside — which would hand back the
+        stall problem the driving already had to solve.
+
+        Every authored stop has a Shoulder immediately to its right: that was
+        the pull-over test the authoring notebook applied, so this is
+        guaranteed rather than hoped for. If one is ever missing the stop
+        position is used and the failure is counted, not hidden.
+        :param stop_id: TransitGraph node ID of the stop.
+        :return: Transform where the first passenger at this stop stands.
+        """
+        carla_map = self._world.get_map()
+        waypoint = carla_map.get_waypoint(
+            self._location_of(stop_id), lane_type=carla.LaneType.Driving
+        )
+        shoulder = waypoint.get_right_lane()
+        if shoulder is None or shoulder.lane_type != carla.LaneType.Shoulder:
+            self._stats["stops_without_shoulder"] += 1
+            return waypoint.transform
+
+        base = shoulder.transform
+        right = base.get_right_vector()
+        return carla.Transform(
+            carla.Location(
+                x=base.location.x + right.x * WALKER_LATERAL_OFFSET_M,
+                y=base.location.y + right.y * WALKER_LATERAL_OFFSET_M,
+                z=base.location.z,
+            ),
+            base.rotation,
+        )
+
+    def _spawn_walker(self, request_id: str, stop_id: str) -> None:
+        """
+        Place one waiting passenger at a stop.
+
+        Walkers are spawned without an AI controller, so they stand still —
+        which is what a passenger waiting for a bus does, and it keeps them
+        out of the road.
+        :param request_id: Request the walker represents.
+        :param stop_id: TransitGraph node ID of the pickup stop.
+        """
+        if stop_id not in self._stop_positions:
+            return
+        base = self._waiting_spot(stop_id)
+        blueprint = self._walker_rng.choice(
+            self._world.get_blueprint_library().filter(
+                "walker.pedestrian.*"
+            )
+        )
+        if blueprint.has_attribute("is_invincible"):
+            blueprint.set_attribute("is_invincible", "true")
+
+        # Several people can wait at one stop, so fan them out along the
+        # shoulder; two walkers at the same point simply fail to spawn.
+        forward = base.get_forward_vector()
+        already = sum(
+            1 for waiting_at in self._walker_stops.values()
+            if waiting_at == stop_id
+        )
+        for attempt in range(already, already + 4):
+            transform = carla.Transform(
+                carla.Location(
+                    x=base.location.x + forward.x * 0.9 * attempt,
+                    y=base.location.y + forward.y * 0.9 * attempt,
+                    z=base.location.z + 1.0,
+                ),
+                base.rotation,
+            )
+            walker = self._world.try_spawn_actor(blueprint, transform)
+            if walker is not None:
+                self._walkers[request_id] = walker.id
+                self._walker_stops[request_id] = stop_id
+                self._stats["walkers_spawned"] += 1
+                return
+        self._stats["walker_spawn_failures"] += 1
+
     def _spawn_npcs(self) -> None:
         """Spawn autopilot traffic, if any was asked for."""
         if self._npc_vehicles <= 0:
             return
-        import random
-
         blueprints = self._world.get_blueprint_library().filter("vehicle.*")
         points = self._world.get_map().get_spawn_points()
         generator = random.Random(self._seed)

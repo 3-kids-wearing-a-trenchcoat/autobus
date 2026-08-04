@@ -311,12 +311,34 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    radius. That is the traffic manager routing near a stop it will not turn
    around for, not a stall — a different and milder problem than the one
    fixed here.
-5. [ ] **Passengers as walkers**
-   - `RequestPool` stays authoritative; `sync_passengers` mirrors pool state
-     onto walker actors. Spawn at pickup stop on creation, destroy on
-     boarding.
-   - Pitfalls: navigable spawn points, batch destroy in synchronous mode,
-     walkers stand still without an AI controller (which is what we want).
+5. [X] **Passengers as walkers** — built 2026-08-04
+
+   `sync_passengers` diffs the pool each tick: a walker appears when a
+   request starts waiting and is destroyed when it stops — boarded *or*
+   abandoned. The pool stays authoritative and nothing feeds back, so a
+   failed spawn costs a visual and never a result. Walkers get no AI
+   controller, so they stand still, which is what waiting for a bus looks
+   like.
+
+   Measured trial on Town01: **10/10 requests fulfilled**, 10 walkers
+   spawned and 10 removed, **zero spawn failures**, 8.25 km driven, 36x
+   real time.
+
+   **Walkers must not stand at the stop coordinate.** Stops are lane-centre
+   positions; a pedestrian there makes the traffic manager brake, and a
+   walker with no controller will not move aside — which would hand back the
+   stall problem step 4 had to solve. They are placed on the **shoulder**
+   instead, which the stop authoring already guaranteed exists at every stop
+   (it was the pull-over test). Confirmed at run time: 0 stops without a
+   shoulder.
+
+   The shoulder centre alone is not enough. Measured on Town01 it sits
+   2.15 m from a 4.0 m lane's centre — clearing the lane edge by **0.15 m**,
+   less than a walker's own body. `WALKER_LATERAL_OFFSET_M` pushes them a
+   further metre right, giving 1.15 m of clearance.
+
+   Several passengers at one stop are fanned out along the shoulder, since
+   two walkers at the same point simply fail to spawn.
 6. [ ] **Campaign harness**
    - Trial lifecycle with a world reload between trials — actor leakage is the
      classic cross-trial contaminant.

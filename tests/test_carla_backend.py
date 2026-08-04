@@ -8,11 +8,13 @@ walking-skeleton scripts instead, and their measured results are recorded in
 
 import pytest
 
+from src.algorithm.RequestPool import Request, RequestPool, RequestState
 from src.map.CarlaMapProvider import CarlaMapProvider
 from src.simulation.CarlaBackend import (
     DEFAULT_BUS_ID,
     FULL_SIZE_BUS_ID,
     MAX_SAFE_DELTA_S,
+    WALKER_LATERAL_OFFSET_M,
     CarlaBackend,
     stop_positions_from,
 )
@@ -138,3 +140,130 @@ def test_a_provider_can_be_driven_without_a_server() -> None:
     positions = stop_positions_from(provider)
     first = provider.get_stops()[0].edge.id
     assert CarlaBackend(positions, first).current_location() == first
+
+
+# ---------------------------------------------------------------------------
+# sync_passengers — the diff against the pool
+# ---------------------------------------------------------------------------
+
+class _FakeClient:
+    """Records batch commands instead of talking to a server."""
+
+    def __init__(self) -> None:
+        self.destroyed = 0
+
+    def apply_batch_sync(self, commands: list, _flag: bool) -> None:
+        """Count the actors a batch would destroy."""
+        self.destroyed += len(commands)
+
+
+def _pooled(*requests: tuple[str, str]) -> RequestPool:
+    """Build a pool of PENDING requests as (id, pickup_stop) pairs."""
+    pool = RequestPool()
+    for request_id, pickup in requests:
+        pool.add(Request(
+            id=request_id, pickup_stop_id=pickup,
+            dropoff_stop_id="n0002_n_s02", created_at=0.0,
+        ))
+    return pool
+
+
+def _wired(monkeypatch: pytest.MonkeyPatch) -> tuple[CarlaBackend, list]:
+    """A backend with spawning stubbed out, so no server is needed."""
+    backend = _backend()
+    backend._world = object()          # only checked for None
+    backend._client = _FakeClient()
+    spawned: list[tuple[str, str]] = []
+
+    def fake_spawn(request_id: str, stop_id: str) -> None:
+        spawned.append((request_id, stop_id))
+        backend._walkers[request_id] = len(spawned)
+        backend._walker_stops[request_id] = stop_id
+
+    monkeypatch.setattr(backend, "_spawn_walker", fake_spawn)
+    return backend, spawned
+
+
+def test_sync_before_start_is_safe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The runner calls this every tick, including before start()."""
+    _backend().sync_passengers(_pooled(("r1", "n0001_n_s01")))
+
+
+def test_a_waiting_request_gets_a_walker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend, spawned = _wired(monkeypatch)
+    backend.sync_passengers(_pooled(("r1", "n0001_n_s01")))
+    assert spawned == [("r1", "n0001_n_s01")]
+
+
+def test_syncing_twice_does_not_duplicate_walkers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Called every tick, so this is the common case, not an edge case."""
+    backend, spawned = _wired(monkeypatch)
+    pool = _pooled(("r1", "n0001_n_s01"))
+    backend.sync_passengers(pool)
+    backend.sync_passengers(pool)
+    backend.sync_passengers(pool)
+    assert len(spawned) == 1
+
+
+def test_boarding_removes_the_walker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend, _ = _wired(monkeypatch)
+    pool = _pooled(("r1", "n0001_n_s01"))
+    backend.sync_passengers(pool)
+    pool.update_state("r1", RequestState.ON_BUS)
+    backend.sync_passengers(pool)
+    assert backend._walkers == {}
+    assert backend._client.destroyed == 1
+
+
+def test_abandoning_removes_the_walker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A passenger who gives up stops being rendered too."""
+    backend, _ = _wired(monkeypatch)
+    pool = _pooled(("r1", "n0001_n_s01"))
+    backend.sync_passengers(pool)
+    pool.cancel("r1")
+    backend.sync_passengers(pool)
+    assert backend._walkers == {}
+
+
+def test_several_waiting_passengers_each_get_a_walker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend, spawned = _wired(monkeypatch)
+    backend.sync_passengers(_pooled(
+        ("r1", "n0001_n_s01"), ("r2", "n0001_n_s01"),
+        ("r3", "n0002_n_s02"),
+    ))
+    assert len(spawned) == 3
+
+
+def test_removal_forgets_which_stop_a_walker_was_at(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    The per-stop count drives how walkers are fanned out along the shoulder,
+    so a stale entry would push later arrivals further and further away.
+    """
+    backend, _ = _wired(monkeypatch)
+    pool = _pooled(("r1", "n0001_n_s01"))
+    backend.sync_passengers(pool)
+    pool.update_state("r1", RequestState.ON_BUS)
+    backend.sync_passengers(pool)
+    assert backend._walker_stops == {}
+
+
+def test_walkers_stand_clear_of_the_driving_lane() -> None:
+    """
+    Measured on Town01: the shoulder centre clears a 4 m lane's edge by only
+    0.15 m, which is less than a walker's own body. A pedestrian in the road
+    makes the traffic manager brake, and a walker with no AI controller will
+    not move aside.
+    """
+    assert WALKER_LATERAL_OFFSET_M > 0.0

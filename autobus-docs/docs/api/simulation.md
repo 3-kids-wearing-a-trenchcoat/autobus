@@ -16,6 +16,8 @@
 
 ::: src.simulation.ScriptedBackend.ScriptedBackend
 
+::: src.simulation.CarlaBackend.CarlaBackend
+
 ::: src.simulation.AnimationRecorder.AnimationFrame
 
 ::: src.simulation.AnimationRecorder.AnimationRecorder

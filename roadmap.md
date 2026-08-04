@@ -278,6 +278,39 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
      - `close()` — destroy actors; the runner calls it from `finally`.
    - Develop it against `ScriptedBackend` semantics first: anything that
      works there is the runner's problem, not CARLA's.
+
+   **Built 2026-08-04.** `src/simulation/CarlaBackend.py`, one class against
+   the three abstract methods; nothing above it changed. A full `run_trial`
+   on Town01 fulfilled **6/6 requests**, 11 arrivals, 5.33 km driven, at 36x
+   real time.
+
+   **The bus blueprint does not fit Town01.** `vehicle.mitsubishi.fusorosa`
+   is the only `base_type=Bus` in 0.9.16 and is **3.9 m wide against 3.5 m
+   lanes**. On a fixed three-stop route it stalled on 85% of ticks and
+   completed **0/3** legs, while a Sprinter, an ambulance, a truck and a car
+   all completed 2/3 and drove ~1535 m. Default is now
+   `vehicle.mercedes.sprinter` (5.9 x 2.0 m, a minibus); `FULL_SIZE_BUS_ID`
+   is kept for a town with wider lanes. **Open decision** — see below.
+
+   **A wedged vehicle never recovers on its own.** Measured: the bus drove
+   four legs, jammed against kerb geometry, and reported *zero movement for
+   every one of the ten remaining legs*. So the backend watches for stalls
+   and re-issues the path, then as a last resort lifts the vehicle onto the
+   nearest lane waypoint. Both are counted in `stats()`, because unwedging
+   is not physics and a run that needs it often is telling you the vehicle
+   is too big for the town. With recovery: **3/15 legs to 11/15, and zero
+   stuck**.
+
+   Trap worth keeping: the two stall clocks must be independent. Decrementing
+   the stall total on each repath starved the unwedge threshold outright —
+   repath fired every 10 s forever, unwedge never once, and the results were
+   byte-identical to having no recovery at all.
+
+   Remaining gap: 4 of 15 legs still time out, but with the bus **driving
+   the whole time** and approaching to 58–97 m rather than the 6 m arrival
+   radius. That is the traffic manager routing near a stop it will not turn
+   around for, not a stall — a different and milder problem than the one
+   fixed here.
 5. [ ] **Passengers as walkers**
    - `RequestPool` stays authoritative; `sync_passengers` mirrors pool state
      onto walker actors. Spawn at pickup stop on creation, destroy on

@@ -202,22 +202,31 @@ manager brake for someone who will never move.
 
 #### When the bus stops moving
 
-The backend watches for a bus that is making no progress and re-issues its
-route. It can also lift a jammed vehicle back onto the lane, but **that is off
-by default** (`unwedge_after_s=0.0`), because it teleports: a leg reached that
-way is a KPI that did not happen, and a genuine wedge is better seen as a
-failed leg than hidden. Every use is counted in `stats()`.
+The backend watches for a bus making no progress and **re-plans its route**
+from wherever it actually is. That is the whole of the response, and it moves
+nothing, so it cannot manufacture a result.
+
+It never fires with the default vehicle — 15 of 15 legs over 10 km without a
+single re-plan — which is the reason to keep it rather than to remove it. The
+counter in `stats()` is how a run tells you it needed help.
+
+There used to be a second, cruder response: lifting a jammed vehicle bodily
+back onto the lane. It was removed once each of its justifications turned out
+to be something else — red lights, a stale traffic manager, and a `set_path`
+loop. Deleting it left the driven distances identical to the metre. A leg
+reached by teleporting is a KPI that did not happen, so a genuine wedge is now
+allowed to show up as one.
 
 !!! warning "A bus at a red light looks exactly like a wedged one"
     Any tick covering less than 0.05 m counts as no progress — 1 m/s at the
     default step — which describes a bus waiting at a light just as well as
     one stuck against a kerb. Town01's lights cycle in groups of three, so an
     approach waits about 28 s of red, and the clock starts while the bus is
-    still braking. Before this was accounted for, **all 20 unwedges across
-    five tours fired on a stationary bus at a red light on a proper driving
-    lane**, each teleporting it through the junction against the light.
+    still braking. Before this was accounted for, **121 of 124 re-plans, and
+    every one of the 20 lifts that then existed, fired on a stationary bus at
+    a red light on a proper driving lane**.
 
-    The stall clocks are now *frozen* while a red light holds the bus, rather
+    The stall clock is now *frozen* while a red light holds the bus, rather
     than reset, so a bus genuinely jammed inside a junction still carries its
     accumulated time into the green.
 

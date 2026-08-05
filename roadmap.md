@@ -317,41 +317,33 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    `fusorosa` 17/25 exactly as before, `t2_2021` 18/25 rather than 19 —
    one leg it had only reached by being teleported.
 
-   **A wedged vehicle never recovers on its own.** Measured: the bus drove
-   four legs, jammed against kerb geometry, and reported *zero movement for
-   every one of the ten remaining legs*. So the backend watches for stalls
-   and re-issues the path, then as a last resort lifts the vehicle onto the
-   nearest lane waypoint. Both are counted in `stats()`, because unwedging
-   is not physics and a run that needs it often is telling you the vehicle
-   is too big for the town. With recovery: **3/15 legs to 11/15, and zero
-   stuck**.
+   **Stall recovery was removed on 2026-08-05, having turned out to be
+   scaffolding.** It was introduced to lift a wedged bus back onto the lane,
+   on the strength of a run where the bus jammed and then reported zero
+   movement for its ten remaining legs. Every part of that justification has
+   since dissolved:
 
-   Those two figures were measured before the traffic-manager fix and
-   overstate how badly a run goes without recovery.
+   - Almost all of its firings were **false positives at red lights** — 20
+     of 20 lifts, and 121 of 124 re-plans, on a bus standing at a red on a
+     proper driving lane. See the trap below.
+   - The stalls that remained were the **stale traffic manager** steering by
+     another town's road graph, and the pathological **`set_path` loop**.
+   - With those fixed, three tours of the default bus over 10 km complete
+     15 of 15 legs with **zero lifts and zero re-plans**. Removing the code
+     left the driven distances identical to the metre.
 
-   **Corrected again 2026-08-05: with the default vehicle the recovery is
-   now never needed at all.** Almost every firing was a false positive on a
-   red light — see the trap below. Once that was fixed, five six-stop tours
-   fired **one repath and zero unwedges**, against 124 and 20 before. The
-   `t2_2021` bus does not wedge in Town01.
+   What remains is `_track_stall` calling `_repath`, which re-plans the
+   route from where the bus actually is and moves nothing. It never fires
+   with the default vehicle, which is exactly why it is worth keeping: the
+   counter in `stats()` is how a run reports that it needed help, and it
+   cannot corrupt a KPI the way a teleport can.
 
-   The full-size `fusorosa` still does: the same five tours need **12
-   unwedges**, and this time they are earned — 10 stopped in a junction, one
-   on a driving lane, one genuinely off-road. So the original width concern
-   survives after all, in a sharper form than it was first stated: the wide
-   bus wedges in Town01's junctions, and the minibuses do not.
-
-   **Unwedging is therefore off by default** (`unwedge_after_s=0.0`), which
-   is what the submitted version should run. It teleports, and a leg reached
-   by teleporting is a KPI that did not happen — better to let a genuine
-   wedge show up as a failed leg than to hide it. Repath stays on: it only
-   re-issues a destination and moves nothing. The parameter remains for
-   anyone driving the full-size bus.
-
-   Trap worth keeping: the two stall clocks must be independent. Decrementing
-   the stall total on each repath starved the unwedge threshold outright —
-   repath fired every 10 s forever, unwedge never once, and the results were
-   byte-identical to having no recovery at all.
+   **The full-size `fusorosa` is not supported on Town01 as a result.** It
+   does get round the town, but only on the strength of the recovery that is
+   now gone: over the same three tours it needed 20 lifts and 61 re-plans,
+   and `plan_route` could not find a way out of five of the positions it
+   wedged itself into. `FULL_SIZE_BUS_ID` is kept named in the source
+   because "why not the actual bus?" is the first question anyone asks.
 
    **There is no remaining reachability gap. Every stop is reachable, and
    the earlier "4 of 25 legs fail" was a measurement artefact** — the tour
@@ -439,7 +431,7 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 | Where do bus stops come from? | Hand-authored per town, an input to the provider | A real deployment names its maps and stops rather than generating them |
 | Does running faster cause vehicles to get stuck? | **No.** Wall-clock rate has no effect at all, and a finer physics step does not help either | Measured; see below |
 | Who owns the traffic manager? | `CarlaBackend` creates its own on its own port, after the town is loaded, and shuts down only what it created | A traffic manager caches its map at creation and never re-caches it, so an inherited one steers the bus into the scenery — but it is also hosted by whichever *process* created it, so sharing or tearing down someone else's is worse. See the two traps below |
-| Unwedging (lifting a jammed bus onto the lane) | **Off by default** — `unwedge_after_s=0.0`. Repath stays on | It teleports, and a leg saved that way is a KPI that did not happen. With the default bus it never fires anyway (0 in five tours). Enable it only for a vehicle that genuinely wedges, such as the full-size bus |
+| Unwedging (lifting a jammed bus onto the lane) | **Removed.** Re-planning on no progress stays | It teleported, and a leg saved that way is a KPI that did not happen. Once red lights, the stale traffic manager and the `set_path` loop were fixed it never fired at all: 15/15 legs over 10 km with zero lifts, and deleting it left the driven distances identical |
 | Which vehicle drives? | `vehicle.volkswagen.t2_2021`, a shuttle | Re-measured over 5 tours: indistinguishable from the Sprinter. The full-size bus is usable too — the earlier "it cannot drive Town01" verdict was a stale-traffic-manager artefact |
 
 ## Open questions

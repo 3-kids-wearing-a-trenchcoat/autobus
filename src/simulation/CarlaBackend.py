@@ -5,9 +5,11 @@ methods, and nothing above it changes. The runner still owns the clock, the
 tick order, demand, abandonment and metrics; this only takes destinations and
 reports arrivals.
 
-Steering is `TrafficManager.set_path`, which keeps CARLA's own autonomous
-driving in charge — what the design review settled on. The bus is an ordinary
-autopilot vehicle that happens to be told where to go next.
+Steering keeps CARLA's own autonomous driving in charge, as the design
+review settled on: the bus is an ordinary autopilot vehicle, told which turns
+to take at each junction by `TrafficManager.set_route`. The turns come from
+`carla_routing`, because a destination alone is not something the traffic
+manager can navigate to.
 
 **This module imports carla.** Nothing else under `src/simulation` does, and
 nothing above the backend imports this.
@@ -22,20 +24,23 @@ from src.simulation.SimulationBackend import AdvanceResult, SimulationBackend
 
 import carla
 
-# The only blueprint CARLA 0.9.16 tags base_type=Bus. It is 10.3 x 3.9 m,
-# and Town01's lanes are 3.5 m wide -- measured, it stalls on 85% of ticks
-# and completes no legs at all. Usable only on a town with wider lanes.
+# The only blueprint CARLA 0.9.16 tags base_type=Bus, at 10.3 x 3.9 m
+# against Town01's 3.5 m lanes. It does get round the town, but it wedges in
+# junctions doing it: measured over three tours it needed 20 recoveries where
+# the minibus below needed none, and it cannot route out of five of the
+# positions it ends up in. Since recovery was removed it is **not supported**
+# on Town01; it is kept named here because "why not the actual bus?" is the
+# first question anyone asks.
 FULL_SIZE_BUS_ID = "vehicle.mitsubishi.fusorosa"
 
-# 5.9 x 2.0 m, a minibus. Completes the same route the full-size bus cannot,
-# which is why it is the default until a wider town is chosen.
+# A shuttle, and small enough for Town01's lanes: measured over three tours
+# it completed every leg without needing a single recovery.
 DEFAULT_BUS_ID = "vehicle.volkswagen.t2_2021"
 
 # Above CARLA's substepping limit (max_substep_delta_time * max_substeps =
 # 0.01 * 10) the physics silently stops keeping up and vehicle AI degrades —
 # measured: at 0.5 s vehicles cover half the ground per simulated second.
 MAX_SAFE_DELTA_S = 0.1
-# MAX_SAFE_DELTA_S = 1.5
 
 # How far right of the shoulder's centre a waiting passenger stands.
 # Measured on Town01: the shoulder centre sits 2.15 m from a 4.0 m lane's
@@ -98,20 +103,11 @@ class CarlaBackend(SimulationBackend):
         took in wall time. Set False to watch it drive.
     :param npc_vehicles: Autopilot traffic to spawn. Each costs throughput.
     :param seed: Seed for the traffic manager and NPC placement.
-    :param blueprint_id: Vehicle to drive. Defaults to a minibus, because
-        the only true bus blueprint is wider than Town01's lanes and cannot
-        get round the town at all — see ``FULL_SIZE_BUS_ID``.
+    :param blueprint_id: Vehicle to drive. Defaults to a shuttle, because
+        the only true bus blueprint is wider than Town01's lanes and wedges
+        in its junctions — see ``FULL_SIZE_BUS_ID``.
     :param repath_after_s: Seconds of no movement before the destination is
         re-issued to the traffic manager. Cheap and often enough.
-    :param unwedge_after_s: Seconds of no movement before the vehicle is
-        lifted onto the nearest lane waypoint. **Off by default**, because
-        it teleports: a vehicle that jams against kerb geometry does not
-        recover on its own, but lifting it is not physics, and a leg saved
-        that way is a KPI that did not happen. With the default bus it is
-        also simply unnecessary — measured over five Town01 tours it never
-        fires once. Worth enabling only for a vehicle that genuinely wedges,
-        such as ``FULL_SIZE_BUS_ID``, which needs 12 over the same tours.
-        Every use is counted in ``stats()``.
     :param follow_camera: Move the spectator camera to sit behind and above
         the bus on every tick, so a rendering server shows a chase view.
         Pointless with ``no_rendering=True``, where there is nothing to look
@@ -140,7 +136,6 @@ class CarlaBackend(SimulationBackend):
         seed: int = 0,
         blueprint_id: str = DEFAULT_BUS_ID,
         repath_after_s: float = 10.0,
-        unwedge_after_s: float = 0.0,
         follow_camera: bool = False,
         tm_port: int | None = None,
     ) -> None:
@@ -169,7 +164,6 @@ class CarlaBackend(SimulationBackend):
         self._seed = seed
         self._blueprint_id = blueprint_id
         self._repath_after_s = repath_after_s
-        self._unwedge_after_s = unwedge_after_s
         self._follow_camera = follow_camera
         self._tm_port = tm_port
         self._owns_traffic_manager = False
@@ -184,7 +178,6 @@ class CarlaBackend(SimulationBackend):
         self._destination: str | None = None
         self._leg_armed = False
         self._dwell_remaining = 0.0
-        self._stalled_s = 0.0
         self._since_repath_s = 0.0
 
         # Request ID to walker actor ID, and to the stop it waits at.
@@ -198,7 +191,6 @@ class CarlaBackend(SimulationBackend):
             "legs_started": 0,
             "distance_m": 0.0,
             "repaths": 0,
-            "unwedges": 0,
             "red_light_ticks": 0,
             "unroutable_legs": 0,
             "walkers_spawned": 0,
@@ -523,58 +515,38 @@ class CarlaBackend(SimulationBackend):
 
     def _track_stall(self, bus: "carla.Actor", step: float) -> None:
         """
-        Notice a bus that has stopped making progress, and free it.
+        Notice a bus that has stopped making progress, and re-plan for it.
 
-        Measured on Town01: a vehicle that wedges against kerb geometry at a
-        junction never recovers, and every subsequent leg reports zero
-        movement for the rest of the run. Re-issuing the path is tried
-        first because it is free and physically honest; lifting the vehicle
-        onto the lane is a last resort and is counted.
+        Re-planning is the only response, and it is an honest one: it works
+        out the route from where the bus actually is and re-issues the
+        turns, moving nothing. With the default vehicle it has not fired at
+        all in the tours measured so far, which is the point — the counter
+        in ``stats()`` is how a run tells you it needed help.
         :param bus: The bus actor.
         :param step: Metres travelled in the tick just taken.
         """
         if self._dwell_remaining > 0.0:
             return
         if step > 0.05:
-            self._stalled_s = 0.0
             self._since_repath_s = 0.0
             return
 
         if self._is_held_at_red(bus):
-            # Obeying a traffic light is not stalling, and the thresholds
-            # are *not* "well past any credible red light" as this comment
-            # used to claim. Town01's 36 lights cycle in groups of three, so
-            # an approach waits roughly 28 s of red -- and the clock below
-            # starts while the bus is still slowing down, several seconds
-            # before it stops. Every long red therefore overshot the 30 s
-            # unwedge threshold. Measured over five tours: 20 of 20 unwedges
-            # fired on a stationary bus at a red light on a proper driving
-            # lane, none on a genuine wedge, and each one teleported the bus
-            # through the junction against the light.
+            # Obeying a traffic light is not stalling. Town01's 36 lights
+            # cycle in groups of three, so an approach waits roughly 28 s of
+            # red, and the clock below starts while the bus is still slowing
+            # down. Without this, every long red looked like a stall:
+            # measured over five tours, 121 of 124 re-plans fired on a bus
+            # standing at a red light on a proper driving lane.
             #
-            # Frozen rather than reset, so a bus that really is jammed at a
+            # Frozen rather than reset, so a bus genuinely jammed inside a
             # junction still carries its accumulated time into the green.
             self._stats["red_light_ticks"] += 1
             return
 
-        # Deliberately not gated on throttle. A wedged bus is one the
-        # traffic manager has given up on, and it commands *zero* throttle —
-        # gating on throttle > 0 was measured to never fire at all.
-
-        self._stalled_s += self._delta
-
-        # Two independent clocks on purpose. Decrementing the stall total on
-        # each repath was measured to starve the unwedge threshold outright:
-        # repathing fired every 10 s forever, unwedge never once, and a bus
-        # the traffic manager had abandoned stayed abandoned for the whole
-        # run. Repath cadence must not reset how long we have been stuck.
-        if (self._unwedge_after_s > 0.0
-                and self._stalled_s >= self._unwedge_after_s):
-            self._unwedge(bus)
-            self._stalled_s = 0.0
-            self._since_repath_s = 0.0
-            return
-
+        # Deliberately not gated on throttle. A bus the traffic manager has
+        # given up on is commanded *zero* throttle, so gating on throttle
+        # above zero was measured to never fire at all.
         self._since_repath_s += self._delta
         if self._since_repath_s >= self._repath_after_s:
             self._repath(bus)
@@ -634,30 +606,6 @@ class CarlaBackend(SimulationBackend):
             return
         self._steer_towards(bus, self._destination)
         self._stats["repaths"] += 1
-
-    def _unwedge(self, bus: "carla.Actor") -> None:
-        """
-        Lift a jammed bus back onto the lane, a little way ahead.
-
-        Deliberately crude and deliberately counted: it is not physics, and
-        a run that needs it often is telling you the vehicle is too big for
-        the town.
-        :param bus: The bus actor to free.
-        """
-        carla_map = self._world.get_map()
-        waypoint = carla_map.get_waypoint(
-            bus.get_location(), lane_type=carla.LaneType.Driving
-        )
-        ahead = waypoint.next(6.0)
-        target = ahead[0] if ahead else waypoint
-
-        transform = target.transform
-        transform.location.z += 0.5
-        bus.set_target_velocity(carla.Vector3D(0.0, 0.0, 0.0))
-        bus.set_target_angular_velocity(carla.Vector3D(0.0, 0.0, 0.0))
-        bus.set_transform(transform)
-        self._stats["unwedges"] += 1
-        self._repath(bus)
 
     def _has_arrived(self) -> bool:
         """

@@ -353,17 +353,32 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    repath fired every 10 s forever, unwedge never once, and the results were
    byte-identical to having no recovery at all.
 
-   Remaining gap: **4 of 25 legs** over the five tours, down from 8 once the
-   bus was given real turns to follow instead of a distant point (see the
-   `set_path` trap below). Three of the four are far misses — 135 m, 151 m,
-   188 m — and are **cascades**: when a leg times out the bus is left
-   somewhere the next leg did not plan for. One is a near miss at 14.9 m,
-   which a looser `arrival_radius_m` would collect; 6 m from the centre of a
-   12 m bus is arguably tighter than a bus stop needs.
+   **There is no remaining reachability gap. Every stop is reachable, and
+   the earlier "4 of 25 legs fail" was a measurement artefact** — the tour
+   harness capped each leg at 200 s, and three of the four failures needed
+   201, 210 and 267 s. Re-run at a 600 s cap, tours 2, 4 and 5 complete
+   **15 of 15 legs**, including the one previously written off as a near
+   miss at 14.9 m, which arrives at 5.5 m in 201 s.
 
-   Both of CARLA's own alternatives land in the same place — its
-   `GlobalRoutePlanner` scored 21/25 and `BasicAgent` 22/25 — so this
-   residue is not about the steering method.
+   **Town01 legs are simply long.** Measured span **45–399 s**, median
+   around 160 s, on a town whose 36 traffic lights cycle in groups of three
+   and hold an approach for about 28 s. Anything that bounds a leg — a
+   timeout, `max_time`, `max_wait_s` — has to be sized against 400 s, not
+   against the mock's tens of seconds. A short leg timeout would not protect
+   a trial; it would manufacture the failures it was meant to catch. This
+   retires the earlier claim that a missing per-leg timeout is a critical
+   bug: legs finish, they just take minutes.
+
+   Three diagnoses died on the way to this, all of them mine, and the same
+   lesson each time — suspect the harness before the world:
+
+   1. "Specific stops are unreachable." No: every one of the 210 ordered
+      stop pairs routes, and all 15 stops are reached in tours.
+   2. "The failures are cascades." No: three of the four began from a
+      properly reached stop.
+   3. "Spawning at a stop wedges the bus." No: that was traffic-manager
+      contention with a Jupyter kernel. Re-run clean, all 15 stops are
+      driveable away from, 46–195 m in 25 s.
 5. [X] **Passengers as walkers** — built 2026-08-04
 
    `sync_passengers` diffs the pool each tick: a walker appears when a
@@ -518,7 +533,21 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 
   `src/simulation/carla_routing.py` plans a lane-level route by
   breadth-first search over `waypoint.next()` and reads the turns off it,
-  which `set_route` takes directly. **17/25 legs → 21/25** over five tours.
+  which `set_route` takes directly.
+
+  **What routing actually buys, measured both ways.** The headline figure
+  first reported here — 17/25 legs to 21/25 — was taken at a 200 s leg cap,
+  and most of that gap is *speed*, not reachability: given 600 s, single
+  points also complete tours 4 and 5, just slower (1823 s of simulated time
+  against 1537 s, ~16% worse). The correctness claim is narrower and real:
+  **some pairs never arrive at all.** `s04 → s07` single-point drove
+  **3086 m over 600 s** and never came closer than 78.0 m — the same 78.0 m
+  it reached at 150 s, because the loop is closed. With turns it arrives in
+  142 s. Over tour 2 at a 600 s cap: single-point 4/5, routing 5/5, and
+  678 s of simulated time against 985 s for one leg fewer.
+
+  So: a correctness fix for the pairs that cycle, and a worthwhile speed-up
+  everywhere else.
 
 - **A bus at a red light is indistinguishable from a wedged bus, unless you
   look.** `_track_stall` counts any tick covering less than 0.05 m — 1 m/s at

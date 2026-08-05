@@ -152,8 +152,13 @@ the stop was on.
 
 So `carla_routing` plans the leg instead: a breadth-first search over
 `waypoint.next()` finds a lane-level route, and the junction manoeuvres are
-read off it and handed to `set_route`, which takes exactly that. Over five
-six-stop tours this took the bus from 17 of 25 legs to 21.
+read off it and handed to `set_route`, which takes exactly that.
+
+That loop is not merely slow — it is closed. Given 600 seconds the same bus
+drove 3 km and still came no closer than 78 m, exactly the distance it
+reached in the first 150. With turns it arrives in 142 s. For legs that do
+not cycle, routing is a speed-up of roughly 16%, which matters mainly
+because Town01 legs already run to minutes.
 
 Two things fall out of this that are easy to get wrong:
 
@@ -171,6 +176,13 @@ Two things fall out of this that are easy to get wrong:
 Proximity, never waypoint equality: the traffic manager routes *through* a
 location rather than stopping on it, and the bus is about twelve metres long
 with its origin at its centre. `arrival_radius_m` defaults to 6 m.
+
+**Be patient with a leg.** Measured on Town01, legs run **45 to 399 seconds**
+— the town has 36 traffic lights cycling in groups of three, so a single
+approach can hold the bus for about 28 s. Anything that bounds a leg has to
+be sized against 400 s, not against the tens of seconds a mock leg takes. A
+short bound does not protect a trial; it manufactures the failures it was
+meant to catch.
 
 This is a genuine approximation. Arrivals are also observed at tick
 boundaries, so unlike `MockBackend` the backend cannot report a fractional

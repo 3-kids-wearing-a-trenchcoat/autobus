@@ -163,6 +163,7 @@ class CarlaBackend(SimulationBackend):
             "distance_m": 0.0,
             "repaths": 0,
             "unwedges": 0,
+            "red_light_ticks": 0,
             "walkers_spawned": 0,
             "walkers_removed": 0,
             "walker_spawn_failures": 0,
@@ -457,11 +458,26 @@ class CarlaBackend(SimulationBackend):
             self._since_repath_s = 0.0
             return
 
+        if self._is_held_at_red(bus):
+            # Obeying a traffic light is not stalling, and the thresholds
+            # are *not* "well past any credible red light" as this comment
+            # used to claim. Town01's 36 lights cycle in groups of three, so
+            # an approach waits roughly 28 s of red -- and the clock below
+            # starts while the bus is still slowing down, several seconds
+            # before it stops. Every long red therefore overshot the 30 s
+            # unwedge threshold. Measured over five tours: 20 of 20 unwedges
+            # fired on a stationary bus at a red light on a proper driving
+            # lane, none on a genuine wedge, and each one teleported the bus
+            # through the junction against the light.
+            #
+            # Frozen rather than reset, so a bus that really is jammed at a
+            # junction still carries its accumulated time into the green.
+            self._stats["red_light_ticks"] += 1
+            return
+
         # Deliberately not gated on throttle. A wedged bus is one the
         # traffic manager has given up on, and it commands *zero* throttle —
-        # gating on throttle > 0 was measured to never fire at all. Time is
-        # the only reliable discriminator, so the thresholds are set well
-        # past any credible red light.
+        # gating on throttle > 0 was measured to never fire at all.
 
         self._stalled_s += self._delta
 
@@ -481,6 +497,19 @@ class CarlaBackend(SimulationBackend):
         if self._since_repath_s >= self._repath_after_s:
             self._repath(bus)
             self._since_repath_s = 0.0
+
+    def _is_held_at_red(self, bus: "carla.Actor") -> bool:
+        """
+        Return whether a red light is what is holding the bus still.
+
+        :param bus: The bus actor.
+        :return: True if the bus is inside a traffic light's trigger volume
+            and that light is red. A green light reads as False, so a bus
+            that sits still on green is still treated as stalled.
+        """
+        if not bus.is_at_traffic_light():
+            return False
+        return bus.get_traffic_light_state() == carla.TrafficLightState.Red
 
     def _repath(self, bus: "carla.Actor") -> None:
         """Re-issue the current destination to the traffic manager."""

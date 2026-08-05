@@ -311,6 +311,12 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    legs that still fail are a property of particular stops, not of the
    vehicle.
 
+   That table was measured before the red-light fix below, while unwedges
+   were still teleporting the bus 6 m forward and occasionally past a stop
+   it could not otherwise reach. Re-run afterwards the ranking is unchanged:
+   `fusorosa` 17/25 exactly as before, `t2_2021` 18/25 rather than 19 —
+   one leg it had only reached by being teleported.
+
    **A wedged vehicle never recovers on its own.** Measured: the bus drove
    four legs, jammed against kerb geometry, and reported *zero movement for
    every one of the ten remaining legs*. So the backend watches for stalls
@@ -321,10 +327,19 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    stuck**.
 
    Those two figures were measured before the traffic-manager fix and
-   overstate how badly a run goes without recovery. **The mechanism is still
-   needed**: on a repaired traffic manager the blueprint tours above still
-   took 21–33 unwedges per 25 legs. Stalling is real; it was simply not as
-   catastrophic as a stale traffic manager made it look.
+   overstate how badly a run goes without recovery.
+
+   **Corrected again 2026-08-05: with the default vehicle the recovery is
+   now never needed at all.** Almost every firing was a false positive on a
+   red light — see the trap below. Once that was fixed, five six-stop tours
+   fired **one repath and zero unwedges**, against 124 and 20 before. The
+   `t2_2021` bus does not wedge in Town01.
+
+   The full-size `fusorosa` still does: the same five tours need **12
+   unwedges**, and this time they are earned — 10 stopped in a junction, one
+   on a driving lane, one genuinely off-road. So the original width concern
+   survives after all, in a sharper form than it was first stated: the wide
+   bus wedges in Town01's junctions, and the minibuses do not.
 
    Trap worth keeping: the two stall clocks must be independent. Decrementing
    the stall total on each repath starved the unwedge threshold outright —
@@ -448,6 +463,30 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
   was loaded — and now loads the town first. **There is no API to ask a
   traffic manager which map it holds**, so refusing to inherit one is the
   only cheap defence.
+
+- **A bus at a red light is indistinguishable from a wedged bus, unless you
+  look.** `_track_stall` counts any tick covering less than 0.05 m — 1 m/s at
+  the default delta — as a stall. Town01 has **36 traffic lights cycling in
+  groups of three**, so an approach waits about **28 s of red**, and the
+  clock starts while the bus is still braking, several seconds before it
+  actually stops. Against a 30 s unwedge threshold, every long red overshot.
+
+  Measured over five six-stop tours *before* the fix: 124 repaths and 20
+  unwedges, of which **all 20 unwedges, and 121 of the 124 repaths, fired on
+  a bus standing at a red light on a proper driving lane**. Not one was a
+  genuine wedge. Each unwedge teleported the bus 6 m forward — through the
+  junction, against the light — which is the jitter visible in the CARLA
+  window. The old comment claiming the thresholds were "well past any
+  credible red light" was simply wrong, and nobody had checked.
+
+  `_track_stall` now **freezes** both clocks while `_is_held_at_red(bus)`
+  holds, rather than resetting them, so a bus genuinely jammed inside a
+  junction still carries its accumulated time into the green. The same five
+  tours then fire one repath and zero unwedges.
+
+  Lesson worth keeping: a stall detector needs to know what a *legitimate*
+  stop looks like, or it will find stalls everywhere. Dwell was already
+  exempt; red lights were not.
 
 - **Simulation speed does not cause the stalls.** Two different things get
   called "speed" and they have to be separated. Measured on an identical

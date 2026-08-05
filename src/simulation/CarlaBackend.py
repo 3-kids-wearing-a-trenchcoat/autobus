@@ -27,12 +27,13 @@ FULL_SIZE_BUS_ID = "vehicle.mitsubishi.fusorosa"
 
 # 5.9 x 2.0 m, a minibus. Completes the same route the full-size bus cannot,
 # which is why it is the default until a wider town is chosen.
-DEFAULT_BUS_ID = "vehicle.mercedes.sprinter"
+DEFAULT_BUS_ID = "vehicle.volkswagen.t2_2021"
 
 # Above CARLA's substepping limit (max_substep_delta_time * max_substeps =
 # 0.01 * 10) the physics silently stops keeping up and vehicle AI degrades —
 # measured: at 0.5 s vehicles cover half the ground per simulated second.
 MAX_SAFE_DELTA_S = 0.1
+# MAX_SAFE_DELTA_S = 1.5
 
 # How far right of the shoulder's centre a waiting passenger stands.
 # Measured on Town01: the shoulder centre sits 2.15 m from a 4.0 m lane's

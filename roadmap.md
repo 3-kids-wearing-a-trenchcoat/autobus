@@ -423,7 +423,7 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 | `fixed_delta_seconds` | **0.05**, never above 0.1 | Above `max_substep_delta_time × max_substeps` the physics silently stops keeping up; at 0.5 vehicles cover half the ground per simulated second |
 | Where do bus stops come from? | Hand-authored per town, an input to the provider | A real deployment names its maps and stops rather than generating them |
 | Does running faster cause vehicles to get stuck? | **No.** Wall-clock rate has no effect at all, and a finer physics step does not help either | Measured; see below |
-| Who owns the traffic manager? | `CarlaBackend` shuts down any it finds and builds its own, after the town is loaded | A traffic manager caches its map at creation and never re-caches it; inheriting one made on another map steers the bus into the scenery. See the trap below |
+| Who owns the traffic manager? | `CarlaBackend` creates its own on its own port, after the town is loaded, and shuts down only what it created | A traffic manager caches its map at creation and never re-caches it, so an inherited one steers the bus into the scenery — but it is also hosted by whichever *process* created it, so sharing or tearing down someone else's is worse. See the two traps below |
 | Unwedging (lifting a jammed bus onto the lane) | **Off by default** — `unwedge_after_s=0.0`. Repath stays on | It teleports, and a leg saved that way is a KPI that did not happen. With the default bus it never fires anyway (0 in five tours). Enable it only for a vehicle that genuinely wedges, such as the full-size bus |
 | Which vehicle drives? | `vehicle.volkswagen.t2_2021`, a shuttle | Re-measured over 5 tours: indistinguishable from the Sprinter. The full-size bus is usable too — the earlier "it cannot drive Town01" verdict was a stale-traffic-manager artefact |
 
@@ -469,13 +469,32 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
   every later run in the same session looked fine. It is not the delta, not
   the wall-clock rate, and not the vehicle.
 
-  `CarlaBackend.start()` now discards whatever traffic manager it finds and
-  builds its own after the map load, which makes the repaired run
-  bit-identical to a clean one. `carla-demo.ipynb`'s preflight was the
-  trigger — `revive()` touched the traffic manager two cells before the town
-  was loaded — and now loads the town first. **There is no API to ask a
-  traffic manager which map it holds**, so refusing to inherit one is the
-  only cheap defence.
+  `CarlaBackend.start()` now creates a traffic manager **of its own, on its
+  own port**, after the map load, which makes the repaired run bit-identical
+  to a clean one. `carla-demo.ipynb`'s preflight was the trigger — `revive()`
+  touched the traffic manager two cells before the town was loaded — and now
+  loads the town first. **There is no API to ask a traffic manager which map
+  it holds**, so not inheriting one is the only cheap defence.
+
+- **A traffic manager belongs to a process, not to the server**, and sharing
+  one fails silently. It is an RPC service bound to a port, hosted by the
+  client that created it; `get_trafficmanager()` returns a *remote proxy*
+  when somebody else owns that port. A proxy to a traffic manager that is no
+  longer being ticked — a Jupyter kernel that finished a run and was never
+  restarted is the usual case — accepts the vehicle and then never commands
+  it. The bus sits still reporting **zero throttle and zero brake** with the
+  action `Void`, which reads exactly like being wedged.
+
+  **Tearing down the holder is not the fix**, and was tried: it disconnects
+  the other client mid-session, and re-binding the same port immediately
+  afterwards either raises `bind error` or returns a traffic manager that
+  drives nothing. `CarlaBackend` now searches upward from port 8000 for one
+  nobody is using and shuts down only what it created. Verified by holding
+  8000 externally: the backend takes 8001 and drives identically.
+
+  This cost an hour of misdiagnosis. The tell was that *every* stop looked
+  broken while the same code had just completed 21 of 25 legs — a 15-of-15
+  failure rate is a broken harness, not a broken map.
 
 - **`set_path` is not "drive to here".** It reads like a destination API and
   is a *junction-decision* one: the traffic manager can only choose, at each

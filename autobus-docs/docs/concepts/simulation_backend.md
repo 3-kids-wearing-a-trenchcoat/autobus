@@ -211,12 +211,28 @@ failed leg than hidden. Every use is counted in `stats()`.
 
 #### It builds its own traffic manager
 
-`start()` discards whatever `carla.TrafficManager` it finds and asks for a new
-one after loading the town. A traffic manager caches the road network when it
-is created and never re-caches it, so one made before the map load steers by
-the previous town's waypoints — silently, and looking exactly like bad
-driving. There is no API to ask a traffic manager which map it holds, so not
-inheriting one is the only cheap defence. See
+`start()` creates a `carla.TrafficManager` of its own, on its own port, after
+loading the town. Two separate hazards make this necessary.
+
+A traffic manager **caches the road network when it is created and never
+re-caches it**, so one made before the map load steers by the previous town's
+waypoints — silently, and looking exactly like bad driving. There is no API
+to ask a traffic manager which map it holds, so not inheriting one is the only
+cheap defence.
+
+It is also **hosted by the process that created it**, not by the server: it is
+an RPC service bound to a port, and `get_trafficmanager()` hands back a remote
+proxy when another process owns that port. A proxy to a traffic manager that
+is no longer being ticked — a Jupyter kernel that ran a trial and was never
+restarted is the common case — will accept the vehicle and then never command
+it, leaving the bus stationary at zero throttle and zero brake. Shutting down
+the holder is not the answer either: it disconnects that client, and
+re-binding the port immediately afterwards either fails with a bind error or
+yields a traffic manager that drives nothing.
+
+So the backend searches upward from port 8000 for one nobody is using, and
+`close()` shuts down only what it created. Pass `tm_port` to override, in
+which case managing it becomes the caller's job. See
 [Running the Project](../running.md#running-the-carla-server).
 
 ## Termination is not the backend's business

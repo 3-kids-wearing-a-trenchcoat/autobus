@@ -14,6 +14,7 @@ nothing above the backend imports this.
 """
 
 import random
+import socket
 
 from src.algorithm.RequestPool import RequestPool
 from src.simulation.carla_routing import plan_route, turns_along
@@ -42,10 +43,33 @@ MAX_SAFE_DELTA_S = 0.1
 # own body. This pushes them properly out of the road.
 WALKER_LATERAL_OFFSET_M = 1.0
 
+# Where CARLA looks for a traffic manager by default, and how far past it to
+# search for one nobody else is using.
+DEFAULT_TM_PORT = 8000
+TM_PORT_SEARCH_LIMIT = 20
+
 # Chase camera placement, relative to the bus.
 CAMERA_BEHIND_M = 9.0
 CAMERA_ABOVE_M = 4.5
 CAMERA_PITCH_DEG = -14.0
+
+
+def _port_is_free(port: int) -> bool:
+    """
+    Return whether a TCP port can be bound right now.
+
+    Deliberately without ``SO_REUSEADDR``: a port still in ``TIME_WAIT`` from
+    a traffic manager that has just shut down should read as busy, because
+    binding it again is exactly what fails.
+    :param port: Port to test.
+    :return: True if the port is free.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind(("", port))
+        except OSError:
+            return False
+    return True
 
 
 class CarlaBackend(SimulationBackend):
@@ -92,6 +116,11 @@ class CarlaBackend(SimulationBackend):
         the bus on every tick, so a rendering server shows a chase view.
         Pointless with ``no_rendering=True``, where there is nothing to look
         at. Defaults to False.
+    :param tm_port: Port for the traffic manager. Defaults to None, which
+        finds a free one and shuts it down again on ``close``. Name a port
+        only to share an existing traffic manager, in which case it is yours
+        to manage — and see ``_acquire_traffic_manager`` for why sharing one
+        is usually a mistake.
     :raises ValueError: If ``fixed_delta_s`` exceeds the safe limit.
     """
 
@@ -113,6 +142,7 @@ class CarlaBackend(SimulationBackend):
         repath_after_s: float = 10.0,
         unwedge_after_s: float = 0.0,
         follow_camera: bool = False,
+        tm_port: int | None = None,
     ) -> None:
         if fixed_delta_s > MAX_SAFE_DELTA_S:
             raise ValueError(
@@ -141,6 +171,8 @@ class CarlaBackend(SimulationBackend):
         self._repath_after_s = repath_after_s
         self._unwedge_after_s = unwedge_after_s
         self._follow_camera = follow_camera
+        self._tm_port = tm_port
+        self._owns_traffic_manager = False
 
         self._client: carla.Client | None = None
         self._world: carla.World | None = None
@@ -188,9 +220,9 @@ class CarlaBackend(SimulationBackend):
         seconds: there is no vehicle to place until there is a server.
 
         Order matters here: the town is loaded before the traffic manager is
-        touched, and a traffic manager that predates the load is discarded.
-        See the comment below — getting this wrong drives the bus into the
-        scenery and is silent.
+        created, so the traffic manager caches the right map. See
+        ``_acquire_traffic_manager`` — getting this wrong drives the bus into
+        the scenery and is silent.
         """
         self._client = carla.Client(self._host, self._port)
         self._client.set_timeout(self._timeout_s)
@@ -201,21 +233,7 @@ class CarlaBackend(SimulationBackend):
         self._world = world
         self._original_settings = world.get_settings()
 
-        # The traffic manager caches the road network when it is first
-        # created and never re-caches it on a map change, so one that
-        # predates the current map steers by the *previous* town's
-        # waypoints. Measured directly: of its chosen waypoints, 60/60 lay
-        # on the old map and 0/60 on the new one; the bus then reached 0 of
-        # 5 stops and spent 93% of the run off any lane, sawing into the
-        # kerb. Asking for it after the load is no defence, because the call
-        # returns whichever instance this process already built -- and the
-        # loading is often not ours to sequence, since the demo notebook
-        # loads the town itself. So discard whatever is there and build our
-        # own against the map that is actually loaded. Unconditional on
-        # purpose: there is no API to ask a traffic manager which map it
-        # holds, so the only cheap answer is not to inherit one.
-        self._client.get_trafficmanager().shut_down()
-        self._traffic_manager = self._client.get_trafficmanager()
+        self._traffic_manager = self._acquire_traffic_manager()
         self._traffic_manager.set_synchronous_mode(True)
         self._traffic_manager.set_random_device_seed(self._seed)
 
@@ -228,6 +246,57 @@ class CarlaBackend(SimulationBackend):
         self._spawn_npcs()
         self._spawn_bus()
 
+    def _acquire_traffic_manager(self) -> "carla.TrafficManager":
+        """
+        Get a traffic manager of our own, built against the loaded map.
+
+        **A traffic manager caches the road network when it is created and
+        never re-caches it.** One that predates the current map steers by the
+        previous town's waypoints: measured, 60 of 60 of its chosen waypoints
+        lay on the old map and 0 on the new one, and the bus reached 0 of 5
+        stops while spending 93% of the run off any lane. Creating ours after
+        the world load is what avoids that.
+
+        **A traffic manager belongs to the process that created it**, not to
+        the server — it is an RPC service bound to a port, and
+        ``get_trafficmanager`` returns a remote proxy when somebody else owns
+        that port. So we take a port of our own rather than the default,
+        because the default is very often already taken by a Jupyter kernel
+        that ran a trial earlier and has not been restarted. Sharing it is
+        worse than it sounds: the proxy accepts vehicles and then never
+        commands them, leaving the bus registered, stationary, and reporting
+        zero throttle and zero brake for ever.
+
+        Tearing down whoever holds the default port is not the answer either.
+        It disconnects another client mid-session, and re-binding the same
+        port immediately afterwards either fails outright with a bind error
+        or hands back a traffic manager that drives nothing.
+        :return: A traffic manager on a port nobody else is using.
+        :raises RuntimeError: If no free port is found.
+        """
+        if self._tm_port is not None:
+            # Explicitly chosen, so it is the caller's to manage; `close`
+            # leaves it alone.
+            return self._client.get_trafficmanager(self._tm_port)
+
+        for offset in range(TM_PORT_SEARCH_LIMIT):
+            port = DEFAULT_TM_PORT + offset
+            if not _port_is_free(port):
+                continue
+            try:
+                traffic_manager = self._client.get_trafficmanager(port)
+            except RuntimeError:
+                # Free to the OS but the server still has a registration for
+                # it; the next port will do.
+                continue
+            self._owns_traffic_manager = True
+            return traffic_manager
+
+        raise RuntimeError(
+            f"no free traffic manager port in "
+            f"{DEFAULT_TM_PORT}..{DEFAULT_TM_PORT + TM_PORT_SEARCH_LIMIT - 1}"
+        )
+
     def close(self) -> None:
         """
         Destroy every actor and restore the world's original settings.
@@ -236,6 +305,10 @@ class CarlaBackend(SimulationBackend):
         fails part-way. Leaked actors are the classic cross-trial
         contaminant, and a world left in synchronous mode looks frozen to
         every other client.
+
+        Shuts down the traffic manager only if we created it, so that a
+        caller who named a port keeps theirs and a notebook sharing the
+        server keeps working.
         """
         if self._client is None or self._world is None:
             return
@@ -255,6 +328,12 @@ class CarlaBackend(SimulationBackend):
 
         if self._traffic_manager is not None:
             self._traffic_manager.set_synchronous_mode(False)
+            if self._owns_traffic_manager:
+                # Releases the port, so the next trial in this process gets a
+                # traffic manager freshly built against its own map.
+                self._traffic_manager.shut_down()
+                self._traffic_manager = None
+                self._owns_traffic_manager = False
         if self._original_settings is not None:
             self._world.apply_settings(self._original_settings)
 

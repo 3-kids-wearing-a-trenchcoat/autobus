@@ -77,10 +77,22 @@ To watch the bus drive, use `notebooks/carla-demo.ipynb`.
     93% of the run, looking exactly like bad driving rather than a
     misconfiguration.
 
-    `CarlaBackend` defends itself by discarding any traffic manager it finds
-    and building its own after the map load. Any other client code — a
-    notebook cell, a scratch script — must load the town *before* it calls
+    `CarlaBackend` defends itself by building its own traffic manager, on its
+    own port, after the map load. Any other client code — a notebook cell, a
+    scratch script — must load the town *before* it calls
     `get_trafficmanager()`.
+
+!!! warning "A traffic manager is owned by a process, so don't share one"
+    It is an RPC service hosted by the client that created it, and
+    `get_trafficmanager()` returns a remote proxy when another process owns
+    the port. A kernel that ran a trial and was never restarted still owns
+    port 8000, and a proxy to its traffic manager will register your vehicle
+    and never drive it — stationary, zero throttle, zero brake.
+
+    `CarlaBackend` avoids this by taking a free port of its own, so a script
+    and a notebook can use the same server at once. If you write client code
+    that drives vehicles, do the same rather than assuming port 8000 is
+    yours.
 
 ### If the CARLA window looks frozen
 

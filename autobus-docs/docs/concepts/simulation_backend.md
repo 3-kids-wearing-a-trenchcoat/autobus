@@ -10,7 +10,7 @@ world-specific — the clock, the tick order, demand, abandonment, metrics,
 animation — belongs to [`SimulationRunner`](simulation_runner.md). What is
 left below the seam is small enough that a new world is a short class:
 `MockBackend` is dead reckoning over a graph, `ScriptedBackend` is a
-timetable, and a CARLA backend would be a vehicle and a proximity check.
+timetable, and `CarlaBackend` is a vehicle and a proximity check.
 
 !!! note "This is a repair, not the original design"
     Until Phase 2 the backend owned the tick order and called *into*
@@ -125,6 +125,99 @@ Its purpose is to make the modularity claim testable rather than merely
 asserted: a full `run_trial` runs against it and produces ordinary KPIs, with
 no map anywhere below the runner. It doubles as a stand-in for CARLA while
 the server is unavailable.
+
+### `CarlaBackend`
+
+A real vehicle in a real town. It is the proof that the seam was worth
+repairing: one class against the three abstract methods, and **nothing above
+it changed** — the same agent, policy, demand generator, abandonment and
+metrics that run on the synthetic map.
+
+It is the only file under `src/simulation` that imports `carla`, apart from
+the routing helper it uses, and nothing above the backend imports either.
+
+#### Getting to a stop
+
+Steering is CARLA's own driving, as the design review intended: the bus is an
+ordinary autopilot vehicle that is told where to go next. *How* it is told is
+the subtle part.
+
+`TrafficManager.set_path` reads like a destination API and is not one. It is a
+**junction-decision** API: at each junction the traffic manager picks the exit
+that best advances towards the next point it has been given. Handed a single
+point half a town away, that choice is greedy, and on a grid it can cycle
+forever. Measured on Town01, a bus told only where its stop was drove a
+ten-road loop indefinitely, came within 78 m, and never once entered the road
+the stop was on.
+
+So `carla_routing` plans the leg instead: a breadth-first search over
+`waypoint.next()` finds a lane-level route, and the junction manoeuvres are
+read off it and handed to `set_route`, which takes exactly that. Over five
+six-stop tours this took the bus from 17 of 25 legs to 21.
+
+Two things fall out of this that are easy to get wrong:
+
+- **Only junctions offering a choice count.** `set_route` consumes the list in
+  order, so one spurious entry throws every later turn onto the wrong
+  junction.
+- **CARLA ships an equivalent** — `agents.navigation.GlobalRoutePlanner` — but
+  the pip wheel is client bindings only and does not include it, so it would
+  have to be copied into this repository either way. Ours was measured against
+  it and reproduces it exactly, in a fraction of the code and with no extra
+  dependency.
+
+#### Knowing it has arrived
+
+Proximity, never waypoint equality: the traffic manager routes *through* a
+location rather than stopping on it, and the bus is about twelve metres long
+with its origin at its centre. `arrival_radius_m` defaults to 6 m.
+
+This is a genuine approximation. Arrivals are also observed at tick
+boundaries, so unlike `MockBackend` the backend cannot report a fractional
+`consumed`, and arrival times are quantised.
+
+#### Passengers
+
+`sync_passengers` diffs the pool each tick and mirrors waiting requests onto
+walker actors — one appears when a request starts waiting, and is destroyed
+when it stops, whether it was picked up or gave up. The pool stays
+authoritative and nothing feeds back, so a failed spawn costs a visual and
+never a result.
+
+Walkers stand on the **shoulder**, not at the stop coordinate. Stops are
+lane-centre positions, and a pedestrian standing in the road makes the traffic
+manager brake for someone who will never move.
+
+#### When the bus stops moving
+
+The backend watches for a bus that is making no progress and re-issues its
+route. It can also lift a jammed vehicle back onto the lane, but **that is off
+by default** (`unwedge_after_s=0.0`), because it teleports: a leg reached that
+way is a KPI that did not happen, and a genuine wedge is better seen as a
+failed leg than hidden. Every use is counted in `stats()`.
+
+!!! warning "A bus at a red light looks exactly like a wedged one"
+    Any tick covering less than 0.05 m counts as no progress — 1 m/s at the
+    default step — which describes a bus waiting at a light just as well as
+    one stuck against a kerb. Town01's lights cycle in groups of three, so an
+    approach waits about 28 s of red, and the clock starts while the bus is
+    still braking. Before this was accounted for, **all 20 unwedges across
+    five tours fired on a stationary bus at a red light on a proper driving
+    lane**, each teleporting it through the junction against the light.
+
+    The stall clocks are now *frozen* while a red light holds the bus, rather
+    than reset, so a bus genuinely jammed inside a junction still carries its
+    accumulated time into the green.
+
+#### It builds its own traffic manager
+
+`start()` discards whatever `carla.TrafficManager` it finds and asks for a new
+one after loading the town. A traffic manager caches the road network when it
+is created and never re-caches it, so one made before the map load steers by
+the previous town's waypoints — silently, and looking exactly like bad
+driving. There is no API to ask a traffic manager which map it holds, so not
+inheriting one is the only cheap defence. See
+[Running the Project](../running.md#running-the-carla-server).
 
 ## Termination is not the backend's business
 

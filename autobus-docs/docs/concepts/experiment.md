@@ -121,8 +121,27 @@ A caller who brings their own backend owns its physics.
 
 The example above is not a toy: `ScriptedBackend` has no graph, no travel
 model and no geometry, and a full trial still completes against it. That is
-the test the seam has to pass, and it is what makes a CARLA backend a matter
-of writing one class rather than of rewiring the harness.
+the test the seam has to pass, and it is what made `CarlaBackend` a matter of
+writing one class rather than of rewiring the harness.
+
+### Running on a map other than a planar graph
+
+`provider` takes any [`MapProvider`](map.md) and is used instead of `graph`,
+which then need not be given:
+
+```python
+from src.map.CarlaMapProvider import CarlaMapProvider
+
+result = run_trial(
+    policy_factory=lambda g: WindowInsertionPolicy(g, max_wait_s=900.0),
+    provider=CarlaMapProvider("Town01"),
+)
+```
+
+`provider` and `backend_factory` are independent, which is the useful part.
+A CARLA town with the default mock backend is a real road network with no
+server running and no vehicle — the town's geometry at full simulation speed.
+Supplying both is what drives an actual bus.
 
 ## compare_policies
 

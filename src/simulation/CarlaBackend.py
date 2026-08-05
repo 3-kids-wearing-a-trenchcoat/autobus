@@ -16,6 +16,7 @@ nothing above the backend imports this.
 import random
 
 from src.algorithm.RequestPool import RequestPool
+from src.simulation.carla_routing import plan_route, turns_along
 from src.simulation.SimulationBackend import AdvanceResult, SimulationBackend
 
 import carla
@@ -167,6 +168,7 @@ class CarlaBackend(SimulationBackend):
             "repaths": 0,
             "unwedges": 0,
             "red_light_ticks": 0,
+            "unroutable_legs": 0,
             "walkers_spawned": 0,
             "walkers_removed": 0,
             "walker_spawn_failures": 0,
@@ -282,9 +284,7 @@ class CarlaBackend(SimulationBackend):
 
         bus = self._bus()
         if bus is not None and self._traffic_manager is not None:
-            self._traffic_manager.set_path(
-                bus, [self._location_of(stop_id)]
-            )
+            self._steer_towards(bus, stop_id)
 
     def advance(self, dt: float) -> AdvanceResult:
         """
@@ -514,13 +514,46 @@ class CarlaBackend(SimulationBackend):
             return False
         return bus.get_traffic_light_state() == carla.TrafficLightState.Red
 
+    def _steer_towards(self, bus: "carla.Actor", stop_id: str) -> None:
+        """
+        Tell the traffic manager how to reach a stop.
+
+        Not *where* the stop is — which turns to take to get there.
+        `set_path` with a single distant location reads like a destination
+        but is a junction-decision API, and given one far-off point the
+        traffic manager chooses greedily and can cycle: measured on Town01,
+        a bus told only where its stop was drove a ten-road loop for ever
+        and never entered the stop's road. Planning the route and handing
+        over the turns took a five-tour campaign from 17/25 legs to 21/25.
+        :param bus: The bus actor.
+        :param stop_id: TransitGraph node ID of the stop to drive to.
+        """
+        route = plan_route(
+            self._world.get_map(),
+            bus.get_location(),
+            self._location_of(stop_id),
+        )
+        if route is None:
+            # Nothing sensible to say, so fall back to the old behaviour of
+            # simply aiming at the stop. It is poor, but an instruction the
+            # traffic manager may mishandle still beats none at all.
+            self._stats["unroutable_legs"] += 1
+            self._traffic_manager.set_path(
+                bus, [self._location_of(stop_id)]
+            )
+            return
+
+        turns = turns_along(route)
+        if turns:
+            self._traffic_manager.set_route(bus, turns)
+        # An empty list means the route crosses no junction where there is
+        # anything to decide, and lane following already goes the right way.
+
     def _repath(self, bus: "carla.Actor") -> None:
-        """Re-issue the current destination to the traffic manager."""
+        """Re-plan from where the bus is now and re-issue its turns."""
         if self._destination is None or self._traffic_manager is None:
             return
-        self._traffic_manager.set_path(
-            bus, [self._location_of(self._destination)]
-        )
+        self._steer_towards(bus, self._destination)
         self._stats["repaths"] += 1
 
     def _unwedge(self, bus: "carla.Actor") -> None:

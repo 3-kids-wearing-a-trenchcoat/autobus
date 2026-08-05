@@ -18,6 +18,12 @@
 
 ::: src.simulation.CarlaBackend.CarlaBackend
 
+::: src.simulation.carla_routing.plan_route
+
+::: src.simulation.carla_routing.turns_along
+
+::: src.simulation.carla_routing.plan_turns
+
 ::: src.simulation.AnimationRecorder.AnimationFrame
 
 ::: src.simulation.AnimationRecorder.AnimationRecorder

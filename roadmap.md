@@ -353,13 +353,17 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    repath fired every 10 s forever, unwedge never once, and the results were
    byte-identical to having no recovery at all.
 
-   Remaining gap, and now the main one: legs still time out, with the bus
-   **driving the whole time** and approaching to 58–97 m rather than the 6 m
-   arrival radius. That is the traffic manager routing near a stop it will
-   not turn around for, not a stall. Re-measured after the traffic-manager
-   fix it is **5 of 25 legs at best** (Sprinter) and is concentrated: one of
-   the five tours loses 3 legs for every blueprint tried, so it is specific
-   stops that are unreachable rather than driving being generally poor.
+   Remaining gap: **4 of 25 legs** over the five tours, down from 8 once the
+   bus was given real turns to follow instead of a distant point (see the
+   `set_path` trap below). Three of the four are far misses — 135 m, 151 m,
+   188 m — and are **cascades**: when a leg times out the bus is left
+   somewhere the next leg did not plan for. One is a near miss at 14.9 m,
+   which a looser `arrival_radius_m` would collect; 6 m from the centre of a
+   12 m bus is arguably tighter than a bus stop needs.
+
+   Both of CARLA's own alternatives land in the same place — its
+   `GlobalRoutePlanner` scored 21/25 and `BasicAgent` 22/25 — so this
+   residue is not about the steering method.
 5. [X] **Passengers as walkers** — built 2026-08-04
 
    `sync_passengers` diffs the pool each tick: a walker appears when a
@@ -414,7 +418,8 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 | Does L1 survive CARLA-like driving? | **Yes, and its advantage grows** | Under execution noise L1's mean-ride lead widens −92 s → −136 s; L0 degrades ~5× faster. Do not re-litigate in Phase 3 |
 | `safety_factor` | Default 1.0, but it is the CARLA lever | At σ=0.2, 1.25 cuts breaches 4.9%→2.0% free of coverage cost, for +107 s ride (L0) / +67 s (L1) |
 | Which CARLA town? | **Town01** for now, but nothing may hard-code it — several maps are wanted eventually | Town choice does not affect throughput; Town01 drives a bus well, Town10HD_Opt barely moves one even on plain autopilot |
-| How is the bus steered? | `traffic_manager.set_path` | Works, no new dependencies, keeps CARLA's own driving in charge per design review §4. Vendoring `agents` is the fallback only |
+| How is the bus steered? | `traffic_manager.set_route`, given turns from our own route planner in `src/simulation/carla_routing.py` | `set_path` with a single destination is not navigation — it is a junction-decision API, and given one distant point the bus cycles. Planning the route and handing over the turns took a five-tour campaign from 17/25 legs to 21/25. See the trap below |
+| Why not CARLA's `GlobalRoutePlanner`? | Measured identical, and ours is 60 lines against 1,240 | The pip wheel is client bindings only and does not ship `agents`, so either way the code would be copied into this repository. Ours reproduces theirs exactly — same 21/25, same per-tour split, same four failures to the metre — with no vendoring and no `shapely` |
 | `fixed_delta_seconds` | **0.05**, never above 0.1 | Above `max_substep_delta_time × max_substeps` the physics silently stops keeping up; at 0.5 vehicles cover half the ground per simulated second |
 | Where do bus stops come from? | Hand-authored per town, an input to the provider | A real deployment names its maps and stops rather than generating them |
 | Does running faster cause vehicles to get stuck? | **No.** Wall-clock rate has no effect at all, and a finer physics step does not help either | Measured; see below |
@@ -471,6 +476,30 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
   was loaded — and now loads the town first. **There is no API to ask a
   traffic manager which map it holds**, so refusing to inherit one is the
   only cheap defence.
+
+- **`set_path` is not "drive to here".** It reads like a destination API and
+  is a *junction-decision* one: the traffic manager can only choose, at each
+  junction, the exit that best advances towards the next unconsumed point.
+  Given a single point half a town away that choice is greedy, and on a grid
+  it cycles. Measured on Town01, a bus told only where its stop was drove a
+  ten-road loop — `25 → 75 → 61 → 1 → 27 → 16 → 253 → 10 → 341 → 334 → 25 →
+  …` — indefinitely, coming within 78 m and **never once entering the road
+  the stop was on**.
+
+  It is not ignored, and re-issuing it does not help: with the single point
+  the bus reached 78 m over 712 m driven, with no path at all 122 m over
+  984 m, and re-issuing every 5 s gave a byte-identical trace. The
+  instruction is followed; it just cannot express a route.
+
+  Three diagnoses this rules out, each of which looked plausible first:
+  the stops (every one snaps to its authored lane at **0.00 m**, on a
+  driving lane, none in a junction), the vehicle (the same legs fail for
+  every blueprint), and the destination (every "unreachable" stop is
+  reachable from other approaches — the failures cluster by *origin*).
+
+  `src/simulation/carla_routing.py` plans a lane-level route by
+  breadth-first search over `waypoint.next()` and reads the turns off it,
+  which `set_route` takes directly. **17/25 legs → 21/25** over five tours.
 
 - **A bus at a red light is indistinguishable from a wedged bus, unless you
   look.** `_track_stall` counts any tick covering less than 0.05 m — 1 m/s at
@@ -537,10 +566,19 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
   across processes: several policies `min()` over a `set[str]`, and tie-breaks
   follow hash order. `jupyter-run.sh` does not set it. Any golden master or
   cross-session comparison must force `PYTHONHASHSEED=0`.
-- **The `agents` package is not installed.** The pip `carla==0.9.16` wheel is
-  client-only (`__init__.py`, `libcarla.so`, stubs). `BasicAgent`,
+- **The `agents` package is not installed, and we resolved this.** The pip
+  `carla==0.9.16` wheel is client bindings only — the whole manifest is
+  `__init__.py`, `libcarla.so` and two `.pyi` stubs. `BasicAgent`,
   `BehaviorAgent` and `GlobalRoutePlanner` live in `PythonAPI/carla/agents/`
-  inside the container image. Either vendor it or write our own controller.
+  inside the container image, as ordinary Python over the same public API, so
+  there is nothing privileged in them. **Decision: we wrote our own** — see
+  `src/simulation/carla_routing.py`, measured identical to theirs.
+
+  Correcting this entry's earlier dependency claim: `shapely` is imported by
+  **`basic_agent.py` alone** and nothing in the route-planning chain needs
+  it, and while `agents/requirements.txt` does pin `numpy<2.0.0`, that pin is
+  over-broad — the navigation code was run successfully on our numpy 2.5.1.
+  Both halves of the original "vendoring is blocked" reasoning were wrong.
 - **Reproducibility weakens under CARLA.** Synchronous mode with a fixed delta
   is approximately repeatable, not bit-identical. The bit-identical goal in
   the parallel-trials plan does not transfer.

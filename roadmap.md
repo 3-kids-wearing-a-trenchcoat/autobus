@@ -1,6 +1,9 @@
 # Autobus roadmap
 
-Living document. Phases 1 and 2 are complete; Phase 3 (CARLA) is next.
+Living document. Phases 1 and 2 are complete. Phase 3 is built and
+driving: steps 3.1–3.5 are done, and a full `run_trial` serves every request
+on Town01 with a real vehicle and visible passengers. What remains is 3.6
+(campaign harness) and 3.7 (validation).
 Last updated 2026-08-05.
 
 ---
@@ -176,6 +179,8 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    giving up. With rendering on for a demo the same trial is 17–33 minutes.
 
    **Bus blueprint: `vehicle.mitsubishi.fusorosa`** (`base_type=Bus`).
+   *Superseded — the default is now `vehicle.volkswagen.t2_2021`, and the
+   full-size bus is unsupported on Town01. See 3.4.*
 
    **Steering: `traffic_manager.set_path(actor, [locations])` works**, and
    keeps CARLA's built-in driving in charge as design review §4 intended. One
@@ -185,10 +190,19 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    arbitrary spawn points. **Decision: use `set_path`; revisit only if it
    stays unreliable.**
 
+   *Superseded: it did stay unreliable, and for a structural reason. A bare
+   `set_path` cannot express a route — see the trap on it below. Steering is
+   now `set_route`, given turns from `src/simulation/carla_routing.py`.*
+
    **The `agents` package** is confirmed absent from the wheel and present in
-   the image at `/workspace/PythonAPI/carla/agents` (2262 LOC). Vendoring it
-   would need **shapely** (not in `environment.yml`) and its `requirements.txt`
-   pins `numpy<2.0.0` against our 2.5.1. Not needed unless `set_path` fails.
+   the image at `/workspace/PythonAPI/carla/agents` (2262 LOC).
+
+   *Two corrections, on measurement rather than reading: `shapely` is imported
+   by `basic_agent.py` alone and by nothing in the route-planning chain, and
+   although `agents/requirements.txt` does pin `numpy<2.0.0`, that pin is
+   over-broad — `GlobalRoutePlanner` was run successfully on our numpy 2.5.1.
+   Neither was the obstacle it appeared to be. We wrote our own planner
+   anyway; see the decisions table.*
 2. [X] **`CarlaMapProvider`** — built 2026-08-04
 
    Reads two files from `src/map/carla_maps/` and **imports no carla**, so a
@@ -262,7 +276,7 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    Town01 draft: 15 stops, 11 road-lanes, min spacing 92 m, median
    stop-to-stop road distance 555 m (~93 s at 6 m/s, against the campus
    map's ~130 s). All 15 mutually reachable.
-4. [ ] **The bus, no passengers** — the walking skeleton
+4. [X] **The bus, no passengers** — the walking skeleton, **complete**
    - Spawn, drive to a stop, detect arrival (proximity + near-zero speed,
      never exact waypoint equality), stop, continue.
    - **`CarlaBackend` is now a single class against three abstract methods**
@@ -292,11 +306,20 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    tours (25 legs per blueprint, headless, seed 0, repaired traffic
    manager):
 
-   | blueprint | legs reached | unwedges | repaths | per tour |
+   | blueprint | legs reached | lifts | re-plans | per tour |
    |---|---|---|---|---|
    | `vehicle.mercedes.sprinter` | 20/25 (80%) | 23 | 132 | 5,2,5,5,3 |
    | `vehicle.volkswagen.t2_2021` | 19/25 (76%) | 21 | 127 | 5,2,5,5,2 |
    | `vehicle.mitsubishi.fusorosa` | 17/25 (68%) | 33 | 182 | 5,2,4,4,2 |
+
+   **Read that table with its conditions attached**, because both have since
+   changed: it was taken at a 200 s leg cap, which is too short for Town01
+   (legs run to 399 s), and with the lift-onto-the-lane recovery still
+   enabled. The "legs reached" column therefore measures how *quickly* a
+   blueprint gets round, not whether it can. Re-measured properly, the
+   default bus completes 15 of 15 legs and the full-size bus needs 20 lifts
+   to do the same — and since those lifts have been removed, **the full-size
+   bus is no longer supported on Town01**.
 
    The full-size bus **does** get round Town01. It is never better than the
    two minibuses and worse on 3 of the 5 tours, but 25 legs cannot separate
@@ -432,21 +455,32 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 | Does running faster cause vehicles to get stuck? | **No.** Wall-clock rate has no effect at all, and a finer physics step does not help either | Measured; see below |
 | Who owns the traffic manager? | `CarlaBackend` creates its own on its own port, after the town is loaded, and shuts down only what it created | A traffic manager caches its map at creation and never re-caches it, so an inherited one steers the bus into the scenery — but it is also hosted by whichever *process* created it, so sharing or tearing down someone else's is worse. See the two traps below |
 | Unwedging (lifting a jammed bus onto the lane) | **Removed.** Re-planning on no progress stays | It teleported, and a leg saved that way is a KPI that did not happen. Once red lights, the stale traffic manager and the `set_path` loop were fixed it never fired at all: 15/15 legs over 10 km with zero lifts, and deleting it left the driven distances identical |
-| Which vehicle drives? | `vehicle.volkswagen.t2_2021`, a shuttle | Re-measured over 5 tours: indistinguishable from the Sprinter. The full-size bus is usable too — the earlier "it cannot drive Town01" verdict was a stale-traffic-manager artefact |
+| Which vehicle drives? | `vehicle.volkswagen.t2_2021`, a shuttle | Completes every leg on Town01 without needing recovery, and is indistinguishable from the Sprinter. The full-size `fusorosa` is **not supported**: it only got round on the lift-onto-the-lane recovery that has since been removed, needing 20 lifts over three tours where the shuttle needed none |
 
 ## Open questions
 
 - **NPC traffic?** Empty is fastest and most reproducible; light traffic is
   more realistic and is what the execution-noise study models synthetically.
   20 vehicles costs 4× throughput (50×→13×) and still leaves headroom.
+
+  This is now the largest untested assumption in Phase 3. **Every CARLA
+  result recorded here was measured with `npc_vehicles=0`** — including
+  "the bus never stalls" and "recovery never fires", which is what justified
+  deleting the recovery. Traffic can box a vehicle in where an empty town
+  cannot. Worth one tour at 20 NPCs before trusting those two claims in a
+  campaign.
 - **Which reading of CARLA's role governs?** §3.2 says runs "will be done on
   the CARLA server as well" at the same statistical bar (CI half-width < 5% of
   mean); §5.1 says CARLA is for demonstrations. These conflict, and the
   difference is a demo versus a campaign harness.
 - **Mid-route replanning.** Functional requirement 3 is *"the bus receives
   requests in real time (while potentially already in motion)"*. Today
-  `on_arrival` is the only replan trigger. In the mock legs are short and this
-  is nearly invisible; under CARLA a leg can run minutes.
+  `on_arrival` is the only replan trigger. In the mock, legs are short and
+  this is nearly invisible. On Town01 it is not a hypothetical: legs are
+  **measured at 45–399 s, median ~160 s**, so a request arriving just after
+  a departure waits an entire leg before the bus can even consider it. This
+  is the clearest remaining gap between the implementation and a stated
+  functional requirement.
 
 ---
 
@@ -586,13 +620,18 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
   unwedges/min, 54% stalled). So there is nothing to buy by stepping finer,
   and 0.05 stays the right default.
 
-  The stalls are geometric — the vehicle physically wedges against kerbs.
+  **What survives of this, and what does not.** The *comparison* stands, and
+  it is the point of the entry: a 10x spread in wall-clock rate moved
+  nothing, and a finer physics step moved nothing, because all arms shared
+  whatever state the traffic manager was in.
 
-  **Caveat added 2026-08-05:** these runs predate the traffic-manager fix,
-  so the absolute rates (3/6 legs, 44% stalled) are not trustworthy. The
-  *comparison* still stands, because all three arms shared whatever state
-  the traffic manager was in, and a 10x spread in wall rate moved nothing.
-  Do not quote the absolute numbers; re-measure if they matter.
+  The absolute figures do not survive, and neither does the conclusion once
+  drawn from them — that "the stalls are geometric". Those runs predate both
+  the traffic-manager fix and the red-light fix, and the stalls they counted
+  were overwhelmingly a stale road graph and cars waiting at lights. The
+  `unwedges/min` column measures a mechanism that no longer exists. On the
+  current code the same bus completes 15 of 15 legs and never stalls at all.
+  Quote the invariance, not the numbers.
 - **`advance()` must never return a batch of arrivals.** Arrivals inside one
   tick are sequentially dependent: the agent boards, alights and re-plans on
   each one, and the leg that follows is not known until it has. The contract

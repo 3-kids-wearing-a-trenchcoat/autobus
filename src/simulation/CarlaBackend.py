@@ -180,6 +180,11 @@ class CarlaBackend(SimulationBackend):
 
         Separate from ``__init__`` precisely because this can fail and take
         seconds: there is no vehicle to place until there is a server.
+
+        Order matters here: the town is loaded before the traffic manager is
+        touched, and a traffic manager that predates the load is discarded.
+        See the comment below — getting this wrong drives the bus into the
+        scenery and is silent.
         """
         self._client = carla.Client(self._host, self._port)
         self._client.set_timeout(self._timeout_s)
@@ -190,6 +195,20 @@ class CarlaBackend(SimulationBackend):
         self._world = world
         self._original_settings = world.get_settings()
 
+        # The traffic manager caches the road network when it is first
+        # created and never re-caches it on a map change, so one that
+        # predates the current map steers by the *previous* town's
+        # waypoints. Measured directly: of its chosen waypoints, 60/60 lay
+        # on the old map and 0/60 on the new one; the bus then reached 0 of
+        # 5 stops and spent 93% of the run off any lane, sawing into the
+        # kerb. Asking for it after the load is no defence, because the call
+        # returns whichever instance this process already built -- and the
+        # loading is often not ours to sequence, since the demo notebook
+        # loads the town itself. So discard whatever is there and build our
+        # own against the map that is actually loaded. Unconditional on
+        # purpose: there is no API to ask a traffic manager which map it
+        # holds, so the only cheap answer is not to inherit one.
+        self._client.get_trafficmanager().shut_down()
         self._traffic_manager = self._client.get_trafficmanager()
         self._traffic_manager.set_synchronous_mode(True)
         self._traffic_manager.set_random_device_seed(self._seed)

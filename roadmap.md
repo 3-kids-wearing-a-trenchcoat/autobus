@@ -1,7 +1,7 @@
 # Autobus roadmap
 
 Living document. Phases 1 and 2 are complete; Phase 3 (CARLA) is next.
-Last updated 2026-08-03.
+Last updated 2026-08-05.
 
 ---
 
@@ -284,13 +284,32 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    on Town01 fulfilled **6/6 requests**, 11 arrivals, 5.33 km driven, at 36x
    real time.
 
-   **The bus blueprint does not fit Town01.** `vehicle.mitsubishi.fusorosa`
-   is the only `base_type=Bus` in 0.9.16 and is **3.9 m wide against 3.5 m
-   lanes**. On a fixed three-stop route it stalled on 85% of ticks and
-   completed **0/3** legs, while a Sprinter, an ambulance, a truck and a car
-   all completed 2/3 and drove ~1535 m. Default is now
-   `vehicle.mercedes.sprinter` (5.9 x 2.0 m, a minibus); `FULL_SIZE_BUS_ID`
-   is kept for a town with wider lanes. **Open decision** — see below.
+   **The bus blueprint — re-measured 2026-08-05, and the earlier verdict was
+   wrong.** This entry used to record that `vehicle.mitsubishi.fusorosa`
+   "stalled on 85% of ticks and completed 0/3 legs" and therefore could not
+   drive Town01. That was measured with a stale traffic manager — see the
+   trap below — and does not survive re-measurement. Over 5 fixed six-stop
+   tours (25 legs per blueprint, headless, seed 0, repaired traffic
+   manager):
+
+   | blueprint | legs reached | unwedges | repaths | per tour |
+   |---|---|---|---|---|
+   | `vehicle.mercedes.sprinter` | 20/25 (80%) | 23 | 132 | 5,2,5,5,3 |
+   | `vehicle.volkswagen.t2_2021` | 19/25 (76%) | 21 | 127 | 5,2,5,5,2 |
+   | `vehicle.mitsubishi.fusorosa` | 17/25 (68%) | 33 | 182 | 5,2,4,4,2 |
+
+   The full-size bus **does** get round Town01. It is never better than the
+   two minibuses and worse on 3 of the 5 tours, but 25 legs cannot separate
+   68% from 80% — that is a direction, not a result. Its 3.9 m width against
+   3.5 m lanes remains a real fact; "cannot drive the town at all" does not.
+
+   Default is `vehicle.volkswagen.t2_2021`, a shuttle that looks the part
+   and is indistinguishable from the Sprinter here. `FULL_SIZE_BUS_ID` stays
+   available and is no longer disqualified.
+
+   **One tour fails for every blueprint** (2/5 legs for all three), so the
+   legs that still fail are a property of particular stops, not of the
+   vehicle.
 
    **A wedged vehicle never recovers on its own.** Measured: the bus drove
    four legs, jammed against kerb geometry, and reported *zero movement for
@@ -301,16 +320,24 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    is too big for the town. With recovery: **3/15 legs to 11/15, and zero
    stuck**.
 
+   Those two figures were measured before the traffic-manager fix and
+   overstate how badly a run goes without recovery. **The mechanism is still
+   needed**: on a repaired traffic manager the blueprint tours above still
+   took 21–33 unwedges per 25 legs. Stalling is real; it was simply not as
+   catastrophic as a stale traffic manager made it look.
+
    Trap worth keeping: the two stall clocks must be independent. Decrementing
    the stall total on each repath starved the unwedge threshold outright —
    repath fired every 10 s forever, unwedge never once, and the results were
    byte-identical to having no recovery at all.
 
-   Remaining gap: 4 of 15 legs still time out, but with the bus **driving
-   the whole time** and approaching to 58–97 m rather than the 6 m arrival
-   radius. That is the traffic manager routing near a stop it will not turn
-   around for, not a stall — a different and milder problem than the one
-   fixed here.
+   Remaining gap, and now the main one: legs still time out, with the bus
+   **driving the whole time** and approaching to 58–97 m rather than the 6 m
+   arrival radius. That is the traffic manager routing near a stop it will
+   not turn around for, not a stall. Re-measured after the traffic-manager
+   fix it is **5 of 25 legs at best** (Sprinter) and is concentrated: one of
+   the five tours loses 3 legs for every blueprint tried, so it is specific
+   stops that are unreachable rather than driving being generally poor.
 5. [X] **Passengers as walkers** — built 2026-08-04
 
    `sync_passengers` diffs the pool each tick: a walker appears when a
@@ -369,6 +396,8 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 | `fixed_delta_seconds` | **0.05**, never above 0.1 | Above `max_substep_delta_time × max_substeps` the physics silently stops keeping up; at 0.5 vehicles cover half the ground per simulated second |
 | Where do bus stops come from? | Hand-authored per town, an input to the provider | A real deployment names its maps and stops rather than generating them |
 | Does running faster cause vehicles to get stuck? | **No.** Wall-clock rate has no effect at all, and a finer physics step does not help either | Measured; see below |
+| Who owns the traffic manager? | `CarlaBackend` shuts down any it finds and builds its own, after the town is loaded | A traffic manager caches its map at creation and never re-caches it; inheriting one made on another map steers the bus into the scenery. See the trap below |
+| Which vehicle drives? | `vehicle.volkswagen.t2_2021`, a shuttle | Re-measured over 5 tours: indistinguishable from the Sprinter. The full-size bus is usable too — the earlier "it cannot drive Town01" verdict was a stale-traffic-manager artefact |
 
 ## Open questions
 
@@ -387,6 +416,38 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 ---
 
 ## Known traps
+
+- **The traffic manager caches the map it was created on, permanently.**
+  `client.get_trafficmanager()` builds its road network from whatever map is
+  loaded at that instant, and **never re-caches it on `load_world`**. One
+  created before the town is loaded will steer vehicles around the new town
+  using the *old* town's waypoints. Measured directly: create it on Town02,
+  load Town01, then ask `get_next_action` where it intends to drive a car
+  that is physically in Town01 — **60/60 of its chosen waypoints lie exactly
+  on Town02, and 0/60 on Town01**.
+
+  The damage is total and silent, and it looks exactly like bad driving —
+  the bus saws into the kerb and the sidewalk. On an identical five-leg
+  Town01 tour:
+
+  | | legs | off any lane | unwedges | repaths |
+  |---|---|---|---|---|
+  | traffic manager made before the load | **0/5** | **92.8%** | 34 | 105 |
+  | traffic manager made after the load | 4/5 | 9.8% | 6 | 28 |
+
+  It bites only on a **fresh server**, because that is the only time the
+  startup map (Town10HD_Opt) differs from `TOWN`. That is the whole
+  explanation for the first run after `docker compose up` misbehaving while
+  every later run in the same session looked fine. It is not the delta, not
+  the wall-clock rate, and not the vehicle.
+
+  `CarlaBackend.start()` now discards whatever traffic manager it finds and
+  builds its own after the map load, which makes the repaired run
+  bit-identical to a clean one. `carla-demo.ipynb`'s preflight was the
+  trigger — `revive()` touched the traffic manager two cells before the town
+  was loaded — and now loads the town first. **There is no API to ask a
+  traffic manager which map it holds**, so refusing to inherit one is the
+  only cheap defence.
 
 - **Simulation speed does not cause the stalls.** Two different things get
   called "speed" and they have to be separated. Measured on an identical
@@ -409,8 +470,13 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
   unwedges/min, 54% stalled). So there is nothing to buy by stepping finer,
   and 0.05 stays the right default.
 
-  The stalls are geometric — the vehicle physically wedges against kerbs —
-  which is consistent with the blueprint width finding in Phase 3.4.
+  The stalls are geometric — the vehicle physically wedges against kerbs.
+
+  **Caveat added 2026-08-05:** these runs predate the traffic-manager fix,
+  so the absolute rates (3/6 legs, 44% stalled) are not trustworthy. The
+  *comparison* still stands, because all three arms shared whatever state
+  the traffic manager was in, and a 10x spread in wall rate moved nothing.
+  Do not quote the absolute numbers; re-measure if they matter.
 - **`advance()` must never return a batch of arrivals.** Arrivals inside one
   tick are sequentially dependent: the agent boards, alights and re-plans on
   each one, and the leg that follows is not known until it has. The contract

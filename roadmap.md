@@ -341,6 +341,13 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    survives after all, in a sharper form than it was first stated: the wide
    bus wedges in Town01's junctions, and the minibuses do not.
 
+   **Unwedging is therefore off by default** (`unwedge_after_s=0.0`), which
+   is what the submitted version should run. It teleports, and a leg reached
+   by teleporting is a KPI that did not happen — better to let a genuine
+   wedge show up as a failed leg than to hide it. Repath stays on: it only
+   re-issues a destination and moves nothing. The parameter remains for
+   anyone driving the full-size bus.
+
    Trap worth keeping: the two stall clocks must be independent. Decrementing
    the stall total on each repath starved the unwedge threshold outright —
    repath fired every 10 s forever, unwedge never once, and the results were
@@ -412,6 +419,7 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 | Where do bus stops come from? | Hand-authored per town, an input to the provider | A real deployment names its maps and stops rather than generating them |
 | Does running faster cause vehicles to get stuck? | **No.** Wall-clock rate has no effect at all, and a finer physics step does not help either | Measured; see below |
 | Who owns the traffic manager? | `CarlaBackend` shuts down any it finds and builds its own, after the town is loaded | A traffic manager caches its map at creation and never re-caches it; inheriting one made on another map steers the bus into the scenery. See the trap below |
+| Unwedging (lifting a jammed bus onto the lane) | **Off by default** — `unwedge_after_s=0.0`. Repath stays on | It teleports, and a leg saved that way is a KPI that did not happen. With the default bus it never fires anyway (0 in five tours). Enable it only for a vehicle that genuinely wedges, such as the full-size bus |
 | Which vehicle drives? | `vehicle.volkswagen.t2_2021`, a shuttle | Re-measured over 5 tours: indistinguishable from the Sprinter. The full-size bus is usable too — the earlier "it cannot drive Town01" verdict was a stale-traffic-manager artefact |
 
 ## Open questions

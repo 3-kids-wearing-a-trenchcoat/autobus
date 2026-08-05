@@ -79,11 +79,14 @@ class CarlaBackend(SimulationBackend):
     :param repath_after_s: Seconds of no movement before the destination is
         re-issued to the traffic manager. Cheap and often enough.
     :param unwedge_after_s: Seconds of no movement before the vehicle is
-        lifted onto the nearest lane waypoint. Measured on Town01, a vehicle
-        that jams against kerb geometry never recovers on its own and stalls
-        for the rest of the run; without this a trial silently dies. Every
-        use is counted in ``stats()`` because it is a departure from
-        physical simulation. Set to 0 to disable.
+        lifted onto the nearest lane waypoint. **Off by default**, because
+        it teleports: a vehicle that jams against kerb geometry does not
+        recover on its own, but lifting it is not physics, and a leg saved
+        that way is a KPI that did not happen. With the default bus it is
+        also simply unnecessary — measured over five Town01 tours it never
+        fires once. Worth enabling only for a vehicle that genuinely wedges,
+        such as ``FULL_SIZE_BUS_ID``, which needs 12 over the same tours.
+        Every use is counted in ``stats()``.
     :param follow_camera: Move the spectator camera to sit behind and above
         the bus on every tick, so a rendering server shows a chase view.
         Pointless with ``no_rendering=True``, where there is nothing to look
@@ -107,7 +110,7 @@ class CarlaBackend(SimulationBackend):
         seed: int = 0,
         blueprint_id: str = DEFAULT_BUS_ID,
         repath_after_s: float = 10.0,
-        unwedge_after_s: float = 30.0,
+        unwedge_after_s: float = 0.0,
         follow_camera: bool = False,
     ) -> None:
         if fixed_delta_s > MAX_SAFE_DELTA_S:

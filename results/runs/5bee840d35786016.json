@@ -1,0 +1,98 @@
+{
+ "backend_stats": {
+  "arrivals": 20,
+  "distance_m": 8577.597009445846,
+  "legs_started": 20,
+  "queued_ticks": 1166,
+  "red_light_ticks": 20544,
+  "repaths": 0,
+  "stops_without_shoulder": 0,
+  "ticks": 49966,
+  "unroutable_legs": 0,
+  "walker_spawn_failures": 0,
+  "walkers_removed": 12,
+  "walkers_spawned": 12
+ },
+ "identity": {
+  "policy": "Window",
+  "policy_class": "WindowInsertionPolicy",
+  "policy_params": {
+   "max_wait_s": 900.0,
+   "safety_factor": 1.0,
+   "travel_model": null,
+   "wait_factor": 5.0
+  },
+  "seed": 1,
+  "trial": {
+   "capacity": 20,
+   "commitment": 0,
+   "demand_interval_s": 150.0,
+   "dt": 1.0,
+   "dwell_s": 10.0,
+   "max_requests": 12,
+   "max_time": 9000.0,
+   "max_wait_s": 2400.0,
+   "n_stops": 20,
+   "noise_seed": null,
+   "travel_noise": 0.0
+  },
+  "world": {
+   "backend": "CarlaBackend",
+   "blueprint": "vehicle.volkswagen.t2_2021",
+   "fixed_delta_s": 0.05,
+   "no_rendering": true,
+   "npc_vehicles": 20,
+   "town": "Town01"
+  }
+ },
+ "kpi": {
+  "cancelled_count": 0,
+  "fulfilled_count": 12,
+  "fulfillment_rate": 1.0,
+  "max_wait_time": 976.9499999999998,
+  "mean_journey_time": 566.0583333333333,
+  "mean_ride_time": 212.65833333333333,
+  "mean_wait_time": 353.3999999999999,
+  "p90_wait_time": 606.705,
+  "served_fraction": 1.0,
+  "throughput": 0.2878848460615754
+ },
+ "policy_stats": {},
+ "provenance": {
+  "finished_at": "2026-08-10T12:23:10+00:00",
+  "git_commit": "82ae874",
+  "python_hash_seed": "0",
+  "wall_seconds": 198.405
+ },
+ "ride_times": [
+  88.54999999999998,
+  131.35000000000002,
+  153.14999999999998,
+  59.55000000000007,
+  424.39999999999986,
+  187.6500000000001,
+  503.1500000000001,
+  198.25,
+  137.04999999999995,
+  318.6500000000001,
+  176.75,
+  173.4000000000001
+ ],
+ "run_id": "5bee840d35786016",
+ "schema": 1,
+ "tick_count": 2501,
+ "wait_times": [
+  57.9,
+  152.0,
+  208.89999999999998,
+  331.15,
+  296.95000000000005,
+  446.54999999999995,
+  421.3499999999999,
+  34.200000000000045,
+  624.5,
+  410.8499999999999,
+  279.5,
+  976.9499999999998
+ ]
+}

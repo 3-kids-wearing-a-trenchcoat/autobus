@@ -1,0 +1,95 @@
+{
+ "backend_stats": {
+  "arrivals": 46,
+  "distance_m": 13081.917807649103,
+  "legs_started": 47,
+  "queued_ticks": 3289,
+  "red_light_ticks": 20706,
+  "repaths": 0,
+  "stops_without_shoulder": 0,
+  "ticks": 71430,
+  "unroutable_legs": 0,
+  "walker_spawn_failures": 0,
+  "walkers_removed": 12,
+  "walkers_spawned": 12
+ },
+ "identity": {
+  "policy": "Fixed route",
+  "policy_class": "FixedRoutePolicy",
+  "policy_params": {
+   "stop_order": null
+  },
+  "seed": 7,
+  "trial": {
+   "capacity": 20,
+   "commitment": 0,
+   "demand_interval_s": 150.0,
+   "dt": 1.0,
+   "dwell_s": 10.0,
+   "max_requests": 12,
+   "max_time": 9000.0,
+   "max_wait_s": 2400.0,
+   "n_stops": 20,
+   "noise_seed": null,
+   "travel_noise": 0.0
+  },
+  "world": {
+   "backend": "CarlaBackend",
+   "blueprint": "vehicle.volkswagen.t2_2021",
+   "fixed_delta_s": 0.05,
+   "no_rendering": true,
+   "npc_vehicles": 20,
+   "town": "Town01"
+  }
+ },
+ "kpi": {
+  "cancelled_count": 0,
+  "fulfilled_count": 12,
+  "fulfillment_rate": 1.0,
+  "max_wait_time": 1152.1,
+  "mean_journey_time": 973.5166666666668,
+  "mean_ride_time": 447.3,
+  "mean_wait_time": 526.2166666666667,
+  "p90_wait_time": 1064.255,
+  "served_fraction": 1.0,
+  "throughput": 0.2016241949033884
+ },
+ "policy_stats": {},
+ "provenance": {
+  "finished_at": "2026-08-10T13:05:30+00:00",
+  "git_commit": "83f368d",
+  "python_hash_seed": "0",
+  "wall_seconds": 278.38
+ },
+ "ride_times": [
+  33.0,
+  349.74999999999994,
+  151.45000000000005,
+  186.95000000000005,
+  311.9000000000001,
+  441.95000000000005,
+  641.75,
+  641.75,
+  523.0,
+  642.25,
+  675.3000000000002,
+  768.5500000000002
+ ],
+ "run_id": "03421e25cfdae8b1",
+ "schema": 1,
+ "tick_count": 3571,
+ "wait_times": [
+  36.45,
+  69.30000000000001,
+  584.5,
+  734.5,
+  409.79999999999995,
+  197.04999999999995,
+  1071.45,
+  21.450000000000045,
+  339.0,
+  699.5,
+  999.5,
+  1152.1
+ ]
+}

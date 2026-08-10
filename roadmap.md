@@ -782,10 +782,63 @@ synthetic-map campaign, through the store, large enough to meet the bar on
 every KPI, as the formal §3.2 evidence. The existing mock figures come from
 notebooks predating the store and were never filed as reproducible runs.
 
-7. [ ] **Validation**
+7. [~] **Validation** — **half answered 2026-08-10**, and the other half
+   turned out to be the wrong experiment.
    - Reproduce a mock finding qualitatively (design review §5.1 already
      frames CARLA as demonstration, with the synthetic map as the fast test
      bed).
+
+   Three policies × 8 shared seeds, Town01, 20 NPCs, 12 requests, 58 min.
+   All 24 runs are in `results/runs`; every trial served **12/12 with zero
+   cancellations and zero repaths**.
+
+   | | served | wait | ride | throughput |
+   |---|---|---|---|---|
+   | Fixed route | 12/12 | 591 s | 580 s | 0.225 |
+   | Reordering (L1) | 12/12 | 350 s | 215 s | 0.303 |
+   | Window (L0) | 12/12 | 333 s | 200 s | 0.306 |
+
+   **§3.2.2 passes on CARLA, decisively, at n=8.** Fulfilment 100% against a
+   ≥80% criterion, and the sum of percentage differences against fixed-route
+   is **+145.0%** for Window and **+138.2%** for Reordering against a
+   criterion of merely "positive". Paired against the same seeds: wait
+   −257 s (p=0.005), ride −381 s (p<0.0001), throughput +36% (p=0.0006).
+   **The transfer this phase existed to demonstrate is demonstrated.**
+
+   **L1 versus L0 did not reproduce — and the experiment had no power to
+   see it.** Measured L1 *worse* by 16.3 s of wait (p=0.45) and 15.3 s of
+   ride (p=0.20); nothing significant. Before reading that as a refutation
+   of the execution-noise prediction, the policy counters say why:
+
+   | | across 8 trials |
+   |---|---|
+   | repair calls | 161 |
+   | relocations attempted | 409 |
+   | relocations **accepted** | **10** (2.4%) |
+   | modelled cost improvement | 571 s total = **6 s/passenger** |
+
+   The mock measured **78 s/passenger** of modelled saving against 73 s
+   observed. Here L1 finds one-twelfth of that, because **12 requests over
+   1650 s with capacity 20 barely make a schedule to reorder** — the order
+   is close to forced. A true effect of ~6 s/passenger sits well inside the
+   ±25 s interval this experiment can resolve.
+
+   So this is not evidence against L1. It is an experiment with nothing to
+   detect, and **more seeds would not fix it** — they tighten the interval
+   around a real effect that is genuinely near zero *at this demand level*.
+   Only denser demand would, and that costs trial length, which the sizing
+   work already showed buys nothing in total wall clock.
+
+   **Conclusion: the L1-versus-L0 question belongs on the synthetic map**,
+   where it was already answered at n=300–750, and where a fine-grained
+   routing comparison is what the test bed is *for*. CARLA's job was
+   transfer of the headline result, and that is done. This is the split
+   decided earlier today, arriving at the same answer from the other
+   direction.
+
+   Not a reason to change the default policy: the mock evidence for L1 is
+   far stronger than eight CARLA trials, and L1 is not *harmed* here — it
+   simply has no work to do.
 
    **Decided 2026-08-10: reproduce both findings from one campaign.** Three
    policies — `FixedRoutePolicy`, `WindowInsertionPolicy`,

@@ -937,6 +937,73 @@ via a free probe construction. Keying on the provider would have forbidden a
 CARLA *town* driven by the mock backend — no server, and one of the more
 useful configurations available.
 
+### The synthetic campaign — run 2026-08-10
+
+2,280 runs: 19 policy/window configurations × 60 seeds × 2 regimes, on the
+campus map (`n_seeds=17`, 2000 m, seed 42), 200 requests, capacity 40.
+**Just over two minutes** at `n_jobs=10`.
+
+**The 5% bar is met**, at n=60, for every serious contender: worst CI
+half-width 1.46% (Window W900), 1.26% (Reordering W900), 1.21% (fixed route).
+Only the policies being discarded miss it — `Nearest unserved` at 8.77% on
+ride time.
+
+**§3.2.2 passes on the synthetic map**, against fixed route: Window W900
++34.8%, Reordering W900 +37.3%, both at ~100% fulfilment.
+
+**W900 is the operating point.** Coverage peaks there (100%) and falls off in
+both directions — below it the window refuses too much (W450 serves 92.5%),
+above it the policy accepts promises it cannot keep (W1200/1800 serve 99.8%).
+
+**A KPI trap worth naming: mean wait rewards abandoning difficult
+passengers.** `Deviated` posts the *best* wait in the field, 255 s against
+Window's 332 — while serving 75.4%. The passengers it fails are exactly the
+ones who would have waited longest, and a cancelled request contributes no
+wait sample. Wait and ride are only meaningful read alongside coverage.
+
+### L1 is not worth its cost at commitment=0 — and the recorded figures do not reproduce
+
+Paired on 60 seeds, L1 minus L0, patience 900:
+
+| window | served (pp) | wait (s) | ride (s) |
+|---|---|---|---|
+| 750 | +0.00 (p=1.00) | **−4.4** (p=0.016) | −0.7 (p=0.65) |
+| 900 | **+0.05** (p=0.033) | **−8.3** (p=0.001) | −0.5 (p=0.73) |
+| 1200 | **+0.29** (p<0.001) | **−7.3** (p=0.006) | −0.1 (p=0.91) |
+| 1800 | **+0.28** (p<0.001) | **−7.7** (p=0.005) | −0.3 (p=0.81) |
+
+**Ride time shows no significant difference at any window.** L1 buys ~8 s of
+wait — 2.5% — and a fraction of a percentage point of coverage, for **6× the
+compute** (1.54 s/trial against 0.26).
+
+**This contradicts the recorded result, and the recorded result is the one
+that is wrong.** `reordering-l1-ablation.ipynb` stores L0 at 93.3% served,
+466 s wait, 523 s ride, with L1 taking **63.7 s off the ride**. Its stated
+configuration is identical to this campaign's — same map, same seed 42, same
+`WINDOW_S = 900`, 200 requests, capacity 40, patience 900 — yet today the
+same configuration measures 99.9%, 332 s, 282 s.
+
+`commitment` is implicated. Sweeping it on the same map:
+
+| commitment | served | wait | ride |
+|---|---|---|---|
+| 0 | 100.0% | 331 | 281 |
+| 4 | **93.3%** | 394 | 346 |
+| 8 | 76.6% | 415 | 531 |
+
+The ablation's 93.3% served is *exactly* commitment=4, and its 523 s ride sits
+at commitment=8 — so the stored numbers describe a run with a locked prefix,
+which the project later measured as monotonically harmful and defaulted to 0.
+The memory note claiming those figures were "re-measured at commitment=0" is
+not true of this notebook's stored output.
+
+**The direction survives; the magnitude does not.** L1 is still better than
+L0, significantly, on wait and coverage. But its headline −64 s of ride was a
+property of a *hampered* schedule: with commitment=0 the schedule is already
+good and there is little left to repair. That is the same story the CARLA runs
+told independently — 2.4% of relocations accepted, 6 s/passenger of modelled
+saving.
+
 ### Where a synthetic trial actually spends its time — profiled 2026-08-10
 
 10 trials per policy, 100 requests, 40-seed map. **2.35 s/trial for L0,

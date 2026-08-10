@@ -731,6 +731,44 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 
    Steps 1–4 are ordinary Python needing no CARLA server, and are covered by
    the existing test suite. Only step 5 needs the server up.
+### Sizing pilot — measured 2026-08-10
+
+Eight seeds of `ReorderingInsertionPolicy` at the parameters 3.7 will use
+(12 requests every 150 s, capacity 20, 900 s window, **20 NPCs**, Town01,
+headless). Run twice: the first pass found the two termination bugs above and
+was discarded; these are the numbers from fixed code, with all eight records
+overwritten so nothing pre-fix survives in the store.
+
+All eight served **12/12 with zero repaths**. 181 s of wall clock per trial.
+
+| KPI | mean | sd | CI half-width at n=8 | seeds for 5% |
+|---|---|---|---|---|
+| Mean wait time | 350 s | 99.5 | 23.8% | **182** |
+| Mean ride time | 215 s | 42.9 | 16.7% | 90 |
+| Throughput | 0.303 req/min | 0.035 | 9.7% | 30 |
+| Served fraction | 1.000 | 0 | 0% | already there |
+| Fulfilled count | 12.0 | 0 | 0% | already there |
+
+**The design review's bar is not affordable as stated.** Applied to every KPI,
+mean wait time binds at 182 seeds — **27.5 hours** of CARLA for three
+policies, against 13.6 h if ride time bound it and 4.5 h for throughput.
+Wait time is the noisy one because a 12-request trial's mean is dominated by
+which stop pairs its demand seed happened to draw.
+
+**More requests per trial is not the lever it looks like.** Doubling requests
+roughly halves the between-trial variance and roughly doubles trial cost, so
+total wall clock is unchanged; the only gain is amortising the ~15 s world
+reload, worth about 8%.
+
+**The distinction that probably matters:** §3.2's 5% bar reads as applying to
+each KPI's *absolute* mean, but every claim the project actually makes is a
+*difference* between policies at the same seeds — §3.2.2's success criterion
+is literally a sum of percentage differences against fixed-route, and the L1
+question is a difference too. Paired differences cancel most of the
+between-trial variance, since the demand seed is shared, so the seeds needed
+for a *difference* should be far below 182. Unmeasured: the pilot ran one
+policy, so there is nothing to pair yet.
+
 7. [ ] **Validation**
    - Reproduce a mock finding qualitatively (design review §5.1 already
      frames CARLA as demonstration, with the synthetic map as the fast test

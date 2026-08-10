@@ -1,0 +1,111 @@
+{
+ "backend_stats": {
+  "arrivals": 20,
+  "distance_m": 9780.625558344927,
+  "legs_started": 20,
+  "queued_ticks": 802,
+  "red_light_ticks": 25597,
+  "repaths": 0,
+  "stops_without_shoulder": 0,
+  "ticks": 58525,
+  "unroutable_legs": 0,
+  "walker_spawn_failures": 0,
+  "walkers_removed": 12,
+  "walkers_spawned": 12
+ },
+ "identity": {
+  "policy": "Reordering",
+  "policy_class": "ReorderingInsertionPolicy",
+  "policy_params": {
+   "max_relocations": null,
+   "max_wait_s": 900.0,
+   "n_passes": 1,
+   "retry_rejected": false,
+   "safety_factor": 1.0,
+   "travel_model": null,
+   "wait_factor": 5.0
+  },
+  "seed": 1,
+  "trial": {
+   "capacity": 20,
+   "commitment": 0,
+   "demand_interval_s": 150.0,
+   "dt": 1.0,
+   "dwell_s": 10.0,
+   "max_requests": 12,
+   "max_time": 9000.0,
+   "max_wait_s": 2400.0,
+   "n_stops": 20,
+   "noise_seed": null,
+   "travel_noise": 0.0
+  },
+  "world": {
+   "backend": "CarlaBackend",
+   "blueprint": "vehicle.volkswagen.t2_2021",
+   "fixed_delta_s": 0.05,
+   "no_rendering": true,
+   "npc_vehicles": 20,
+   "town": "Town01"
+  }
+ },
+ "kpi": {
+  "cancelled_count": 0,
+  "fulfilled_count": 12,
+  "fulfillment_rate": 1.0,
+  "max_wait_time": 1497.9,
+  "mean_journey_time": 684.0375,
+  "mean_ride_time": 235.07083333333333,
+  "mean_wait_time": 448.9666666666667,
+  "p90_wait_time": 664.555,
+  "served_fraction": 1.0,
+  "throughput": 0.24581768521679753
+ },
+ "policy_stats": {
+  "cost_improvement": 232.46100746708726,
+  "dropoff_accepted": 2.0,
+  "dropoff_attempts": 18.0,
+  "pair_accepted": 1.0,
+  "pair_attempts": 25.0,
+  "repair_calls": 19.0,
+  "repair_passes": 19.0,
+  "retry_admitted": 0.0,
+  "retry_attempts": 0.0
+ },
+ "provenance": {
+  "finished_at": "2026-08-10T11:32:29+00:00",
+  "git_commit": "1a8e962",
+  "python_hash_seed": "0",
+  "wall_seconds": 229.715
+ },
+ "ride_times": [
+  88.54999999999998,
+  131.35000000000002,
+  153.14999999999998,
+  63.80000000000007,
+  424.39999999999986,
+  172.80000000000018,
+  225.94999999999982,
+  190.55000000000018,
+  173.3499999999999,
+  191.44999999999982,
+  775.0999999999999,
+  230.4000000000001
+ ],
+ "run_id": "79bb089b19feb2ff",
+ "schema": 1,
+ "tick_count": 2929,
+ "wait_times": [
+  57.9,
+  152.0,
+  208.89999999999998,
+  331.15,
+  296.95000000000005,
+  421.3499999999999,
+  294.1500000000001,
+  670.0999999999999,
+  614.6500000000001,
+  581.9000000000001,
+  260.6500000000001,
+  1497.9
+ ]
+}

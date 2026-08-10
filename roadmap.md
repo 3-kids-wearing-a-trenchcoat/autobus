@@ -441,16 +441,26 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    all. Every CARLA figure recorded above was produced by hand from
    `carla-demo.ipynb`.
 
-   1. [ ] **Backend stats into `TrialResult`** — small, and unblocks the
-      rest. A `backend_stats: dict[str, float]` field filled by `run_trial`
-      from an optional duck-typed `stats()` on the backend: no
-      `SimulationBackend` ABC change, so mocks are unaffected. Today
-      `CarlaBackend.stats()` — repaths, distance, walker spawn failures,
-      red-light ticks — is unreachable from a trial result, and
-      `carla-demo.ipynb` gets at it through a `holder = {}` closure hack.
-      Per-trial health is exactly what tells you whether trial 17 of a
-      campaign was sound. Same shape as the `policy_stats` idea sketched for
-      the parallel-trials work.
+   1. [X] **Backend stats into `TrialResult`** — done 2026-08-10.
+      `backend_stats` *and* `policy_stats`, both filled by `run_trial` from
+      an optional duck-typed `stats()`: no `SimulationBackend` or
+      `DispatchPolicy` change, so every other implementation is untouched.
+      Both sides went in together because they are the same fix in the same
+      place — `CarlaBackend.stats()` was reachable only through a
+      `holder = {}` closure in `carla-demo.ipynb`, and
+      `ReorderingInsertionPolicy.stats()` only through a module-level
+      `INSTANCES` list in three reordering notebooks, which is the variant
+      that silently reports zeros once trials run in separate processes.
+
+      **The ordering is the trap, and it has a test.** The counters are read
+      after the run, hence after the runner has closed the backend from its
+      `finally`. A `close()` that reset them would give a campaign a file of
+      zeros and raise nothing. `CarlaBackend.close()` clears its actors and
+      walker maps but deliberately not `_stats`.
+
+      467 tests green. The notebooks that use `INSTANCES` were left alone —
+      they hold committed results, and rewriting them belongs with the
+      parallelisation work that actually needs it.
    2. [ ] **Generalise the multi-trial layer** — the core of 3.6.
       `compare_policies` and `summarize_comparison` are typed
       `graph: PlanarStreetGraph` and forward `graph=graph`, so the layer

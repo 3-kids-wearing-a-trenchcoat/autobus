@@ -26,15 +26,47 @@ simulation run:
 | Field | Type | Meaning |
 |-------|------|---------|
 | `kpi` | `KPISnapshot` | Aggregate KPIs at the end of the run. |
-| `tick_history` | `list[TickSnapshot]` | Per-tick occupancy and queue snapshots. |
+| `tick_count` | `int` | Number of per-tick snapshots recorded. Always populated, even when `tick_history` is dropped. |
+| `tick_history` | `list[TickSnapshot]` | Per-tick occupancy and queue snapshots. Empty unless `keep_tick_history=True` was passed to `run_trial`. |
 | `wait_times` | `list[float]` | Wait time (seconds) for each fulfilled request. |
 | `ride_times` | `list[float]` | Ride time (seconds) for each fulfilled request. |
 | `animation_frames` | `list[AnimationFrame]` | Per-stop-arrival snapshots for animation. Empty unless `record_animation=True` was passed to `run_trial`. |
 | `transit_graph` | `TransitGraph \| None` | The graph used during the run; `None` unless `record_animation=True`. |
+| `backend_stats` | `dict[str, float]` | Diagnostic counters reported by the backend; empty when it publishes none. |
+| `policy_stats` | `dict[str, float]` | Diagnostic counters reported by the policy; empty when it publishes none. |
 
 `wait_times` and `ride_times` expose the per-request distributions that
 `KPISnapshot` only summarises, making it possible to do full distributional
 comparisons across policies.
+
+### Diagnostic counters
+
+`backend_stats` and `policy_stats` answer a different question from the KPIs:
+not how well the service performed, but whether the run was *healthy*. A CARLA
+trial that served few passengers means one thing on its own and quite another
+alongside forty re-routes, and a campaign running unattended overnight has no
+other way to tell those apart afterwards.
+
+Both are discovered by duck typing. If the backend or the policy has a callable
+`stats()`, `run_trial` copies what it returns; if not, the field is an empty
+dict rather than an error. Neither `SimulationBackend` nor `DispatchPolicy`
+declares the method, because most implementations have nothing to report —
+today `CarlaBackend` (distance driven, arrivals, re-routes, walker spawn
+failures, red-light ticks) and `ReorderingInsertionPolicy` (relocation attempts
+and acceptances) are the only two that do.
+
+The counters are read **after** the run has finished, and therefore after
+`SimulationRunner` has closed the backend from its `finally` block. Closing must
+not reset them: a backend that cleared its counters on `close` would hand a
+campaign a file full of zeros with nothing raised. `CarlaBackend.close` releases
+its actors and walker maps but deliberately leaves `_stats` alone, and
+`tests/test_trial.py` pins the ordering.
+
+They also replace a hack worth naming. Before the field existed, the only way to
+reach these numbers was to keep the component in a module-level dict or list and
+read it after the run — which works in one process and silently reports zeros in
+several, since each worker mutates its own copy. Counters that travel home on
+the result survive being run anywhere.
 
 ## run_trial
 

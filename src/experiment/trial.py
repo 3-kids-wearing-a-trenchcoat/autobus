@@ -46,6 +46,13 @@ class TrialResult:
         empty unless run_trial was called with record_animation=True.
     :param transit_graph: The TransitGraph used during the run; None unless
         record_animation=True.
+    :param backend_stats: Diagnostic counters reported by the backend, empty
+        when it publishes none. For CarlaBackend these say what the bus
+        actually did — distance driven, re-routes, walker spawn failures —
+        which is how a campaign tells a healthy trial from a salvaged one.
+    :param policy_stats: Diagnostic counters reported by the policy, empty
+        when it publishes none. ReorderingInsertionPolicy uses these to
+        report its relocation attempts and acceptances.
     """
 
     kpi: KPISnapshot
@@ -55,6 +62,25 @@ class TrialResult:
     ride_times: list[float]
     animation_frames: list[AnimationFrame] = field(default_factory=list)
     transit_graph: TransitGraph | None = field(default=None)
+    backend_stats: dict[str, float] = field(default_factory=dict)
+    policy_stats: dict[str, float] = field(default_factory=dict)
+
+
+def _stats_of(component: object) -> dict[str, float]:
+    """
+    Copy a component's diagnostic counters, if it publishes any.
+
+    Duck-typed rather than declared on a base class: most backends and
+    policies have nothing to report, and the two that do already report this
+    way. Copied rather than returned live, so a caller reading a result
+    cannot corrupt the component it came from.
+    :param component: A backend or policy that may expose ``stats()``.
+    :return: The counters, or an empty dict when the component has none.
+    """
+    reader = getattr(component, "stats", None)
+    if not callable(reader):
+        return {}
+    return dict(reader())
 
 
 def _execution_model(
@@ -258,6 +284,9 @@ def run_trial(
     wait_times = [r.boarded_at - r.created_at for r in fulfilled]
     ride_times = [r.fulfilled_at - r.boarded_at for r in fulfilled]
 
+    # Read after the run, and therefore after the runner's `finally` has
+    # already closed the backend. Closing must not reset these counters or a
+    # campaign would record zeros for every trial; test_trial pins that.
     return TrialResult(
         kpi=kpi,
         tick_count=metrics.tick_count,
@@ -266,4 +295,6 @@ def run_trial(
         ride_times=ride_times,
         animation_frames=recorder.frames if recorder is not None else [],
         transit_graph=transit_graph if record_animation else None,
+        backend_stats=_stats_of(backend),
+        policy_stats=_stats_of(policy),
     )

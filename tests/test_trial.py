@@ -8,6 +8,7 @@ harness does not care which world it is given.
 
 import pytest
 
+from src.algorithm.ReorderingInsertionPolicy import ReorderingInsertionPolicy
 from src.algorithm.TravelModel import GraphTravelModel, NoisyTravelModel
 from src.algorithm.WindowInsertionPolicy import WindowInsertionPolicy
 from src.experiment.trial import _execution_model, run_trial
@@ -17,7 +18,7 @@ from src.map.TransitGraph import TransitGraph
 from src.map.graph import PlanarStreetGraph
 from src.simulation.MockBackend import MockBackend
 from src.simulation.ScriptedBackend import ScriptedBackend
-from src.simulation.SimulationBackend import SimulationBackend
+from src.simulation.SimulationBackend import AdvanceResult, SimulationBackend
 
 # Small map and light demand: this file is about wiring, not about routing
 # quality, so the runs only need to be long enough to differ.
@@ -262,3 +263,132 @@ def test_a_trial_runs_on_a_carla_town(
 def test_neither_graph_nor_provider_is_an_error() -> None:
     with pytest.raises(ValueError, match="graph or a provider"):
         run_trial(_policy, silent=True)
+
+
+# ---------------------------------------------------------------------------
+# backend_stats / policy_stats — diagnostics ride home on the result
+# ---------------------------------------------------------------------------
+
+class _CountingBackend(ScriptedBackend):
+    """A scripted world that also reports how much it was asked to do."""
+
+    def __init__(self, position: str) -> None:
+        super().__init__(position, leg_durations=(90.0,))
+        self._advances = 0.0
+        self._closes = 0.0
+
+    def advance(self, dt: float) -> AdvanceResult:
+        """
+        Count the call, then move exactly as the timetable says.
+        :param dt: Time budget in seconds.
+        :return: Whatever the scripted world would have returned anyway.
+        """
+        self._advances += 1.0
+        return super().advance(dt)
+
+    def close(self) -> None:
+        """Record having been closed, and deliberately keep the counters."""
+        self._closes += 1.0
+
+    def stats(self) -> dict[str, float]:
+        """Return the counters accumulated over this backend's life."""
+        return {"advances": self._advances, "closes": self._closes}
+
+
+def test_a_backend_without_stats_reports_nothing(
+    street_graph: PlanarStreetGraph,
+) -> None:
+    """Publishing counters is optional; absence is empty, never an error."""
+    result = run_trial(
+        _policy,
+        street_graph,
+        backend_factory=lambda graph, start: ScriptedBackend(
+            start, leg_durations=(90.0,)
+        ),
+        **_TRIAL,
+    )
+    assert result.backend_stats == {}
+
+
+def test_backend_counters_reach_the_trial_result(
+    street_graph: PlanarStreetGraph,
+) -> None:
+    """
+    The point of the field: what the world did comes back with the KPIs.
+
+    Non-zero also pins the read as happening after the run rather than at
+    construction, which is where the counters are all still zero.
+    """
+    result = run_trial(
+        _policy,
+        street_graph,
+        backend_factory=lambda graph, start: _CountingBackend(start),
+        **_TRIAL,
+    )
+    assert result.backend_stats["advances"] > 0.0
+
+
+def test_backend_counters_are_read_after_close(
+    street_graph: PlanarStreetGraph,
+) -> None:
+    """
+    The trap this field walks into, stated as a test.
+
+    The runner closes the backend from a ``finally``, so ``run_trial`` reads
+    the counters from an already-closed backend. A ``close`` that reset them
+    would hand a campaign a file full of zeros and no error, so the ordering
+    has to be pinned rather than commented on. ``CarlaBackend.close`` clears
+    its actors and its walker maps but deliberately not its counters.
+    """
+    result = run_trial(
+        _policy,
+        street_graph,
+        backend_factory=lambda graph, start: _CountingBackend(start),
+        **_TRIAL,
+    )
+    assert result.backend_stats["closes"] == 1.0
+
+
+def test_reported_counters_are_a_copy(
+    street_graph: PlanarStreetGraph,
+) -> None:
+    """A caller mutating a result must not corrupt anything it came from."""
+    backends: list[_CountingBackend] = []
+
+    def factory(graph: TransitGraph, start: str) -> SimulationBackend:
+        """Build the counting backend and keep hold of it."""
+        backend = _CountingBackend(start)
+        backends.append(backend)
+        return backend
+
+    result = run_trial(
+        _policy, street_graph, backend_factory=factory, **_TRIAL
+    )
+    result.backend_stats["advances"] = -1.0
+    assert backends[0].stats()["advances"] > 0.0
+
+
+def test_a_policy_without_stats_reports_nothing(
+    street_graph: PlanarStreetGraph,
+) -> None:
+    """WindowInsertionPolicy publishes no counters, and that is legal."""
+    result = run_trial(_policy, street_graph, **_TRIAL)
+    assert result.policy_stats == {}
+
+
+def test_policy_counters_reach_the_trial_result(
+    street_graph: PlanarStreetGraph,
+) -> None:
+    """
+    The same field, on the other side of the run.
+
+    These counters used to be reachable only by holding every policy instance
+    in a module-level list, which is what breaks silently once trials run in
+    separate processes.
+    """
+    result = run_trial(
+        lambda graph: ReorderingInsertionPolicy(graph, max_wait_s=900.0),
+        street_graph,
+        **_TRIAL,
+    )
+    assert result.policy_stats["repair_calls"] > 0.0

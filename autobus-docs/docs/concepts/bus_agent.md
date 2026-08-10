@@ -7,15 +7,41 @@ runner and the routing policy. It owns the bus's mutable state — current
 position, onboard passengers, and the planned route — and is the only component
 that writes passenger state transitions back to the `RequestPool`.
 
-The runner interacts with `BusAgent` through three methods/properties:
+The runner interacts with `BusAgent` through four methods/properties:
 
 - **`position`** — read the bus's current TransitGraph node ID.
-- **`next_stop()`** — read the next stop to drive to.
+- **`next_stop()`** — read the next stop to drive to. Deliberately a pure
+  read: it never triggers a re-plan.
 - **`on_arrival(stop_id, sim_time)`** — notify the agent that the bus has
   arrived; the agent handles boarding/alighting and re-plans before returning.
   `sim_time` is the current simulation time in seconds, used to stamp
   `boarded_at` and `fulfilled_at` on the affected requests, and retained as the
   anchor for the projected planning clock.
+- **`replan_if_idle(sim_time)`** — give a bus with an empty route a chance to
+  notice work that arrived while it sat. See below.
+
+### Waking a parked bus
+
+Re-planning is otherwise triggered only by *arriving somewhere*, which leaves
+a hole. A bus whose route runs out never arrives anywhere again, so it never
+re-plans, so its route stays empty — and it sleeps through every request that
+follows.
+
+Measured with a 200 s demand interval against 10 s legs: the bus served the
+first request, then sat still for the remaining 20,000 s with four passengers
+waiting.
+
+That went unseen for a long time because the runner used to end a trial the
+moment the pool emptied — the same moment the bus would have parked — so the
+deadlock was reachable only inside the window the old termination check
+closed. The two defects concealed each other, and fixing
+[`is_done`](simulation_runner.md#run-loop-and-lifecycle) exposed this one
+immediately.
+
+`replan_if_idle` is safe precisely because the bus is **stationary**: there is
+no committed leg to contradict and no mid-leg position to argue about, which
+is the condition under which re-planning was already established to be free. A
+bus **in motion** still re-plans only on arrival.
 
 `BusAgent` is also given a `TravelModel` at construction. It needs one to work
 out *when* the bus will finish the committed prefix — projecting past those
@@ -94,10 +120,16 @@ stops whose demand has since been served or abandoned.
     means more chasing of expiring pickups, which defers dropoffs.
 
 `run_trial` therefore defaults `commitment` to `0`. It should only be raised if
-re-planning moves off stop arrivals: today `on_arrival` is the sole trigger, so
-the bus is stationary whenever it plans and can freely change its next
-destination. A vehicle re-planning mid-leg under CARLA could not, and would
-need at least `1`.
+re-planning ever moves off *stationary* moments: today the triggers are
+`on_arrival` and `replan_if_idle`, and the bus is parked for both, so it can
+freely change its next destination. A vehicle re-planning **mid-leg** could
+not — it is already driving somewhere — and would need at least `1`.
+
+That distinction matters if mid-leg re-planning is ever revisited: the
+measurements above say a locked prefix is harmful, but they were taken where
+the bus only ever planned while stopped, so locking was pure loss. Mid-leg,
+locking the current leg is not a tuning choice but a physical fact, and these
+numbers would not transfer.
 
 ### The upper bound
 

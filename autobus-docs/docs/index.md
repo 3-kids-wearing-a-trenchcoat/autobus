@@ -54,9 +54,14 @@ src/
 └── experiment/
     ├── trial.py               # TrialResult dataclass and run_trial()
     ├── comparison.py          # compare_policies(): multi-strategy runner
-    ├── summary.py             # summarize_comparison(), ComparisonSummary
-    ├── plots.py               # plot_kpi_bars(), plot_wait_distribution(), plot_occupancy()
+    ├── campaign.py            # run_campaign(): runs what is not yet recorded
+    ├── store.py               # Completed runs on disk, keyed by identity
+    ├── summary.py             # summarize_comparison/_results, ComparisonSummary
+    ├── plots.py               # KPI bars, distributions, occupancy, parameter sweeps
     └── animation.py           # animate_trial(), show_animation(), show_animations()
+
+results/
+└── runs/                      # One JSON file per completed run; tracked in git
 ```
 
 ## Running the project

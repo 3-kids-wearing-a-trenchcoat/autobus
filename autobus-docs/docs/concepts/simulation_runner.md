@@ -52,7 +52,12 @@ remaining = dt
 while remaining > 0.0:
     next_stop = agent.next_stop()
     if next_stop is None:
-        break
+        if not pool.get_pending():
+            break
+        agent.replan_if_idle(sim_time - remaining)   # wake a parked bus
+        next_stop = agent.next_stop()
+        if next_stop is None:
+            break
     backend.set_destination(next_stop)
     result = backend.advance(remaining)
     remaining -= result.consumed
@@ -62,11 +67,21 @@ while remaining > 0.0:
     agent.on_arrival(result.arrived_at, arrival_time)
 ```
 
-Two things are worth reading carefully.
+Three things are worth reading carefully.
 
 **The loop re-asks the agent after every arrival.** That is why `advance` may
 report only one arrival at a time — see
 [the contract](simulation_backend.md#advance-returns-one-arrival-at-most).
+
+**An empty route does not mean an idle world.** `BusAgent` re-plans on
+arrival, so a bus whose route runs out never arrives anywhere again, never
+re-plans, and keeps an empty route — sleeping through every request that
+follows. Measured with a 200 s demand interval against 10 s legs: the bus
+served the first request and then sat still for the remaining 20,000 s with
+four passengers waiting. So the loop gives a parked bus a chance to notice
+work that arrived while it sat, gated on there being pending requests so an
+genuinely idle bus does not re-run the policy every tick. See
+[`replan_if_idle`](bus_agent.md#waking-a-parked-bus).
 
 **The arrival timestamp comes from the leftover budget, not the tick
 boundary.** A stop reached mid-tick is stamped at the moment it was actually
@@ -124,9 +139,24 @@ run()
   └─ snapshot KPIs → print summary → return KPISnapshot
 ```
 
-`is_done()` reads the `RequestPool`: no `PENDING` and no `ON_BUS` requests
-means the run is over. `max_time` is a safety ceiling, so a demand generator
-that never stops still terminates the loop.
+`is_done()` requires two things: an empty `RequestPool` — no `PENDING`, no
+`ON_BUS` — **and** a demand generator with nothing left to emit. `max_time` is
+a safety ceiling, so a generator that never stops still terminates the loop.
+
+!!! danger "Both halves are necessary, and the second was learned the hard way"
+    An empty pool on its own is the ordinary state of a bus between requests,
+    not the end of the run. Treating it as the end stops a trial the moment it
+    catches up with its own demand.
+
+    Measured on a CARLA pilot before `is_exhausted()` was required: at a 150 s
+    demand interval, **2 of 8 trials ended having served 1 of 12 requests**,
+    because the bus completed that first trip in under 150 s and the second
+    request did not exist yet.
+
+    Both reported a **served fraction of 1.0**. That metric is
+    `fulfilled / (fulfilled + cancelled + pending + on_bus)`, and the eleven
+    requests never created cannot count against it — so a trial that did not
+    happen scored perfect service on one of the project's success criteria.
 
 `close()` runs from a `finally` block, so it fires even when a tick raises.
 That matters for CARLA, where leaked actors are the classic cross-trial

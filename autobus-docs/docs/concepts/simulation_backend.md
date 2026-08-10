@@ -30,11 +30,22 @@ current_location() -> str                   # abstract
 start() -> None                             # no-op by default
 close() -> None                             # no-op by default
 sync_passengers(pool: RequestPool) -> None  # no-op by default
+
+stats() -> dict[str, float]                 # optional; not declared at all
 ```
 
 Only three methods are abstract, because only three questions genuinely need
 the world to answer them. The rest have inert defaults so a world with no
 setup and nothing to render does not have to say so.
+
+`stats()` is not on the base class in any form. `run_trial` looks for it by
+duck typing and records whatever it returns as
+[`TrialResult.backend_stats`](experiment.md#diagnostic-counters); a backend
+without one simply reports an empty dict. That is the opposite of the
+[`params()`](dispatch_policy.md#declaring-parameters) decision on policies,
+and deliberately so: diagnostics are optional because most worlds have
+nothing to report, whereas an undeclared *parameter* would corrupt a run's
+identity in the results store.
 
 ### `advance` returns one arrival at most
 
@@ -207,8 +218,10 @@ from wherever it actually is. That is the whole of the response, and it moves
 nothing, so it cannot manufacture a result.
 
 It never fires with the default vehicle — 15 of 15 legs over 10 km without a
-single re-plan — which is the reason to keep it rather than to remove it. The
-counter in `stats()` is how a run tells you it needed help.
+single re-plan, and zero across eight trials with traffic — which is the
+reason to keep it rather than to remove it. The counter in `stats()` is how a
+run tells you it needed help, and keeping that counter honest is why the two
+exemptions below exist.
 
 There used to be a second, cruder response: lifting a jammed vehicle bodily
 back onto the lane. It was removed once each of its justifications turned out
@@ -229,6 +242,27 @@ allowed to show up as one.
     The stall clock is now *frozen* while a red light holds the bus, rather
     than reset, so a bus genuinely jammed inside a junction still carries its
     accumulated time into the green.
+
+!!! warning "Nor does the red-light exemption cover a bus queued behind one"
+    CARLA reports `is_at_traffic_light()` only inside the light's **trigger
+    volume** — which is to say, at the *head* of the queue. Everyone behind
+    the first vehicle reads as a bus stopped on green for no reason.
+
+    In an empty town the bus is always at the head, so this could not arise,
+    and it went unnoticed until traffic was tested: at 20 NPCs, one trial
+    logged 3 re-plans where the same seed with an empty town logged none.
+    Instrumenting them, **4 of 5 firings had the bus away from any light with
+    a stationary vehicle directly ahead**.
+
+    `_is_queued_behind_traffic` now exempts that case and counts
+    `queued_ticks` instead, so the wait is still reported. Its thresholds —
+    20 m ahead, 3 m across, 0.5 m/s — are the ones that measurement used, not
+    guesses. It reads a single world snapshot and short-circuits when no NPCs
+    were spawned, so it costs nothing in an empty town.
+
+    The general lesson outlived the bug: **a fix validated only in conditions
+    where the failure cannot occur has not been validated.** The red-light
+    exemption was correct and incomplete, and only traffic could show it.
 
 #### It builds its own traffic manager
 

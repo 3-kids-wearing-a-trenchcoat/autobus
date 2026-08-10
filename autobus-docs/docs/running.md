@@ -39,6 +39,35 @@ The script sets `PYTHONPATH` to the project root before starting Jupyter, so
 `src.*` imports work correctly from any notebook regardless of where it lives in
 the repository. Experiment notebooks are kept in the `notebooks/` directory.
 
+### Reproducibility: set `PYTHONHASHSEED`
+
+!!! danger "`run_trial(seed=N)` is not reproducible across processes on its own"
+    `run_trial` seeds the global RNG, which is enough *within* one process.
+    But several policies take `min()` over a `set[str]`, and `min` breaks ties
+    by iteration order, which depends on Python's per-process string hash
+    randomisation. `FixedRoutePolicy` is the starkest case: with no explicit
+    `stop_order` it **generates a different cycle** — a literally different
+    bus route — from the same graph in a different process.
+
+    Two identical runs in separate processes therefore disagree, and results
+    recorded in one session cannot be reproduced exactly in another.
+
+Pin it whenever the numbers matter:
+
+```bash
+PYTHONHASHSEED=0 ./run.sh my_experiment.py
+PYTHONHASHSEED=0 bash jupyter-run.sh
+```
+
+Neither `run.sh` nor `jupyter-run.sh` sets it for you, so a notebook launched
+the ordinary way inherits a random hash seed.
+
+Every run filed in the [results store](concepts/experiment.md#the-results-store)
+records the value it ran under in `provenance.python_hash_seed`, so a record
+showing `null` is one whose exact reproduction cannot be guaranteed. Averages
+over many seeds remain meaningful either way; individual seeded numbers do
+not.
+
 ## Running the CARLA server
 
 The server runs from `compose.yml` in the project root and must be started by

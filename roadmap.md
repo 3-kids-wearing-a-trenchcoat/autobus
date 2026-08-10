@@ -554,7 +554,8 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
          `n_passes` from `ReorderingInsertionPolicy.params()` fails with
          the name of the knob and what its absence would cost. A guard that
          cannot fail is worth nothing. 515 tests green.
-      2. [ ] **`src/experiment/store.py`.** One **write-once** JSON file per
+      2. [X] **`src/experiment/store.py`** — done 2026-08-10. One
+         **write-once** JSON file per
          run, flat directory, filename the identity hash
          (`sha256` of the canonical identity, 16 hex chars). Numerics are
          normalised before hashing, or `dt=1` and `dt=1.0` become two
@@ -574,6 +575,19 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
          `to_results()` rehydrates into `dict[str, list[TrialResult]]`, so
          every existing plot helper and the summary table work on stored
          runs unchanged.
+
+         **`to_results(paired=True)` by default**, and that default is a
+         correctness decision rather than a convenience. Every paired
+         statistic here indexes two policies' lists together and assumes
+         position *i* is the same seed in both; a campaign interrupted
+         part-way leaves policies with different seed sets, and aligning
+         those by position compares unrelated runs — wrong p-values, no
+         error. Dropping the unshared seeds can lose runs, but a smaller
+         sample is visible in the table and being wrong is not. Pass False
+         for a sweep, which is not a paired comparison.
+
+         Writes go through a temporary file and `os.replace`, so a run is
+         either absent or complete and never half-parsed.
       3. [ ] **`src/experiment/campaign.py`.** Takes `seeds` rather than
          `n_trials` + `base_seed`, so extending a campaign to seeds 30–59
          later skips 0–29 by identity and runs only what is missing. Owns

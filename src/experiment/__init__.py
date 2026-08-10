@@ -11,6 +11,16 @@ from src.experiment.plots import (
     plot_occupancy,
     plot_wait_distribution,
 )
+from src.experiment.store import (
+    DEFAULT_RUNS_DIR,
+    RunIdentity,
+    RunRecord,
+    is_recorded,
+    load_frame,
+    load_runs,
+    save_run,
+    to_results,
+)
 from src.experiment.summary import ComparisonSummary, summarize_comparison
 from src.experiment.trial import BackendFactory, TrialResult, run_trial
 
@@ -19,6 +29,14 @@ __all__ = [
     "TrialResult",
     "run_trial",
     "compare_policies",
+    "DEFAULT_RUNS_DIR",
+    "RunIdentity",
+    "RunRecord",
+    "is_recorded",
+    "load_frame",
+    "load_runs",
+    "save_run",
+    "to_results",
     "summarize_comparison",
     "ComparisonSummary",
     "plot_kpi_bars",

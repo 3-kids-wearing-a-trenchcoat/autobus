@@ -27,6 +27,7 @@ class FixedRoutePolicy(DispatchPolicy):
             no stops are found in the graph when auto-generating.
         """
         super().__init__(graph)
+        self._declared: dict[str, object] = {"stop_order": stop_order}
         if stop_order is not None:
             self._stops = self._validate_stop_order(stop_order)
         else:
@@ -36,6 +37,16 @@ class FixedRoutePolicy(DispatchPolicy):
                     "Cannot auto-generate a fixed route: the graph has no stops."
                 )
             self._stops = self._generate_cycle(stop_node_ids)
+
+    def params(self) -> dict[str, object]:
+        """
+        Report the cycle this policy was given.
+
+        ``None`` means the cycle was generated from the graph, which depends
+        on ``PYTHONHASHSEED`` — the store records that in a run's provenance.
+        :return: Parameter name to value.
+        """
+        return {**super().params(), **self._declared}
 
     def plan(self, state: BusState, n_stops: int) -> list[str]:
         """

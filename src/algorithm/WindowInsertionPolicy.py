@@ -115,6 +115,18 @@ class WindowInsertionPolicy(DispatchPolicy):
             than two stops, so no baseline can be computed.
         """
         super().__init__(graph)
+        # The arguments as given, for the results store's identity. The
+        # travel model is an object, so only its kind is recorded; its own
+        # settings (dwell, noise) reach the store as trial parameters.
+        self._declared: dict[str, object] = {
+            "travel_model": (
+                None if travel_model is None
+                else type(travel_model).__name__
+            ),
+            "max_wait_s": max_wait_s,
+            "wait_factor": wait_factor,
+            "safety_factor": safety_factor,
+        }
         self._travel_model = (
             travel_model if travel_model is not None
             else GraphTravelModel(graph)
@@ -127,6 +139,17 @@ class WindowInsertionPolicy(DispatchPolicy):
         else:
             self._max_wait_s = wait_factor * self._baseline_stop_cost()
         self._schedule = Schedule()
+
+    def params(self) -> dict[str, object]:
+        """
+        Report the service window and safety margin as they were given.
+
+        ``max_wait_s`` is the argument, not the resolved window: leaving it
+        None derives one from the map, and two maps would resolve the same
+        request differently. The map is part of a run's identity separately.
+        :return: Parameter name to value.
+        """
+        return {**super().params(), **self._declared}
 
     @property
     def max_wait_s(self) -> float:

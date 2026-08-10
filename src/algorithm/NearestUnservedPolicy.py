@@ -26,6 +26,10 @@ class NearestUnservedPolicy(DispatchPolicy):
     filtering subclasses from stranding an idle bus.
     """
 
+    def params(self) -> dict[str, object]:
+        """Report no settings; this policy is pure nearest-first greed."""
+        return super().params()
+
     def plan(self, state: BusState, n_stops: int) -> list[str]:
         """
         Compute a greedy capacity-gated route from the given bus state.

@@ -53,6 +53,14 @@ class RideBoundedGreedyPolicy(NearestUnservedPolicy):
         self._max_ride_cost = max_ride_cost
         self._ride_factor = ride_factor
 
+    def params(self) -> dict[str, object]:
+        """Report the ride budget this policy holds every rider to."""
+        return {
+            **super().params(),
+            "max_ride_cost": self._max_ride_cost,
+            "ride_factor": self._ride_factor,
+        }
+
     def plan(self, state: BusState, n_stops: int) -> list[str]:
         """
         Compute a greedy route that caps each onboard rider's along-route ride.

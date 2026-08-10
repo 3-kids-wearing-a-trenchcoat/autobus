@@ -530,7 +530,8 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 
       Split into four commits:
 
-      1. [ ] **`params()` on every policy.** Abstract on `DispatchPolicy`,
+      1. [X] **`params()` on every policy** — done 2026-08-10. Abstract on
+         `DispatchPolicy`,
          **deliberately unlike `stats()`**, which is optional because most
          components have nothing to report. Every policy has parameters, and
          one that silently reported none would collide in the store with a
@@ -546,6 +547,13 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
          cannot collide with its parent; and a **meta-test** compares each
          policy's `inspect.signature(__init__)` against its `params()` keys
          and fails on any undeclared knob.
+
+         `tests/test_policy_params.py` discovers policies dynamically —
+         a hand-maintained list would not contain the new policy that is
+         the actual risk — and was **checked by breaking it**: deleting
+         `n_passes` from `ReorderingInsertionPolicy.params()` fails with
+         the name of the knob and what its absence would cost. A guard that
+         cannot fail is worth nothing. 515 tests green.
       2. [ ] **`src/experiment/store.py`.** One **write-once** JSON file per
          run, flat directory, filename the identity hash
          (`sha256` of the canonical identity, 16 hex chars). Numerics are

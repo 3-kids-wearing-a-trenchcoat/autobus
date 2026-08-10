@@ -44,15 +44,20 @@ defaulted so that hand-built `BusState` instances stay valid.
 
 ## DispatchPolicy
 
-`DispatchPolicy` is an abstract base class with one abstract method:
+`DispatchPolicy` is an abstract base class with two abstract methods:
 
 ```python
 plan(state: BusState, n_stops: int) -> list[str]
+params() -> dict[str, object]
 ```
 
 Given a `BusState` snapshot and a desired route length, `plan` returns an
 ordered list of stop IDs representing the next `n_stops` stops the bus should
 visit.
+
+`params` reports the settings the policy was constructed with. See
+[Declaring parameters](#declaring-parameters) below — it is abstract for a
+reason, and the reason is not tidiness.
 
 The `TransitGraph` is injected at construction time (`__init__`) because it
 is a static world model that does not change between planning calls:
@@ -130,6 +135,52 @@ There is no contract requiring that every onboard passenger's dropoff stop
 appears in the returned list. Whether to guarantee this is a design choice
 left to each concrete implementation — it is an intentional axis of comparison
 between policies.
+
+### Declaring parameters
+
+A concrete policy must also implement `params()`, returning the settings it
+was constructed with:
+
+```python
+def params(self) -> dict[str, object]:
+    """Report the repair settings on top of the window policy's own."""
+    return {
+        **super().params(),
+        "n_passes": self._n_passes,
+    }
+```
+
+**Subclasses extend rather than replace** — `{**super().params(), ...}` —
+because a subclass that dropped an inherited knob would collide its own runs
+with each other.
+
+**Why this is abstract, unlike `stats()`.** Diagnostic counters are optional:
+most components have nothing to report, so `run_trial` discovers `stats()` by
+duck typing and an absent one simply means an empty dict. Parameters are not
+optional, because the [results store](experiment.md) hashes them into a run's
+identity. A policy that silently declared none would be indistinguishable from
+a differently configured sibling, and the store would report the second run as
+already recorded and skip it. That is data corruption, and the sort nobody
+could later pinpoint — so the failure belongs at construction, where an
+unimplemented abstract method raises `TypeError`.
+
+**Report the arguments as given, not as resolved.** A service window named
+`max_wait_s=750` and one derived from `wait_factor=3` may come to the same
+number on one map and not on another. Recording what was asked for keeps
+identity predictable, and errs toward recording two equivalent runs rather
+than merging two different ones — the cheap mistake rather than the expensive
+one.
+
+Values must be JSON-serialisable. An argument that is an object rather than a
+scalar is reported by class name, which identifies the kind of thing but not
+its own settings.
+
+`tests/test_policy_params.py` enforces all of this without anyone having to
+remember it: it discovers every concrete policy under `src/algorithm`,
+compares `inspect.signature(__init__)` against the keys of `params()`, and
+fails on any knob that is accepted but not declared. Discovery is dynamic
+because the case being guarded against is a *new* policy, which a
+hand-maintained list would not contain.
 
 ## FixedRoutePolicy
 

@@ -67,6 +67,14 @@ class DeviatedFixedRoutePolicy(SkipStopFixedRoutePolicy):
         self._max_detour_cost = max_detour_cost
         self._detour_factor = detour_factor
 
+    def params(self) -> dict[str, object]:
+        """Report the detour bounds on top of the backbone cycle."""
+        return {
+            **super().params(),
+            "max_detour_cost": self._max_detour_cost,
+            "detour_factor": self._detour_factor,
+        }
+
     def plan(self, state: BusState, n_stops: int) -> list[str]:
         """
         Return the next n_stops stops: the skip-stop backbone with detours to

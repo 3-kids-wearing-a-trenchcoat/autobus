@@ -45,10 +45,18 @@ class MarginalCostFilterPolicy(NearestUnservedPolicy):
             than two stops (the baseline cannot be computed).
         """
         super().__init__(graph)
+        self._declared: dict[str, object] = {
+            "max_pickup_cost": max_pickup_cost,
+            "cost_factor": cost_factor,
+        }
         if max_pickup_cost is not None:
             self._threshold = max_pickup_cost
         else:
             self._threshold = cost_factor * self._baseline_stop_cost()
+
+    def params(self) -> dict[str, object]:
+        """Report the pickup-cost filter this policy was given."""
+        return {**super().params(), **self._declared}
 
     def _pickup_eligible(self, pickup_stop: str, position: str) -> bool:
         """

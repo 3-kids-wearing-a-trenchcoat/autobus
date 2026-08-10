@@ -71,10 +71,19 @@ class ConstrainedInsertionPolicy(DispatchPolicy):
         """
         super().__init__(graph)
         self._ride_factor = ride_factor
+        self._declared: dict[str, object] = {
+            "max_wait_cost": max_wait_cost,
+            "wait_factor": wait_factor,
+            "ride_factor": ride_factor,
+        }
         if max_wait_cost is not None:
             self._max_wait_cost = max_wait_cost
         else:
             self._max_wait_cost = wait_factor * self._baseline_stop_cost()
+
+    def params(self) -> dict[str, object]:
+        """Report the wait and ride bounds this policy was given."""
+        return {**super().params(), **self._declared}
 
     def plan(self, state: BusState, n_stops: int) -> list[str]:
         """

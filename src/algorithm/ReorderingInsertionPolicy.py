@@ -118,6 +118,15 @@ class ReorderingInsertionPolicy(WindowInsertionPolicy):
         self._retry_rejected = retry_rejected
         self._stats: dict[str, float] = _empty_stats()
 
+    def params(self) -> dict[str, object]:
+        """Report the repair settings on top of the window policy's own."""
+        return {
+            **super().params(),
+            "max_relocations": self._max_relocations,
+            "n_passes": self._n_passes,
+            "retry_rejected": self._retry_rejected,
+        }
+
     def stats(self) -> dict[str, float]:
         """
         Return a copy of the counters accumulated over this policy's life.

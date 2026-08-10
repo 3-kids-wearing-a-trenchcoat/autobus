@@ -11,6 +11,10 @@ from src.map.TransitGraph import TransitGraph
 class _ConcretePolicy(DispatchPolicy):
     """Minimal concrete subclass for interface testing."""
 
+    def params(self) -> dict[str, object]:
+        """Declare no settings; there are none."""
+        return super().params()
+
     def plan(self, state: BusState, n_stops: int) -> list[str]:
         """Return an empty route."""
         return []

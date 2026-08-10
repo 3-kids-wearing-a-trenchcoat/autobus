@@ -36,6 +36,10 @@ class _RecordingPolicy(DispatchPolicy):
         self._canned = route
         self.states: list[BusState] = []
 
+    def params(self) -> dict[str, object]:
+        """Declare the canned route, which is all that varies here."""
+        return {**super().params(), "route": list(self._canned)}
+
     def plan(self, state: BusState, n_stops: int) -> list[str]:
         """Record the state and return the canned route."""
         self.states.append(state)

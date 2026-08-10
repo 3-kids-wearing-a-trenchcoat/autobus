@@ -961,7 +961,49 @@ Window's 332 — while serving 75.4%. The passengers it fails are exactly the
 ones who would have waited longest, and a cancelled request contributes no
 wait sample. Wait and ride are only meaningful read alongside coverage.
 
-### ⚠ The synthetic campaign ran on the wrong map — corrected 2026-08-11
+### The synthetic campaign, re-run correctly — 2026-08-11
+
+2,280 runs on the **21-stop** campus map, 19 configurations × 60 seeds × 2
+regimes, 770 s. **The 5% bar is met** for every contender (worst 2.70%).
+Fixed route reproduces the documented 68.6% served exactly.
+
+**L1 beats L0 everywhere, and by more than was recorded.** Paired over 60
+seeds, mean ride, all p<0.0001:
+
+| window | 450 | 600 | 750 | 900 | 1200 | 1800 |
+|---|---|---|---|---|---|---|
+| ride, L1−L0 | **−229 s** | −155 s | −91 s | −70 s | −31 s | −19 s |
+
+**The advantage grows as the window tightens** — a finding the earlier
+single-window ablation could not have seen. A tighter deadline constrains the
+schedule harder, which is exactly when repairing its order pays. Served
+fraction is also better at five of six windows.
+
+**W900 is the operating point, and the reason is principled**: coverage peaks
+where the service window equals passenger patience (93.8% at W900, against
+85.8% at W1200 and 92.0% at W750). Promise more than the passenger will
+tolerate and you accept requests that are abandoned anyway; promise less and
+you refuse ones you could have kept.
+
+**§3.2.2 has a survivorship problem worth naming before it is quoted.** The
+criterion is fulfilment ≥80% *and* a positive sum of percentage differences —
+but wait and ride are computed over *fulfilled* requests only, so a policy
+that abandons its hard riders scores well on them. Ranked by the sum,
+`Reordering W1800` leads at **+93.8%** on 86.3% fulfilment, ahead of
+`Reordering W900`'s +67.8% on 93.8%. `Constrained` posts the best ride on the
+page (223 s, +66.1%) while serving **56.0%**, and fails only because of the
+fulfilment gate. **The gate is doing the real work; the sum must not be
+maximised on its own.**
+
+Failing §3.2.2 outright: `Nearest unserved` and `Marginal cost` (sum −26%,
+ride roughly double fixed route's), plus `Skip-stop`, `Deviated` and
+`Ride bounded` on the fulfilment gate.
+
+**Recommendation: `ReorderingInsertionPolicy` with `max_wait_s` set equal to
+passenger patience.** Best coverage, significantly better ride than L0 at
+every window, and it clears both criteria.
+
+### ⚠ The earlier campaign ran on the wrong map — corrected 2026-08-11
 
 **The campaign above used `stop_density` at its default 0.15, giving a 6-stop
 map. Every historical study used `stop_density=0.5` — 21 stops.** The campus

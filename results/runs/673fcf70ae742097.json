@@ -1,10 +1,11 @@
 {
  "backend_stats": {
   "arrivals": 11,
-  "distance_m": 5099.283014933264,
+  "distance_m": 5099.326464344789,
   "legs_started": 11,
-  "red_light_ticks": 10003,
-  "repaths": 3,
+  "queued_ticks": 137,
+  "red_light_ticks": 10732,
+  "repaths": 0,
   "stops_without_shoulder": 0,
   "ticks": 27009,
   "unroutable_legs": 0,
@@ -52,8 +53,8 @@
   "fulfilled_count": 6,
   "fulfillment_rate": 1.0,
   "max_wait_time": 792.0,
-  "mean_journey_time": 497.1666666666667,
-  "mean_ride_time": 201.76666666666668,
+  "mean_journey_time": 496.2833333333333,
+  "mean_ride_time": 200.88333333333333,
   "mean_wait_time": 295.4,
   "p90_wait_time": 544.525,
   "served_fraction": 1.0,
@@ -71,17 +72,17 @@
   "retry_attempts": 0.0
  },
  "provenance": {
-  "finished_at": "2026-08-10T09:55:39+00:00",
-  "git_commit": "7f57bc8",
+  "finished_at": "2026-08-10T10:11:03+00:00",
+  "git_commit": "1a80e28",
   "python_hash_seed": "0",
-  "wall_seconds": 106.557
+  "wall_seconds": 110.495
  },
  "ride_times": [
   88.54999999999998,
   131.25,
   56.75,
-  563.4,
-  172.70000000000005,
+  560.7499999999999,
+  170.04999999999995,
   197.95000000000005
  ],
  "run_id": "673fcf70ae742097",

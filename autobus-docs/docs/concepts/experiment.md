@@ -351,6 +351,23 @@ and `os.replace`, so a run is either absent or complete, never half-parsed.
 If querying ever outgrows a directory scan, a SQLite index *derived* from these
 files is a pure addition that changes nothing about how they are stored.
 
+!!! danger "Changing simulation behaviour makes stored runs stale"
+
+    The identity is what a run was *asked* to do, not the code that did it.
+    That is deliberate — putting the commit in the identity would invalidate
+    every stored run on every commit, including documentation-only ones — but
+    it means a change to the backend, a policy, or the runner leaves records
+    that look current and are not.
+
+    **Purge or re-run the affected runs when you change simulation
+    behaviour.** `run_campaign(..., overwrite=True)` re-runs and replaces
+    them. Each record's `provenance.git_commit` says which commit produced
+    it, so what is stale is at least identifiable after the fact.
+
+    This has already bitten once: fixing the stall detector's
+    queued-behind-traffic false positive changed the `repaths` counter, and
+    four stored runs kept their pre-fix values until they were overwritten.
+
 ### Two details that would otherwise bite
 
 **Numbers are normalised before hashing.** `dt=1` and `dt=1.0` are one

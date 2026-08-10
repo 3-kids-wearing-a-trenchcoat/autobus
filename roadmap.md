@@ -1,11 +1,14 @@
 # Autobus roadmap
 
-Living document. Phases 1 and 2 are complete. Phase 3 is built and
-driving: steps 3.1–3.5 are done, and a full `run_trial` serves every request
-on Town01 with a real vehicle and visible passengers. What remains is 3.6
-(campaign harness) and 3.7 (validation), both now broken down into steps
-below and both scoped by the two decisions taken on 2026-08-10 — a full
-persistent campaign rather than a demo, validated on three policies at once.
+Living document. Phases 1 and 2 are complete. **Phase 3 steps 3.1–3.6 are
+done**, including the campaign harness and the results store, all exercised
+end to end against a live server. **Only 3.7 (validation) remains**, scoped
+by the decisions of 2026-08-10: a full persistent campaign rather than a
+demo, three policies at once, and traffic at `npc_vehicles=20`.
+
+Two requirements the roadmap does not track and 3.7 will not close:
+mid-route replanning (functional requirement 3) and plan-call latency
+(§1.1.2). Both are under Open questions.
 Last updated 2026-08-10.
 
 ---
@@ -424,7 +427,7 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 
    Several passengers at one stop are fanned out along the shoulder, since
    two walkers at the same point simply fail to spawn.
-6. [ ] **Campaign harness**
+6. [X] **Campaign harness** — complete 2026-08-10
 
    Original two bullets, both still the point:
 
@@ -509,7 +512,7 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
       a junction changes the next trial's driving and nothing reports it.
       The load still happens before the traffic manager is created, so the
       map-caching trap stays respected.
-   4. [ ] **A results store, not a campaign file** — **redesigned
+   4. [X] **A results store, not a campaign file** — **redesigned
       2026-08-10 in consultation, superseding what this step used to say.**
 
       It used to describe a per-campaign append-only JSON lines file whose
@@ -691,15 +694,40 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
       The lesson generalises past this bug — a fix validated only in
       conditions where the failure cannot occur has not been validated.
 
-      **Nothing is corrupted by it.** `_repath` re-plans from where the bus
-      is and moves nothing, so no KPI is affected; the teleport that could
+      **Nothing was corrupted by it.** `_repath` re-plans from where the bus
+      is and moves nothing, so no KPI was affected; the teleport that could
       have corrupted one is long gone, and this vindicates rather than
-      questions its removal. What degrades is the **diagnostic**: a non-zero
-      repath count no longer means "this run needed help", which is exactly
-      what `carla-demo.ipynb` tells the reader to investigate. Under traffic
-      it may only mean "queued". Left as is pending a decision; the cheap
-      fix is to exempt a bus stopped behind a stationary vehicle in its own
-      lane.
+      questions its removal. What degraded was the **diagnostic**: a
+      non-zero repath count would no longer mean "this run needed help",
+      which is exactly what `carla-demo.ipynb` tells the reader to
+      investigate.
+
+      **Fixed the same day.** `_is_queued_behind_traffic` exempts a bus
+      stopped behind a stationary vehicle in its own lane, mirroring the
+      red-light exemption, and counts `queued_ticks` so the wait is still
+      reported. Thresholds (20 m ahead, 3 m across, 0.5 m/s) are the ones
+      the instrumented run measured, not guesses. It reads a single world
+      snapshot and short-circuits on `_npc_ids`, so it costs **nothing at
+      all in an empty town** — the condition every earlier measurement used.
+
+      Re-measured with the fix, both arms overwritten in the store:
+
+      | | fulfilled | repaths | queued | red |
+      |---|---|---|---|---|
+      | 0 NPCs, seeds 0/1 | 6/6 | **0**, 0 | 0 s, 0 s | 668 s, 544 s |
+      | 20 NPCs, seeds 0/1 | 6/6 | **0**, **0** | 8 s, 7 s | 655 s, 537 s |
+
+      The 3 false repaths are gone and the real queueing is small — 7–8 s
+      over a 1,500 s trial. The counter means what it claims again.
+
+      **One thing to carry into 3.7: identical parameters do not give
+      identical runs.** At `npc_vehicles=0`, seed 1 took 1305 s of simulated
+      time in the first pass and 1350 s in this one, with the same route and
+      the same 5.10 km driven. That is the documented "approximately
+      repeatable, not bit-identical" behaviour, and it means a seed is a
+      dedup key rather than a reproducibility guarantee. It also means the
+      campaign's variance already contains CARLA's own execution noise,
+      which is realistic but has to be sized for.
 
    Steps 1–4 are ordinary Python needing no CARLA server, and are covered by
    the existing test suite. Only step 5 needs the server up.

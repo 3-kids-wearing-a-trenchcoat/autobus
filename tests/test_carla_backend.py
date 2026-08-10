@@ -350,3 +350,129 @@ def test_reload_world_loads_a_town_already_up() -> None:
 def test_reload_world_defaults_off() -> None:
     """The demo notebook's behaviour must be what an unset flag gives."""
     assert _backend()._reload_world is False
+
+
+# ---------------------------------------------------------------------------
+# _is_queued_behind_traffic — waiting for the car in front is not a stall
+# ---------------------------------------------------------------------------
+
+class _Vec:
+    """Enough of carla.Vector3D for the projection arithmetic."""
+
+    def __init__(self, x: float, y: float) -> None:
+        self.x, self.y, self.z = x, y, 0.0
+
+    def __sub__(self, other: "_Vec") -> "_Vec":
+        return _Vec(self.x - other.x, self.y - other.y)
+
+    def length(self) -> float:
+        """Return the vector's magnitude."""
+        return (self.x ** 2 + self.y ** 2) ** 0.5
+
+
+class _Transform:
+    """A pose that only has to answer for its location and heading."""
+
+    def __init__(self, x: float, y: float) -> None:
+        self.location = _Vec(x, y)
+
+    def get_forward_vector(self) -> _Vec:
+        """Point along +x, so 'ahead' is the x axis."""
+        return _Vec(1.0, 0.0)
+
+
+class _NpcSnapshot:
+    """One vehicle as a world snapshot reports it."""
+
+    def __init__(self, x: float, y: float, speed: float) -> None:
+        self._transform = _Transform(x, y)
+        self._speed = speed
+
+    def get_transform(self) -> _Transform:
+        """Where it is."""
+        return self._transform
+
+    def get_velocity(self) -> _Vec:
+        """How fast it is going, along the road."""
+        return _Vec(self._speed, 0.0)
+
+
+class _SnapshotWorld:
+    """A world that answers only with a canned snapshot."""
+
+    def __init__(self, npcs: dict[int, _NpcSnapshot]) -> None:
+        self._npcs = npcs
+
+    def get_snapshot(self) -> "_SnapshotWorld":
+        """The world is its own snapshot here."""
+        return self
+
+    def find(self, actor_id: int) -> _NpcSnapshot | None:
+        """Look up one vehicle."""
+        return self._npcs.get(actor_id)
+
+
+class _BusActor:
+    """A bus parked at the origin, facing +x."""
+
+    def get_location(self) -> _Vec:
+        """The bus sits at the origin."""
+        return _Vec(0.0, 0.0)
+
+    def get_transform(self) -> _Transform:
+        """Facing along +x."""
+        return _Transform(0.0, 0.0)
+
+
+def _queued(*npcs: _NpcSnapshot) -> bool:
+    """Ask the backend whether these vehicles would count as a queue."""
+    backend = _backend()
+    backend._npc_ids = list(range(len(npcs)))
+    backend._world = _SnapshotWorld(dict(enumerate(npcs)))
+    return backend._is_queued_behind_traffic(_BusActor())
+
+
+def test_an_empty_town_costs_nothing_to_check() -> None:
+    """
+    With no traffic there is nothing to be blocked by, and every earlier
+    measurement was taken in exactly that condition.
+    """
+    backend = _backend()
+    backend._npc_ids = []
+    backend._world = None  # never touched, which is the point
+    assert backend._is_queued_behind_traffic(_BusActor()) is False
+
+
+def test_a_stopped_car_directly_ahead_is_a_queue() -> None:
+    assert _queued(_NpcSnapshot(8.0, 0.0, 0.0)) is True
+
+
+def test_a_moving_car_ahead_is_not_a_queue() -> None:
+    """If the car in front is moving, the bus has no excuse."""
+    assert _queued(_NpcSnapshot(8.0, 0.0, 5.0)) is False
+
+
+def test_a_car_behind_is_not_a_queue() -> None:
+    assert _queued(_NpcSnapshot(-8.0, 0.0, 0.0)) is False
+
+
+def test_a_car_in_the_next_lane_is_not_a_queue() -> None:
+    """Otherwise oncoming traffic stopped alongside would mask a real wedge."""
+    assert _queued(_NpcSnapshot(8.0, 6.0, 0.0)) is False
+
+
+def test_a_car_far_up_the_road_is_not_a_queue() -> None:
+    assert _queued(_NpcSnapshot(60.0, 0.0, 0.0)) is False
+
+
+def test_one_blocker_among_many_is_enough() -> None:
+    assert _queued(
+        _NpcSnapshot(60.0, 0.0, 0.0),
+        _NpcSnapshot(8.0, 0.5, 0.0),
+        _NpcSnapshot(-3.0, 0.0, 0.0),
+    ) is True
+
+
+def test_queued_ticks_starts_at_zero() -> None:
+    """The counter has to exist before anything can report on it."""
+    assert _backend().stats()["queued_ticks"] == 0

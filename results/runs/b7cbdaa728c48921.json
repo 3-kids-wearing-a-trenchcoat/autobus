@@ -1,9 +1,10 @@
 {
  "backend_stats": {
   "arrivals": 11,
-  "distance_m": 5691.018986276476,
+  "distance_m": 5691.062252940494,
   "legs_started": 11,
-  "red_light_ticks": 13371,
+  "queued_ticks": 0,
+  "red_light_ticks": 13370,
   "repaths": 0,
   "stops_without_shoulder": 0,
   "ticks": 30649,
@@ -52,15 +53,15 @@
   "fulfilled_count": 6,
   "fulfillment_rate": 1.0,
   "max_wait_time": 773.45,
-  "mean_journey_time": 629.5166666666668,
-  "mean_ride_time": 184.79999999999998,
-  "mean_wait_time": 444.7166666666667,
+  "mean_journey_time": 629.5083333333333,
+  "mean_ride_time": 184.78333333333333,
+  "mean_wait_time": 444.72499999999997,
   "p90_wait_time": 709.875,
   "served_fraction": 1.0,
   "throughput": 0.23498694516971277
  },
  "policy_stats": {
-  "cost_improvement": 19.830133933154457,
+  "cost_improvement": 19.830133933154002,
   "dropoff_accepted": 0.0,
   "dropoff_attempts": 10.0,
   "pair_accepted": 1.0,
@@ -71,15 +72,15 @@
   "retry_attempts": 0.0
  },
  "provenance": {
-  "finished_at": "2026-08-10T09:51:24+00:00",
-  "git_commit": "7f57bc8",
+  "finished_at": "2026-08-10T10:06:42+00:00",
+  "git_commit": "1a80e28",
   "python_hash_seed": "0",
-  "wall_seconds": 40.23
+  "wall_seconds": 40.177
  },
  "ride_times": [
   191.15000000000003,
-  99.39999999999998,
-  46.19999999999993,
+  99.25,
+  46.25,
   253.30000000000007,
   360.25,
   158.5
@@ -89,7 +90,7 @@
  "tick_count": 1532,
  "wait_times": [
   172.45,
-  211.20000000000005,
+  211.25,
   312.45000000000005,
   646.3,
   552.45,

@@ -1,12 +1,13 @@
 {
  "backend_stats": {
   "arrivals": 11,
-  "distance_m": 5099.342946872316,
+  "distance_m": 5099.3760877291925,
   "legs_started": 11,
-  "red_light_ticks": 10085,
+  "queued_ticks": 0,
+  "red_light_ticks": 10880,
   "repaths": 0,
   "stops_without_shoulder": 0,
-  "ticks": 26103,
+  "ticks": 27009,
   "unroutable_legs": 0,
   "walker_spawn_failures": 0,
   "walkers_removed": 6,
@@ -52,12 +53,12 @@
   "fulfilled_count": 6,
   "fulfillment_rate": 1.0,
   "max_wait_time": 792.0,
-  "mean_journey_time": 488.7333333333333,
-  "mean_ride_time": 193.33333333333334,
+  "mean_journey_time": 496.2833333333333,
+  "mean_ride_time": 200.88333333333333,
   "mean_wait_time": 295.4,
   "p90_wait_time": 544.525,
   "served_fraction": 1.0,
-  "throughput": 0.27586206896551724
+  "throughput": 0.26666666666666666
  },
  "policy_stats": {
   "cost_improvement": 0.0,
@@ -71,10 +72,10 @@
   "retry_attempts": 0.0
  },
  "provenance": {
-  "finished_at": "2026-08-10T09:51:58+00:00",
-  "git_commit": "7f57bc8",
+  "finished_at": "2026-08-10T10:07:17+00:00",
+  "git_commit": "1a80e28",
   "python_hash_seed": "0",
-  "wall_seconds": 34.021
+  "wall_seconds": 35.66
  },
  "ride_times": [
   88.54999999999998,
@@ -82,11 +83,11 @@
   56.75,
   560.7499999999999,
   170.04999999999995,
-  152.6500000000001
+  197.95000000000005
  ],
  "run_id": "c867bb725cd7f5f0",
  "schema": 1,
- "tick_count": 1305,
+ "tick_count": 1350,
  "wait_times": [
   57.9,
   179.45,

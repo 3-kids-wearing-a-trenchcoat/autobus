@@ -50,6 +50,14 @@ WALKER_LATERAL_OFFSET_M = 1.0
 
 # Where CARLA looks for a traffic manager by default, and how far past it to
 # search for one nobody else is using.
+# What counts as "queued behind that vehicle rather than wedged". All three
+# come from measurement rather than judgement: instrumenting the re-planner
+# over a 20-NPC trial, 4 of its 5 firings had a stationary vehicle inside this
+# box directly ahead of a bus that was nowhere near a traffic light.
+QUEUE_AHEAD_M = 20.0
+QUEUE_LATERAL_M = 3.0
+QUEUE_STATIONARY_MS = 0.5
+
 DEFAULT_TM_PORT = 8000
 TM_PORT_SEARCH_LIMIT = 20
 
@@ -200,6 +208,7 @@ class CarlaBackend(SimulationBackend):
             "distance_m": 0.0,
             "repaths": 0,
             "red_light_ticks": 0,
+            "queued_ticks": 0,
             "unroutable_legs": 0,
             "walkers_spawned": 0,
             "walkers_removed": 0,
@@ -574,6 +583,18 @@ class CarlaBackend(SimulationBackend):
             self._stats["red_light_ticks"] += 1
             return
 
+        if self._is_queued_behind_traffic(bus):
+            # Waiting for the car in front is not stalling either, and the
+            # red-light exemption above does not cover it: CARLA reports
+            # ``is_at_traffic_light`` only inside the light's trigger volume,
+            # which is to say at the *head* of the queue. Everyone behind the
+            # first vehicle reads as a bus stopped on green for no reason.
+            #
+            # In an empty town the bus is always at the head, so this could
+            # not arise and the gap went unnoticed until traffic was tested.
+            self._stats["queued_ticks"] += 1
+            return
+
         # Deliberately not gated on throttle. A bus the traffic manager has
         # given up on is commanded *zero* throttle, so gating on throttle
         # above zero was measured to never fire at all.
@@ -581,6 +602,39 @@ class CarlaBackend(SimulationBackend):
         if self._since_repath_s >= self._repath_after_s:
             self._repath(bus)
             self._since_repath_s = 0.0
+
+    def _is_queued_behind_traffic(self, bus: "carla.Actor") -> bool:
+        """
+        Return whether a stopped vehicle in the bus's own lane is the reason
+        it is not moving.
+
+        Only the traffic this backend spawned is considered, which makes the
+        check **free in an empty town** — the common case, and the one every
+        earlier measurement was taken in. It reads one world snapshot rather
+        than querying each vehicle, so a stalled tick costs a single call.
+        :param bus: The bus actor.
+        :return: True if something stationary sits in the box directly ahead.
+        """
+        if not self._npc_ids:
+            return False
+
+        here = bus.get_location()
+        forward = bus.get_transform().get_forward_vector()
+        snapshot = self._world.get_snapshot()
+
+        for npc_id in self._npc_ids:
+            other = snapshot.find(npc_id)
+            if other is None:
+                continue
+            offset = other.get_transform().location - here
+            # Project into the bus's own frame: along its nose, and across it.
+            ahead = offset.x * forward.x + offset.y * forward.y
+            across = abs(offset.x * forward.y - offset.y * forward.x)
+            if not 0.0 < ahead < QUEUE_AHEAD_M or across > QUEUE_LATERAL_M:
+                continue
+            if other.get_velocity().length() < QUEUE_STATIONARY_MS:
+                return True
+        return False
 
     def _is_held_at_red(self, bus: "carla.Actor") -> bool:
         """

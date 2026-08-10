@@ -626,6 +626,33 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
          believe. The docs carry the matching warning about filtering to the
          parameters being held fixed — seaborn will average across one
          nobody meant to vary and the line looks perfectly reasonable.
+   **Verified end to end against a live CARLA on 2026-08-10**, server raised
+   from `compose.yml` and shut down afterwards. Two policies × two seeds on
+   Town01, headless, `reload_world=True`, four requests each:
+
+   - **4 ran in 110 s; the second pass ran 0 and skipped 4 in 0.00 s.** The
+     skip rule works on real runs, which is also what makes a crashed
+     campaign cheap to restart.
+   - 4/4 fulfilled every trial, **0 repaths and 0 walker spawn failures**,
+     ~4 km driven. The reload does not disturb the driving.
+   - Records carry resolved trial parameters, the policy's declared
+     parameters, backend and policy counters, and provenance including
+     `git_commit` and `PYTHONHASHSEED`.
+
+   **The reload was verified with a control**, since the campaign alone
+   cannot show it. Three stray vehicles were leaked into the world, as a
+   trial dying part-way would: with `reload_world=True` the backend then saw
+   **1** vehicle — its own bus — and with `reload_world=False` it saw **3**.
+   That is the cross-trial contaminant, demonstrated in both directions.
+
+   **Window and Reordering returned identical KPIs, and that is correct.**
+   L1 made 8 repair calls and 17 relocation attempts and accepted **none**
+   (`cost_improvement=0.0`): at four requests there is barely a schedule to
+   repair. Worth recording because two policies agreeing to the decimal looks
+   exactly like a factory that was not varied — the counters are what
+   distinguish the two, which is what step 1 was for. The runs still filed
+   separately, on `policy_class`.
+
    5. [ ] **One tour at `npc_vehicles=20` before trusting any of it** — see
       the open question below. Better learned now than at trial 22 of an
       overnight run.

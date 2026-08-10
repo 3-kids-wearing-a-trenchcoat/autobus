@@ -49,6 +49,10 @@ _ID_LENGTH = 16
 # one configuration into two.
 _HASH_PRECISION = 9
 
+# Results are shared, committed and synchronised, so they are readable by
+# more than their author.
+_FILE_MODE = 0o644
+
 SCHEMA = 1
 
 
@@ -262,6 +266,10 @@ def save_run(
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as stream:
             json.dump(record.as_dict(), stream, sort_keys=True, indent=1)
+        # mkstemp creates at 0600, which is right for a secret and wrong for
+        # a result: these are committed and synchronised, and a file only its
+        # author can read is a nuisance on the next machine.
+        os.chmod(temporary, _FILE_MODE)
         os.replace(temporary, path)
     except BaseException:
         Path(temporary).unlink(missing_ok=True)

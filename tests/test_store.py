@@ -269,3 +269,20 @@ def test_a_rebuilt_trial_result_carries_the_diagnostics(tmp_path) -> None:
     assert result.backend_stats == {"distance_m": 6280.0}
     assert result.policy_stats == {"repair_calls": 12.0}
     assert result.tick_history == []
+
+
+def test_a_written_run_is_readable_by_more_than_its_author(
+    tmp_path,
+) -> None:
+    """
+    These files are committed and synchronised. mkstemp defaults to 0600,
+    which is right for a secret and a nuisance for a result.
+    """
+    save_run(tmp_path, _record(_identity()))
+    path = next(tmp_path.glob("*.json"))
+    assert path.stat().st_mode & 0o077 == 0o044
+
+
+def test_no_temporary_files_are_left_behind(tmp_path) -> None:
+    save_run(tmp_path, _record(_identity()))
+    assert list(tmp_path.glob("*.tmp")) == []

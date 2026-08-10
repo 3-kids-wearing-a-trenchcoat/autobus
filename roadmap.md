@@ -1003,7 +1003,64 @@ ride roughly double fixed route's), plus `Skip-stop`, `Deviated` and
 passenger patience.** Best coverage, significantly better ride than L0 at
 every window, and it clears both criteria.
 
-### ⚠ The earlier campaign ran on the wrong map — corrected 2026-08-11
+### The map-seed sweep — 2026-08-11
+
+7,000 runs, 25 maps × 7 policies × 40 seeds, 1,659 s. Seeds capped at 40 so
+map 42 (which has 60 from the campaign) does not weight the comparison.
+
+**The ranking is map-independent — this was the question the sweep existed to
+answer, and the answer is clean.**
+
+| policy | median rank | range | maps won |
+|---|---|---|---|
+| Reordering W900 | 1 | 1–2 | **22 / 25** |
+| Window W900 | 2 | 1–2 | 3 / 25 |
+| Window W750 | 3 | **same on every map** | 0 |
+| Window W1200 | 4 | **same on every map** | 0 |
+| Skip-stop | 5 | **same on every map** | 0 |
+| Fixed route / Constrained | 6–7 | swap | 0 |
+
+Only the top two ever swap. Every single-map policy conclusion in this
+project is safe to quote.
+
+**W900 maximises coverage on 25 of 25 maps.** The "set the window to
+passenger patience" rule is not a map-42 artefact.
+
+**L1's advantage is larger than the campus map suggested.** Pooled over 1,000
+(map, seed) pairs: ride **−111.5 ± 7.4 s** (p ≈ 2e-138), wait −7.3 ± 1.5 s,
+served +0.53 ± 0.17 pp. Map 42 showed −70 s, because map 42 is easy.
+
+**The map dominates the seed as a source of variance — the finding with the
+widest consequences:**
+
+| KPI | between-map sd | within-map sd | ratio | range across maps |
+|---|---|---|---|---|
+| served | 8.3 pp | 2.4 pp | **3.4×** | 65.5 – 98.8 % |
+| wait | 42.6 s | 20.7 s | 2.1× | 367 – 543 s |
+| ride | 245.6 s | 64.4 s | **3.8×** | 278 – 1336 s |
+
+So the 5% CI bar met at n=60 on map 42 measures precision **within that map**,
+not the uncertainty of the figure as a general claim. Any single-map number
+carries an error bar two to four times wider than its own interval suggests.
+**Map 42 is also easier than typical** — 93.5% served against an all-map mean
+of 87.9% — so every documented figure is drawn from a favourable map.
+
+**§3.2.2 does not hold universally.** Per map, against fixed route:
+
+| policy | maps passed | worst fulfilment |
+|---|---|---|
+| Reordering W900 | **21 / 25** | 65.5 % |
+| Window W900 | 19 / 25 | 65.7 % |
+| Window W750 | 17 / 25 | 63.0 % |
+| Constrained | 0 / 25 | 33.1 % |
+
+Every failure is the **fulfilment gate**, not the sum — the sums stay positive
+almost everywhere. So the honest claim is "met on the campus map, and on 21 of
+25 random maps", not "met". On the hardest maps no policy tested reaches 80%,
+which is a statement about the load those maps present rather than about the
+routing.
+
+### ⚠ An earlier campaign ran on the wrong map — corrected 2026-08-11
 
 **The campaign above used `stop_density` at its default 0.15, giving a 6-stop
 map. Every historical study used `stop_density=0.5` — 21 stops.** The campus

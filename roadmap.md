@@ -823,18 +823,51 @@ notebooks predating the store and were never filed as reproducible runs.
    is close to forced. A true effect of ~6 s/passenger sits well inside the
    ±25 s interval this experiment can resolve.
 
-   So this is not evidence against L1. It is an experiment with nothing to
-   detect, and **more seeds would not fix it** — they tighten the interval
-   around a real effect that is genuinely near zero *at this demand level*.
-   Only denser demand would, and that costs trial length, which the sizing
-   work already showed buys nothing in total wall clock.
+   So this is not evidence against L1; it is an experiment with nothing to
+   detect. *(Corrected below — the first version of this entry gave the
+   wrong reason.)*
 
-   **Conclusion: the L1-versus-L0 question belongs on the synthetic map**,
-   where it was already answered at n=300–750, and where a fine-grained
-   routing comparison is what the test bed is *for*. CARLA's job was
-   transfer of the headline result, and that is done. This is the split
-   decided earlier today, arriving at the same answer from the other
-   direction.
+   **There are two separate barriers here, and conflating them produced a
+   wrong conclusion the first time this was written up.**
+
+   **Barrier 1 — the effect was not present to be measured.** That is a
+   property of the parameters chosen, not of CARLA. It is fixable, and the
+   fix is nearly free — but *only one* of the two ways to add demand works:
+
+   - **More requests at the same interval** merely lengthens the trial.
+     Concurrency is unchanged, so the schedule does not get richer. This is
+     the case the sizing analysis covered, and it buys nothing.
+   - **A shorter interval at the same count** makes arrivals outpace
+     service, a queue builds, the schedule gets rich, and L1 has work. It
+     costs little or no extra wall clock — the bus still has 12 requests to
+     serve, and wastes less time idle.
+
+   The original entry claimed denser demand "costs trial length", which
+   conflated the two and dismissed the lever that would actually work.
+
+   **Barrier 2 — resolving the effect needs seeds CARLA cannot afford, and
+   this is the real obstacle.** Even with a rich schedule L1's edge is
+   modest: −92 s of ride on a ~500–600 s baseline on the mock, established
+   at p<0.0001 only over hundreds of paired trials. Scaling that
+   t-statistic down puts the requirement near **n≈200**, which at 3.6 min
+   per trial across two policies is about **24 hours**.
+
+   **Conclusion: the L1-versus-L0 question belongs on the synthetic map** —
+   because resolving it needs ~200 seeds, *not* because CARLA cannot produce
+   the effect. With a shorter demand interval CARLA would produce it; it
+   simply could not measure it in affordable time. That is where it was
+   already answered at n=300–750, and where fine-grained routing comparison
+   is what the fast test bed is *for*. CARLA's job was transfer of the
+   headline result, and that is done.
+
+   **A finding worth carrying into the synthetic campaign: this scenario is
+   under-saturated.** Fixed-route also served 12/12 with zero
+   cancellations. A scenario in which even the naive baseline achieves 100%
+   coverage cannot discriminate policies *on coverage at all* — it separates
+   them only on wait and ride, which is exactly what happened. If fulfilment
+   rate is to be a meaningful KPI rather than a constant 100%, the demand
+   must stress the bus, and that demand level should be chosen deliberately
+   rather than inherited from these runs.
 
    Not a reason to change the default policy: the mock evidence for L1 is
    far stronger than eight CARLA trials, and L1 is not *harmed* here — it

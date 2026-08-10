@@ -3,6 +3,8 @@
 import math
 
 import numpy as np
+import pandas as pd
+import seaborn
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -245,3 +247,69 @@ def _plot_mean_band(
             color=color, alpha=0.25, linewidth=0, label="±1σ",
         )
         ax.legend(loc="upper right")
+
+
+def plot_parameter_sweep(
+    frame: pd.DataFrame,
+    x: str,
+    y: str,
+    hue: str | None = "identity.policy",
+    title: str | None = None,
+    confidence: int = 95,
+    ax: Axes | None = None,
+) -> Figure:
+    """
+    Plot a KPI against a swept parameter, one line per policy.
+
+    Takes the table from ``store.load_frame`` rather than TrialResults,
+    because a sweep asks a question the other plot helpers cannot: how a KPI
+    moves as a *parameter* moves. Columns are dotted paths into a stored run
+    — ``identity.trial.max_requests``, ``kpi.mean_wait_time``.
+
+    The band is a confidence interval computed across the repeated seeds at
+    each x, which is what those seeds were run for. **Filter the frame to the
+    parameters being held fixed before calling this**: seaborn will happily
+    average across a parameter nobody meant to vary, and the result looks
+    perfectly reasonable.
+
+    :param frame: One row per run, from ``store.load_frame``.
+    :param x: Column holding the swept parameter.
+    :param y: Column holding the KPI to plot.
+    :param hue: Column to draw a separate line for. Defaults to the policy
+        label; pass None for a single line.
+    :param title: Figure title. Defaults to None, which names the two axes.
+    :param confidence: Confidence level for the band, as a percentage.
+    :param ax: Axes to draw on. Defaults to None, which makes a new figure.
+    :return: The figure drawn on.
+    :raises KeyError: If ``x`` or ``y`` is not a column of the frame.
+    """
+    for column in (x, y):
+        if column not in frame.columns:
+            raise KeyError(
+                f"{column!r} is not a column of this frame; "
+                f"available: {sorted(frame.columns)}"
+            )
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=(7.0, 4.5))
+
+    seaborn.lineplot(
+        data=frame, x=x, y=y, hue=hue, marker="o",
+        errorbar=("ci", confidence), ax=ax,
+    )
+    ax.set_xlabel(_sweep_label(x))
+    ax.set_ylabel(_sweep_label(y))
+    ax.set_title(title or f"{_sweep_label(y)} against {_sweep_label(x)}")
+    ax.grid(True, alpha=0.3)
+    ax.figure.tight_layout()
+    return ax.figure
+
+
+def _sweep_label(column: str) -> str:
+    """
+    Turn a dotted column name into something readable on an axis.
+    :param column: A column such as ``kpi.mean_wait_time``.
+    :return: A human-readable label.
+    """
+    leaf = column.rsplit(".", 1)[-1]
+    return _KPI_LABELS.get(leaf, leaf.replace("_", " ").capitalize())

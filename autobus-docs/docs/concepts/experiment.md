@@ -301,6 +301,140 @@ Markdown(summary.markdown)                 # render the comparison table
 plot_kpi_bars(summary.results, fields=["mean_wait_time", "throughput"])
 ```
 
+## The results store
+
+`compare_policies` holds its runs in memory: close the notebook and they are
+gone. That is fine for a synthetic-map sweep that re-runs in a minute, and
+useless for CARLA, where a campaign is hours of wall time. The store is where
+completed runs live.
+
+### A run is one (parameters, seed) pair
+
+This is the idea everything else follows from. Repeating a seed against the
+same parameters is not a new observation — it is the *same* observation — so
+re-running one is **skipped or overwritten, never appended**. Nothing else
+prevents a single lucky run being counted twice into the sample it belongs to,
+which would bias exactly the mean and confidence interval it was run to
+establish.
+
+Seeds are therefore how repeated measurements are distinguished from repeated
+work. Twenty seeds against one configuration is a sample of twenty; the same
+seed run twice is one measurement done twice.
+
+### One write-once file per run
+
+```
+results/runs/3f9a1c04e8b27d51.json
+```
+
+The name is `sha256` of the run's identity, truncated to 16 hex characters, and
+the identity is everything that determines the outcome:
+
+| Part | Where it comes from |
+|------|---------------------|
+| `policy` | The label it runs under |
+| `policy_class` | `type(policy).__name__` |
+| `policy_params` | [`policy.params()`](dispatch_policy.md#declaring-parameters) |
+| `world` | Supplied by the caller — town, backend, traffic |
+| `trial` | `run_trial`'s parameters, resolved against its defaults |
+| `seed` | The demand seed |
+
+Files are written once and never touched again, which is a deliberate choice
+rather than an accident of simplicity. This directory is synchronised live, and
+a sync conflict on a write-once file costs a single run and leaves a visible
+`.sync-conflict-*` beside it; one shared file — a growing log, or a database —
+would put every run behind a single writer. It is also the only shape that
+stays correct if trials are ever run in parallel, since separate processes
+write separate files and need no locking. Writes go through a temporary file
+and `os.replace`, so a run is either absent or complete, never half-parsed.
+
+If querying ever outgrows a directory scan, a SQLite index *derived* from these
+files is a pure addition that changes nothing about how they are stored.
+
+### Two details that would otherwise bite
+
+**Numbers are normalised before hashing.** `dt=1` and `dt=1.0` are one
+configuration; hashing them apart would split a sweep into two half-populated
+copies that never dedupe against each other. Booleans are left alone, since
+`bool` is a subclass of `int` and folding `True` into `1.0` would surprise.
+
+**Trial parameters are resolved against `run_trial`'s defaults.** Naming
+`capacity=16` and leaving it to the default are the same simulation. Recording
+only what the caller passed would file them as two runs. Arguments that cannot
+move a KPI — `silent`, `record_animation`, `keep_tick_history` — are excluded.
+
+### Reading it back
+
+```python
+from src.experiment import load_frame, load_runs, to_results, summarize_results
+
+frame = load_frame(DEFAULT_RUNS_DIR)         # one row per run, for plotting
+records = load_runs(DEFAULT_RUNS_DIR)        # the records themselves
+results = to_results(records)                # what every plot helper takes
+summarize_results(results).markdown          # the comparison table
+```
+
+`load_frame` flattens nested keys into dotted columns —
+`identity.trial.max_requests`, `kpi.mean_wait_time` — which is the shape both
+grouping and plotting want.
+
+`to_results` rebuilds `dict[str, list[TrialResult]]`, so stored runs feed
+`plot_kpi_bars`, `plot_wait_distribution`, `plot_occupancy` and the summary
+table with no changes to any of them.
+
+!!! warning "`to_results(paired=True)` is the default, and it can drop runs"
+
+    Every paired statistic here indexes two policies' lists together and
+    assumes position *i* is the same seed in both. A campaign interrupted
+    part-way leaves policies with different seed sets, and aligning those by
+    position compares unrelated runs — **wrong p-values, and no error**.
+
+    So only the seeds every policy has are kept. That can lose runs, but a
+    smaller sample is visible in the table's counts and being wrong is not.
+    Pass `paired=False` for a parameter sweep, which is not a paired
+    comparison and should lose nothing.
+
+## run_campaign
+
+Runs the trials that are not already recorded, and files each one as it
+finishes.
+
+```python
+from src.experiment import run_campaign
+
+result = run_campaign(
+    policies=[("Fixed route", lambda g: FixedRoutePolicy(g)),
+              ("Window",      lambda g: WindowInsertionPolicy(g, max_wait_s=750))],
+    seeds=range(30),
+    world={"town": "Town01", "backend": "CarlaBackend", "npc_vehicles": 0},
+    provider=CarlaMapProvider("Town01"),
+    backend_factory_for=lambda seed: make_carla_backend(seed),
+    max_requests=40,
+)
+print(result.ran, result.skipped)
+summarize_results(result.results()).markdown
+```
+
+**It takes `seeds`, not a trial count.** The store already knows which
+`(parameters, seed)` pairs exist, so extending a campaign to seeds 30–59 later
+skips 0–29 and runs only what is missing — and restarting a crashed campaign
+costs only what it had not finished.
+
+**`world` is required and never guessed.** It is the part of an identity that
+cannot be read off the arguments, and a thin one would let two genuinely
+different worlds share a run. For a synthetic map it should name the map's own
+parameters; for CARLA, the town, the backend and the traffic.
+
+**`backend_factory_for` takes the seed** and returns that trial's backend
+factory. This is why `run_campaign` does not call `compare_policies`: one
+factory shared by every trial is right for a deterministic world and wrong for
+CARLA, where traffic and spawn placement are luck of their own and holding them
+fixed would under-sample the variance the campaign exists to measure.
+
+A trial that raises stops the campaign rather than being swallowed. Everything
+completed is already in the store, so restarting is cheap — which is precisely
+what removes the argument for continuing quietly through errors.
+
 ## Plot helpers
 
 All three plot functions accept the `dict[str, list[TrialResult]]` returned
@@ -360,6 +494,37 @@ from src.experiment import plot_occupancy
 fig = plot_occupancy(results)
 fig.show()
 ```
+
+### plot_parameter_sweep
+
+The one helper that reads the store's table rather than `TrialResult`s,
+because it answers a question the others cannot: how a KPI moves as a
+*parameter* moves.
+
+```python
+from src.experiment import load_frame, plot_parameter_sweep
+
+frame = load_frame(DEFAULT_RUNS_DIR)
+fixed = frame[frame["identity.trial.max_requests"] == 40]
+
+fig = plot_parameter_sweep(
+    fixed,
+    x="identity.policy_params.max_wait_s",
+    y="kpi.mean_wait_time",
+)
+```
+
+The band is a confidence interval computed across the repeated seeds at each
+x — which is what those seeds were run for.
+
+!!! warning "Filter to the parameters being held fixed first"
+
+    Seaborn will happily average across a parameter nobody meant to vary, and
+    the resulting line looks perfectly reasonable. The `fixed = frame[...]`
+    step above is not decoration.
+
+An unknown column raises `KeyError` rather than drawing an empty axes, since
+a mistyped dotted path would otherwise read as a parameter that had no effect.
 
 ## animate_trial
 

@@ -111,8 +111,29 @@ def summarize_comparison(
         backend_factory=backend_factory,
         **trial_kwargs,
     )
-    markdown = _format_summary_table(results, confidence)
-    return ComparisonSummary(markdown=markdown, results=results)
+    return summarize_results(results, confidence=confidence)
+
+
+def summarize_results(
+    results: dict[str, list[TrialResult]],
+    confidence: float = 0.95,
+) -> ComparisonSummary:
+    """
+    Summarise runs that have already been done.
+
+    The half of ``summarize_comparison`` that does not run anything, so that
+    runs rebuilt from the results store — hours of CARLA that must not be
+    repeated to be tabulated — produce the same table as runs still in memory.
+    :param results: Policy label to its trial results, as returned by
+        ``compare_policies`` or ``store.to_results``.
+    :param confidence: Confidence level for the margin of error, in (0, 1).
+    :return: A ComparisonSummary bundling the Markdown table and the results
+        it was built from.
+    """
+    return ComparisonSummary(
+        markdown=_format_summary_table(results, confidence),
+        results=results,
+    )
 
 
 def _mean(values: list[float]) -> float | None:

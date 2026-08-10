@@ -612,12 +612,20 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
          Everything already completed is in the store, so restarting is
          cheap — which is exactly what removes the argument for continuing
          quietly through errors.
-      4. [ ] **Reading the results.** `summarize_results` (the existing
-         `_format_summary_table` with a public face) and
-         `plot_parameter_sweep`, a parameter on x against a KPI on y, one
-         line per policy, confidence intervals computed across the repeated
-         seeds. **No new dependency** — `json` and `hashlib` are stdlib, and
-         pandas and seaborn are already in `environment.yml`.
+      4. [X] **Reading the results** — done 2026-08-10.
+         `summarize_results` (the existing `_format_summary_table` with a
+         public face, so hours of CARLA need not be re-run to be tabulated)
+         and `plot_parameter_sweep`, a parameter on x against a KPI on y,
+         one line per policy, confidence intervals computed across the
+         repeated seeds. **No new dependency** — `json` and `hashlib` are
+         stdlib, and pandas and seaborn were already in `environment.yml`.
+
+         `plot_parameter_sweep` raises on an unknown column rather than
+         drawing an empty axes: a mistyped dotted path would otherwise read
+         as a parameter that had no effect, which is the failure you would
+         believe. The docs carry the matching warning about filtering to the
+         parameters being held fixed — seaborn will average across one
+         nobody meant to vary and the line looks perfectly reasonable.
    5. [ ] **One tour at `npc_vehicles=20` before trusting any of it** — see
       the open question below. Better learned now than at trial 22 of an
       overnight run.

@@ -9,6 +9,7 @@ from src.experiment.summary import (
     _format_summary_table,
     _moe,
     summarize_comparison,
+    summarize_results,
 )
 from src.experiment.trial import TrialResult
 from src.metrics.MetricsTracker import KPISnapshot
@@ -201,3 +202,21 @@ def test_served_fraction_row_scaled_as_percentage() -> None:
         if line.startswith("| Served fraction |")
     )
     assert "86.5 %" in row
+
+
+def test_summarize_results_tabulates_without_running_anything() -> None:
+    """
+    The half that lets stored runs be tabulated. Hours of CARLA must not
+    have to be repeated just to produce the table again.
+    """
+    results = {"P": [_trial(_kpi(mean_wait=20.0))]}
+    summary = summarize_results(results)
+
+    assert summary.results is results
+    assert summary.markdown == _format_summary_table(results, 0.95)
+
+
+def test_summarize_results_honours_the_confidence_level() -> None:
+    results = {"P": [_trial(_kpi(mean_wait=20.0)), _trial(_kpi(40.0))]}
+    assert (summarize_results(results, confidence=0.99).markdown
+            == _format_summary_table(results, 0.99))

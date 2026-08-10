@@ -10,6 +10,7 @@ from src.experiment.comparison import compare_policies
 from src.experiment.plots import (
     plot_kpi_bars,
     plot_occupancy,
+    plot_parameter_sweep,
     plot_wait_distribution,
 )
 from src.experiment.store import (
@@ -22,7 +23,11 @@ from src.experiment.store import (
     save_run,
     to_results,
 )
-from src.experiment.summary import ComparisonSummary, summarize_comparison
+from src.experiment.summary import (
+    ComparisonSummary,
+    summarize_comparison,
+    summarize_results,
+)
 from src.experiment.trial import BackendFactory, TrialResult, run_trial
 
 __all__ = [
@@ -41,10 +46,12 @@ __all__ = [
     "save_run",
     "to_results",
     "summarize_comparison",
+    "summarize_results",
     "ComparisonSummary",
     "plot_kpi_bars",
     "plot_wait_distribution",
     "plot_occupancy",
+    "plot_parameter_sweep",
     "animate_trial",
     "show_animation",
     "show_animations",

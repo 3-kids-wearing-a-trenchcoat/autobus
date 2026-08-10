@@ -937,6 +937,51 @@ via a free probe construction. Keying on the provider would have forbidden a
 CARLA *town* driven by the mock backend — no server, and one of the more
 useful configurations available.
 
+### Where a synthetic trial actually spends its time — profiled 2026-08-10
+
+10 trials per policy, 100 requests, 40-seed map. **2.35 s/trial for L0,
+3.33 s for L1.** cProfile, single process.
+
+| | L0 cumulative | calls |
+|---|---|---|
+| `_best_insertion` | 103% (all of it) | 16,190 |
+| `_feasible` | 94.3% | **1,301,408** |
+| `arrival_times` | 75.0% | 1,324,203 |
+| `grouped_visits` | 31.3% | 1,325,048 |
+| `travel_time` (3 layers) | 22.5% | 16,699,809 |
+| `forward_slack` | 10.8% | 1,301,408 |
+| **`_cost`** | **1.5%** | **21,950** |
+
+**The funnel is the story.** 2.9M candidates are generated, `capacity_ok`
+rejects ~55% cheaply, feasibility then rejects **98.3%** of the survivors,
+and only 22k reach the cost function.
+
+**Two optimisations proposed earlier are refuted by this, and both were
+mine.**
+
+1. *"`_feasible` and `_cost` both compute `arrival_times`; dedupe it and
+   halve the work."* Worth **~1.5%**, not 50%. The premise was that `_cost`
+   runs per candidate — it does not. It runs only for candidates that pass
+   feasibility, which is 1 in 59.
+2. *"Memoise `grouped_visits`; it is 31% and recomputed constantly."* Worth
+   **~0%**. Every candidate is a *new* `Schedule` — the class is immutable by
+   design — so each instance calls `grouped_visits` about once. The call
+   counts give it away: 1,325,048 calls against 1,324,203 `arrival_times`.
+
+**Only the structural change is worth anything**, and the funnel says why:
+`_feasible` re-simulates the whole candidate to reject 98.3% of them.
+`forward_slack`'s own docstring describes the alternative — compute arrivals
+and slack **once** for the base schedule, then test each splice point against
+the delay it introduces, O(1) instead of O(n) — and `_best_insertion` bypasses
+it by building each candidate first. That targets 94% of the runtime rather
+than 1.5%.
+
+**Recommendation: do not do it, for now.** It is a reimplementation of the
+feasibility test, it touches the code behind every recorded baseline, and
+parallelism already gives 6.8×. At 3 s/trial and `n_jobs=8`, a
+7-policy × 800-seed sweep is about 40 minutes. Revisit only if a sweep you
+actually want is too slow at that.
+
 ## Decisions already made
 
 | Question | Answer | Source |

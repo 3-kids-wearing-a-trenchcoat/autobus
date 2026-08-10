@@ -39,6 +39,13 @@ The script sets `PYTHONPATH` to the project root before starting Jupyter, so
 `src.*` imports work correctly from any notebook regardless of where it lives in
 the repository. Experiment notebooks are kept in the `notebooks/` directory.
 
+Two of them are the entry points:
+
+| notebook | what it does |
+|---|---|
+| `synthetic-campaign.ipynb` | Sweeps the policies and their service windows on the campus map, filing every run in the store. Stop it whenever you like; re-running continues rather than restarting. |
+| `results.ipynb` | Reads the store and draws the tables and graphs. Runs no simulation and needs no CARLA server, so it works while a campaign is still going. |
+
 ### Reproducibility: set `PYTHONHASHSEED`
 
 !!! danger "`run_trial(seed=N)` is not reproducible across processes on its own"

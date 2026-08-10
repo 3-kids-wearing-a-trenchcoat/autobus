@@ -38,7 +38,13 @@ from src.metrics.MetricsTracker import KPISnapshot
 # Where runs live unless a caller says otherwise. Tracked in git: these are
 # the measured evidence behind the project's success criteria, and hours of
 # CARLA to regenerate.
-DEFAULT_RUNS_DIR = Path("results") / "runs"
+#
+# Anchored to this file rather than to the working directory, because
+# JupyterLab starts a kernel in the *notebook's* directory: a relative path
+# would quietly file half the campaign under `notebooks/results/runs` and the
+# other half under the real one, and the two would never dedupe against each
+# other. `src/map/carla_stops.py` anchors itself for the same reason.
+DEFAULT_RUNS_DIR = Path(__file__).resolve().parents[2] / "results" / "runs"
 
 # 64 bits of identity. Thousands of runs put the collision probability many
 # orders of magnitude below the chance of losing a file.

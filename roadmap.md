@@ -588,13 +588,30 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 
          Writes go through a temporary file and `os.replace`, so a run is
          either absent or complete and never half-parsed.
-      3. [ ] **`src/experiment/campaign.py`.** Takes `seeds` rather than
-         `n_trials` + `base_seed`, so extending a campaign to seeds 30–59
-         later skips 0–29 by identity and runs only what is missing. Owns
-         its loop rather than calling `compare_policies`, so it can
-         check-then-skip per trial and hand each trial its own backend via
-         `backend_factory_for(seed)` — which is how a CARLA campaign varies
-         traffic across the sample instead of holding it fixed.
+      3. [X] **`src/experiment/campaign.py`** — done 2026-08-10. Takes
+         `seeds` rather than `n_trials` + `base_seed`, so extending a
+         campaign to seeds 30–59 later skips 0–29 by identity and runs only
+         what is missing. Owns its loop rather than calling
+         `compare_policies`, so it can check-then-skip per trial and hand
+         each trial its own backend via `backend_factory_for(seed)` — which
+         is how a CARLA campaign varies traffic across the sample instead of
+         holding it fixed.
+
+         **Trial parameters are resolved against `run_trial`'s defaults
+         before being recorded.** Naming `capacity=16` and leaving it to the
+         default are the same simulation; recording only what was passed
+         would file them as two runs that never dedupe against each other.
+         Reporting-only arguments — `silent`, `record_animation`,
+         `keep_tick_history` — are excluded, since they cannot move a KPI.
+
+         `world` is **required and never guessed**: it is the part of an
+         identity that cannot be read off the arguments, and a thin one
+         would let two genuinely different worlds share a run.
+
+         A failing trial stops the campaign rather than being swallowed.
+         Everything already completed is in the store, so restarting is
+         cheap — which is exactly what removes the argument for continuing
+         quietly through errors.
       4. [ ] **Reading the results.** `summarize_results` (the existing
          `_format_summary_table` with a public face) and
          `plot_parameter_sweep`, a parameter on x against a KPI on y, one

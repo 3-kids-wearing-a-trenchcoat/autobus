@@ -65,6 +65,25 @@ Measured at 200 paired trials, `commitment=0`, W900, 200 requests
 per-trial difference against L0, and **every one is significant with no
 regression anywhere**:
 
+!!! danger "`stop_density=0.5` is required to reproduce any of this"
+
+    The "campus map" is
+    `PlanarStreetGraph.generate(n_seeds=17, bounds=(0, 0, 2000, 2000),
+    seed=42, stop_density=0.5)` — **21 stops**. The generator's *default*
+    density is 0.15, which on the same seed gives **6 stops**, and on a
+    6-stop map everything below collapses: the bus keeps up with any demand,
+    fixed route serves 100%, and there is almost nothing left to reorder.
+
+    This cost real time on 2026-08-10. A campaign was run at the default
+    density and concluded that L1 was not worth its cost — the conclusion was
+    an artefact of an over-easy map, and it was wrongly attributed to
+    `commitment` before the density was checked.
+
+    Re-verified on the correct map at `commitment=0`, 30 paired seeds:
+    fixed route 68.9% served / 448 s wait / 656 s ride against the 68.6% /
+    451 / 654 recorded here, and **L1 − L0 mean ride −75.6 s at p < 0.0001**
+    against the −63.7 s below. **The figures in this section stand.**
+
 | | L0 | L1 | delta |
 |---|---|---|---|
 | Served fraction | 93.3 % | 94.0 % | **+0.8 ± 0.3 pp** |

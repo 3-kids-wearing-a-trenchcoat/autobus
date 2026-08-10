@@ -167,6 +167,16 @@ The window is the headline knob and the trade-off is sharp. Measured on the
 campus map (21 stops, 2000 m square, 200 requests, capacity 40, abandonment at
 900 s, **800 trials**, `commitment=0`), against the two fixed-route baselines:
 
+!!! danger "The 21 stops come from `stop_density=0.5`, not from the default"
+
+    Reproducing this needs
+    `PlanarStreetGraph.generate(n_seeds=17, bounds=(0, 0, 2000, 2000),
+    seed=42, stop_density=0.5)`. The generator defaults to **0.15**, which on
+    the same seed yields **6 stops** — a map so easy that plain fixed route
+    serves 100% and the whole table below flattens into noise. See
+    [Route Reordering](route_reordering.md#what-it-actually-buys) for the
+    session where that caught someone out.
+
 | | Fixed | Skip | No window | W450 | W600 | W750 | W900 |
 |---|---|---|---|---|---|---|---|
 | Served | 68.6 % | 74.8 % | 82.6 % | 82.8 % | 87.5 % | 91.1 % | **93.1 %** |

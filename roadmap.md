@@ -961,48 +961,46 @@ Window's 332 — while serving 75.4%. The passengers it fails are exactly the
 ones who would have waited longest, and a cancelled request contributes no
 wait sample. Wait and ride are only meaningful read alongside coverage.
 
-### L1 is not worth its cost at commitment=0 — and the recorded figures do not reproduce
+### ⚠ The synthetic campaign ran on the wrong map — corrected 2026-08-11
 
-Paired on 60 seeds, L1 minus L0, patience 900:
+**The campaign above used `stop_density` at its default 0.15, giving a 6-stop
+map. Every historical study used `stop_density=0.5` — 21 stops.** The campus
+map is the 21-stop one; the default was never the map this project measures
+on, and nothing said so.
 
-| window | served (pp) | wait (s) | ride (s) |
+On a 6-stop map the bus keeps up with any demand. Plain fixed route serves
+100%, schedules are tiny, and there is almost nothing to reorder — so the
+campaign's headline conclusions are artefacts of an over-easy world:
+
+- "L1 is not worth its cost" — **wrong**.
+- "W900 is the operating point, coverage peaks there" — **unverified**; the
+  window table it came from was measured on 21 stops.
+- The §3.2.2 margins (+34.8%, +37.3%) — real but on the easy map, where fixed
+  route already serves everyone.
+
+**A wrong diagnosis was published before the density was checked.** The
+discrepancy was attributed to `commitment`, on the strength of a commitment
+sweep in which `commitment=4` reproduced the recorded 93.3% served *exactly*.
+That was a coincidence. The lesson is the recurring one and it was ignored:
+the configuration was assumed rather than read, and a coincidence that
+confirmed the assumption was taken as evidence.
+
+**Re-measured on the correct 21-stop map at `commitment=0`, 30 paired seeds:**
+
+| | served | wait | ride |
 |---|---|---|---|
-| 750 | +0.00 (p=1.00) | **−4.4** (p=0.016) | −0.7 (p=0.65) |
-| 900 | **+0.05** (p=0.033) | **−8.3** (p=0.001) | −0.5 (p=0.73) |
-| 1200 | **+0.29** (p<0.001) | **−7.3** (p=0.006) | −0.1 (p=0.91) |
-| 1800 | **+0.28** (p<0.001) | **−7.7** (p=0.005) | −0.3 (p=0.81) |
+| Fixed route | 68.9% (doc records 68.6%) | 448 s (451) | 656 s (654) |
+| L0 W900 | 93.4% (93.1%) | 471 s (466) | 541 s (521) |
+| L1 W900 | 93.6% | 463 s | **465 s** |
 
-**Ride time shows no significant difference at any window.** L1 buys ~8 s of
-wait — 2.5% — and a fraction of a percentage point of coverage, for **6× the
-compute** (1.54 s/trial against 0.26).
+**L1 − L0 mean ride −75.6 s, p < 0.0001**, against the −63.7 s on record.
+Every historical figure reproduces. **The documentation was right and the new
+campaign was wrong.**
 
-**This contradicts the recorded result, and the recorded result is the one
-that is wrong.** `reordering-l1-ablation.ipynb` stores L0 at 93.3% served,
-466 s wait, 523 s ride, with L1 taking **63.7 s off the ride**. Its stated
-configuration is identical to this campaign's — same map, same seed 42, same
-`WINDOW_S = 900`, 200 requests, capacity 40, patience 900 — yet today the
-same configuration measures 99.9%, 332 s, 282 s.
-
-`commitment` is implicated. Sweeping it on the same map:
-
-| commitment | served | wait | ride |
-|---|---|---|---|
-| 0 | 100.0% | 331 | 281 |
-| 4 | **93.3%** | 394 | 346 |
-| 8 | 76.6% | 415 | 531 |
-
-The ablation's 93.3% served is *exactly* commitment=4, and its 523 s ride sits
-at commitment=8 — so the stored numbers describe a run with a locked prefix,
-which the project later measured as monotonically harmful and defaulted to 0.
-The memory note claiming those figures were "re-measured at commitment=0" is
-not true of this notebook's stored output.
-
-**The direction survives; the magnitude does not.** L1 is still better than
-L0, significantly, on wait and coverage. But its headline −64 s of ride was a
-property of a *hampered* schedule: with commitment=0 the schedule is already
-good and there is little left to repair. That is the same story the CARLA runs
-told independently — 2.4% of relocations accepted, 6 s/passenger of modelled
-saving.
+Both notebooks now set `stop_density=0.5` and carry it in the world identity,
+so a 6-stop run can never share an identity with a 21-stop one. The 2,280
+runs already recorded remain valid *as runs* — they are simply a 6-stop
+experiment, and the store distinguishes them.
 
 ### Where a synthetic trial actually spends its time — profiled 2026-08-10
 

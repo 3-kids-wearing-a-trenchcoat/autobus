@@ -452,6 +452,57 @@ A trial that raises stops the campaign rather than being swallowed. Everything
 completed is already in the store, so restarting is cheap — which is precisely
 what removes the argument for continuing quietly through errors.
 
+### Running trials in parallel
+
+`n_jobs` runs trials in worker processes. Measured on a 48-run synthetic
+campaign (3 policies × 16 seeds, 60 requests each) on a 16-core machine:
+
+| `n_jobs` | wall clock | speedup | records identical to sequential |
+|---|---|---|---|
+| 1 | 41.9 s | — | — |
+| 4 | 11.3 s | 3.7× | yes |
+| 8 | 6.2 s | 6.8× | yes |
+| 16 | 5.6 s | 7.4× | yes |
+
+Returns flatten past 8: the work is CPU-bound pure Python, so hyperthreads add
+little. `n_jobs=-1` uses every core.
+
+**It is a scheduling choice and nothing else.** Each trial is a pure function
+of its identity, and ordering is rebuilt from the store by seed rather than
+from completion order, so parallel and sequential runs produce identical
+records. `tests/test_campaign.py` pins that, and the benchmark above re-checked
+it at every worker count.
+
+!!! warning "Only worlds that say they can be shared"
+
+    `run_campaign` refuses `n_jobs > 1` when the backend declares
+    `parallel_safe = False`, which `CarlaBackend` does — one server cannot host
+    a campaign per core, and trials would contend for it rather than run. It
+    builds one probe backend to ask, which is free, because a backend's
+    constructor is required to touch nothing.
+
+    The check is on the **backend, not the map**. A CARLA town driven by the
+    *mock* backend uses no server, parallelises perfectly well, and is
+    genuinely useful — real geometry and long legs at seconds per trial.
+
+!!! warning "Prefer a script over a notebook for long sweeps"
+
+    Workers are forked, which is what lets them inherit the graph and the
+    policy factories instead of pickling them — lambdas would not survive the
+    trip. But forking a process that already has threads can deadlock a child,
+    because it inherits any mutex those threads held with nobody left to
+    release it.
+
+    A script run through `run.sh` is single-threaded, so this cannot arise. A
+    **Jupyter kernel is multi-threaded**, and so is pytest. Both work in
+    practice, and both are a gamble worth avoiding for a sweep you would
+    rather not restart.
+
+    Fork is also what keeps `PYTHONHASHSEED` consistent across workers: under
+    *spawn* each child re-randomises it, and policies that break ties by
+    set-iteration order would then disagree with one another inside a single
+    campaign.
+
 ## Plot helpers
 
 All three plot functions accept the `dict[str, list[TrialResult]]` returned

@@ -899,6 +899,44 @@ notebooks predating the store and were never filed as reproducible runs.
 
 ---
 
+### Parallel trials — done 2026-08-10
+
+Deferred since 2026-08-02, and much smaller than the original plan because
+the results store had since solved its three hardest parts: ordering is
+rebuilt from the store by seed rather than from completion, instrumentation
+counters moved onto `TrialResult`, and nothing large crosses a process
+boundary because each worker writes its own file.
+
+`run_campaign(n_jobs=...)`. Measured on 48 synthetic runs, 16 cores:
+
+| `n_jobs` | wall | speedup | identical to sequential |
+|---|---|---|---|
+| 1 | 41.9 s | — | — |
+| 4 | 11.3 s | 3.7× | yes |
+| 8 | 6.2 s | 6.8× | yes |
+| 16 | 5.6 s | 7.4× | yes |
+
+Returns flatten past 8 — CPU-bound pure Python gains little from
+hyperthreads.
+
+**Processes, not threads, and not only for the GIL:** `run_trial` seeds the
+*global* `random` module and `DemandGenerator` draws from the same global,
+so threads would interleave RNG draws and destroy every seeded result.
+
+**Fork pinned deliberately.** Children inherit the module-level context, so
+policy factories stay lambdas and the graph is never pickled; and they
+inherit `PYTHONHASHSEED`, where spawn would re-randomise it per child and
+make policies that break ties by set-iteration order disagree *within* one
+campaign. The cost is fork's own hazard — forking a threaded process can
+deadlock a child. A script through `run.sh` is single-threaded (measured);
+a Jupyter kernel is not. Prefer a script for a long sweep.
+
+**The guard is on the backend, not the map.** `SimulationBackend.parallel_safe`
+defaults True; `CarlaBackend` sets False, and `n_jobs > 1` is refused for it
+via a free probe construction. Keying on the provider would have forbidden a
+CARLA *town* driven by the mock backend — no server, and one of the more
+useful configurations available.
+
 ## Decisions already made
 
 | Question | Answer | Source |

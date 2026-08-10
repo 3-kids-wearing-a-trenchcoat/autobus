@@ -244,3 +244,110 @@ def test_results_feed_the_existing_helpers(tmp_path, street_graph) -> None:
 
     assert "| Property | A | B |" in table
     assert "Mean wait time" in table
+
+
+# ---------------------------------------------------------------------------
+# n_jobs — a scheduling choice, and nothing more
+# ---------------------------------------------------------------------------
+
+class _UnsharedBackend(ScriptedBackend):
+    """A world backed by something only one process may hold, as CARLA is."""
+
+    parallel_safe = False
+
+
+def _comparable(record) -> dict:
+    """
+    Strip a record down to what a run *produced*.
+
+    Provenance is excluded on purpose: wall time and the finishing timestamp
+    differ between any two executions, in parallel or not, and neither is a
+    result.
+    :param record: A RunRecord.
+    :return: The parts two runs of the same identity must agree on.
+    """
+    data = record.as_dict()
+    data.pop("provenance")
+    return data
+
+
+def test_parallel_and_sequential_agree_exactly(
+    tmp_path, street_graph
+) -> None:
+    """
+    The test that makes n_jobs believable.
+
+    Each trial is a pure function of its identity, and ordering is rebuilt
+    from the store by seed rather than from completion order, so running on
+    four cores must give the same records as running on one. If this ever
+    fails, every parallel result is suspect.
+    """
+    one = _campaign(
+        tmp_path / "seq", street_graph, seeds=[0, 1, 2, 3],
+        policies=[("A", _policy), ("B", _policy)],
+    )
+    many = _campaign(
+        tmp_path / "par", street_graph, seeds=[0, 1, 2, 3],
+        policies=[("A", _policy), ("B", _policy)], n_jobs=4,
+    )
+
+    assert one.ran == many.ran == 8
+    assert ([_comparable(r) for r in one.records]
+            == [_comparable(r) for r in many.records])
+
+
+def test_parallel_skips_what_is_already_recorded(
+    tmp_path, street_graph
+) -> None:
+    """Resume has to survive the pool, since that is when it matters most."""
+    _campaign(tmp_path, street_graph, seeds=[0, 1], n_jobs=2)
+    again = _campaign(tmp_path, street_graph, seeds=[0, 1, 2], n_jobs=2)
+
+    assert again.ran == 1
+    assert again.skipped == 2
+    assert len(again.records) == 3
+
+
+def test_a_world_that_cannot_be_shared_refuses_to_parallelise(
+    tmp_path, street_graph
+) -> None:
+    """
+    CARLA is one server, so a campaign per core would contend rather than
+    run. The refusal is on the backend, checked by building a probe — which
+    is free, because a backend's constructor must touch nothing.
+    """
+    with pytest.raises(ValueError, match="parallel_safe"):
+        _campaign(
+            tmp_path, street_graph, n_jobs=2,
+            backend_factory_for=lambda seed: (
+                lambda graph, start: _UnsharedBackend(start)
+            ),
+        )
+
+
+def test_an_unsafe_world_still_runs_sequentially(
+    tmp_path, street_graph
+) -> None:
+    """The guard must gate parallelism, not the backend itself."""
+    result = _campaign(
+        tmp_path, street_graph,
+        backend_factory_for=lambda seed: (
+            lambda graph, start: _UnsharedBackend(start)
+        ),
+    )
+    assert result.ran == 2
+
+
+def test_a_carla_backend_declares_itself_unshareable() -> None:
+    """The flag has to be on the real class, not only on a test double."""
+    from src.simulation.CarlaBackend import CarlaBackend
+    from src.simulation.MockBackend import MockBackend
+
+    assert CarlaBackend.parallel_safe is False
+    assert MockBackend.parallel_safe is True
+    assert ScriptedBackend.parallel_safe is True
+
+
+def test_a_nonsense_worker_count_is_rejected(tmp_path, street_graph) -> None:
+    with pytest.raises(ValueError, match="n_jobs"):
+        _campaign(tmp_path, street_graph, n_jobs=0)

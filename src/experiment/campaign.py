@@ -22,9 +22,11 @@ import os
 import subprocess
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from inspect import signature
+from multiprocessing import get_context
 from pathlib import Path
 
 from tqdm.auto import tqdm
@@ -59,6 +61,20 @@ _NOT_IN_IDENTITY = frozenset({
     "policy_factory", "graph", "provider", "backend_factory", "seed",
     "silent", "record_animation", "keep_tick_history",
 })
+
+
+# Everything a worker needs, held here rather than passed as arguments.
+#
+# ProcessPoolExecutor pickles whatever it submits, and neither half of a task
+# survives that: a policy factory is almost always a lambda, and a
+# TransitGraph is large enough that shipping it per task would cost more than
+# the trial. Forking instead gives every child a copy of this module's globals
+# for free, so a task is reduced to two picklable strings and the context is
+# read on the other side.
+#
+# Populated before the pool is created, never mutated afterwards, and never
+# itself pickled.
+_CONTEXT: dict[str, object] = {}
 
 
 @dataclass
@@ -146,6 +162,135 @@ def _provenance(wall_seconds: float) -> dict[str, object]:
     }
 
 
+def _execute(label: str, seed: int) -> bool:
+    """
+    Run one trial and file it, or leave an already-recorded one alone.
+
+    Module-level and argument-light so it can cross a process boundary; see
+    ``_CONTEXT``. The sequential path calls it too, so both paths run the
+    same code and cannot drift apart — which is what makes ``n_jobs`` a pure
+    scheduling choice rather than a second implementation.
+    :param label: Policy label for this trial.
+    :param seed: Demand seed for this trial.
+    :return: True if a run was written, False if one already existed.
+    """
+    directory = _CONTEXT["directory"]
+    identity = _CONTEXT["identities"][(label, seed)]
+    if not _CONTEXT["overwrite"] and is_recorded(directory, identity):
+        return False
+
+    factory_for = _CONTEXT["backend_factory_for"]
+    started = time.perf_counter()
+    trial = run_trial(
+        policy_factory=_CONTEXT["factories"][label],
+        graph=_CONTEXT["graph"],
+        provider=_CONTEXT["provider"],
+        seed=seed,
+        backend_factory=(
+            None if factory_for is None else factory_for(seed)
+        ),
+        silent=True,
+        **_CONTEXT["trial_kwargs"],
+    )
+    save_run(
+        directory,
+        RunRecord(
+            identity=identity,
+            kpi=trial.kpi,
+            tick_count=trial.tick_count,
+            wait_times=trial.wait_times,
+            ride_times=trial.ride_times,
+            backend_stats=trial.backend_stats,
+            policy_stats=trial.policy_stats,
+            provenance=_provenance(time.perf_counter() - started),
+        ),
+        overwrite=_CONTEXT["overwrite"],
+    )
+    return True
+
+
+def _in_parallel(
+    tasks: Sequence[tuple[str, int]], n_jobs: int
+) -> Iterable[tuple[tuple[str, int], bool]]:
+    """
+    Run tasks across processes, yielding outcomes as they complete.
+
+    **Processes, and not only because of the GIL.** ``run_trial`` seeds the
+    *global* ``random`` module and ``DemandGenerator`` draws from that same
+    global, so threads would interleave RNG draws and silently destroy every
+    seeded result. A process has its own interpreter and sidesteps it.
+
+    **Fork is pinned rather than left to the default.** Children inherit
+    ``_CONTEXT``, which keeps lambdas usable and the graph unpickled; 3.12
+    already warns about fork in threaded processes and 3.14 changes the
+    default, so leaving this implicit would break quietly later. Fork also
+    means children inherit ``PYTHONHASHSEED``, so a campaign stays internally
+    consistent — under *spawn* each child would re-randomise it and policies
+    that break ties by set-iteration order would disagree with each other.
+
+    **Fork's own hazard, and where it bites.** Forking a process that already
+    has threads can deadlock a child, since it inherits any mutex those
+    threads held at the moment of the fork with nobody left to release it.
+    Python 3.12 warns about this. A plain script run through ``run.sh`` is
+    single-threaded, so the question does not arise — measured — but a
+    **Jupyter kernel is not**, and neither is pytest. Both work in practice
+    and both are a gamble; prefer a script for a long sweep.
+
+    Worker exceptions are re-raised here rather than swallowed, matching the
+    sequential path: the store keeps what finished, so restarting is cheap.
+    :param tasks: (policy label, seed) pairs to run.
+    :param n_jobs: Worker processes to use.
+    :return: Iterable of (task, wrote) in completion order.
+    """
+    with ProcessPoolExecutor(
+        max_workers=n_jobs, mp_context=get_context("fork")
+    ) as pool:
+        futures = {
+            pool.submit(_execute, label, seed): (label, seed)
+            for label, seed in tasks
+        }
+        for future in as_completed(futures):
+            yield futures[future], future.result()
+
+
+def _refuse_unsafe_parallelism(
+    backend_factory_for: SeededBackendFactory | None,
+    transit_graph: TransitGraph,
+    seed: int,
+    n_jobs: int,
+) -> None:
+    """
+    Stop a campaign from running a shared-resource world on many cores.
+
+    The check is on the **backend**, not the map: a CARLA town driven by the
+    mock backend touches no server and parallelises perfectly well, and
+    keying on the provider would forbid one of the more useful configurations
+    the project has.
+
+    Building the probe is free — a backend's constructor is required to touch
+    nothing, which ``CarlaBackend`` is separately tested for.
+    :param backend_factory_for: The campaign's world builder, or None for the
+        default mock.
+    :param transit_graph: Graph to hand the probe.
+    :param seed: Seed to build the probe factory with.
+    :param n_jobs: Requested worker count.
+    :raises ValueError: If the world says it cannot be run in parallel.
+    """
+    if n_jobs == 1 or backend_factory_for is None:
+        return
+
+    start_stop_id = transit_graph.get_stops()[0].id
+    probe = backend_factory_for(seed)(transit_graph, start_stop_id)
+    if not getattr(probe, "parallel_safe", True):
+        raise ValueError(
+            f"{type(probe).__name__} declares parallel_safe = False, so it "
+            f"cannot run with n_jobs={n_jobs}. It is backed by a resource "
+            f"shared across processes — one CARLA server cannot host a "
+            f"campaign per core. Run it with n_jobs=1, or sweep on the "
+            f"synthetic map instead."
+        )
+
+
 def _transit_graph(
     graph: PlanarStreetGraph | None, provider: MapProvider | None
 ) -> TransitGraph:
@@ -173,6 +318,7 @@ def run_campaign(
     backend_factory_for: SeededBackendFactory | None = None,
     overwrite: bool = False,
     progress: bool = True,
+    n_jobs: int = 1,
     **trial_kwargs,
 ) -> CampaignResult:
     """
@@ -198,6 +344,13 @@ def run_campaign(
     :param overwrite: Re-run and replace runs already recorded, rather than
         skipping them. Defaults to False.
     :param progress: Show a progress bar over the whole campaign.
+    :param n_jobs: Worker processes to run trials in. Defaults to 1, which
+        bypasses the pool entirely. ``-1`` uses every core. Results are
+        identical either way — each trial is a pure function of its identity,
+        and ordering is rebuilt from the store rather than from completion —
+        so this is a scheduling choice and nothing more. **Refused for a
+        world that declares itself not parallel-safe**, which CARLA does:
+        one server cannot host a campaign per core.
     :param trial_kwargs: Forwarded to run_trial (max_requests, capacity, dt,
         max_time, ...). These are resolved against run_trial's own defaults
         before being recorded, so the identity describes the simulation rather
@@ -227,47 +380,43 @@ def run_campaign(
         for seed in seeds
     }
 
-    result = CampaignResult(directory=directory)
-    bar = tqdm(
-        total=len(identities), disable=not progress, desc="campaign"
+    n_jobs = os.cpu_count() or 1 if n_jobs == -1 else n_jobs
+    if n_jobs < 1:
+        raise ValueError(f"n_jobs must be >= 1 or -1 (got {n_jobs})")
+    _refuse_unsafe_parallelism(
+        backend_factory_for, transit_graph, seeds[0], n_jobs
     )
-    for seed in seeds:
-        for label, factory in policies:
-            identity = identities[(label, seed)]
-            if not overwrite and is_recorded(directory, identity):
-                result.skipped += 1
-                bar.update(1)
-                continue
 
-            started = time.perf_counter()
-            trial = run_trial(
-                policy_factory=factory,
-                graph=graph,
-                provider=provider,
-                seed=seed,
-                backend_factory=(
-                    None if backend_factory_for is None
-                    else backend_factory_for(seed)
-                ),
-                silent=True,
-                **trial_kwargs,
-            )
-            save_run(
-                directory,
-                RunRecord(
-                    identity=identity,
-                    kpi=trial.kpi,
-                    tick_count=trial.tick_count,
-                    wait_times=trial.wait_times,
-                    ride_times=trial.ride_times,
-                    backend_stats=trial.backend_stats,
-                    policy_stats=trial.policy_stats,
-                    provenance=_provenance(time.perf_counter() - started),
-                ),
-                overwrite=overwrite,
-            )
-            result.ran += 1
-            bar.update(1)
+    # Populated before any worker is forked; children inherit it.
+    _CONTEXT.clear()
+    _CONTEXT.update(
+        directory=directory,
+        identities=identities,
+        factories={label: factory for label, factory in policies},
+        graph=graph,
+        provider=provider,
+        backend_factory_for=backend_factory_for,
+        trial_kwargs=trial_kwargs,
+        overwrite=overwrite,
+    )
+
+    # Seed-major, so a campaign stopped part-way has whole seeds rather than
+    # a ragged edge across policies. Parallel workers complete out of order,
+    # but ordering is reconstructed from the store by seed, never from
+    # completion.
+    tasks = [(label, seed) for seed in seeds for label, _ in policies]
+
+    result = CampaignResult(directory=directory)
+    bar = tqdm(total=len(tasks), disable=not progress, desc="campaign")
+    outcomes = (
+        (((label, seed), _execute(label, seed)) for label, seed in tasks)
+        if n_jobs == 1
+        else _in_parallel(tasks, n_jobs)
+    )
+    for _task, wrote in outcomes:
+        result.ran += int(wrote)
+        result.skipped += int(not wrote)
+        bar.update(1)
     bar.close()
 
     wanted = {identity.run_id for identity in identities.values()}

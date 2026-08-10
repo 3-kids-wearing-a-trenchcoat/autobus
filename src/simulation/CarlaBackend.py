@@ -134,6 +134,10 @@ class CarlaBackend(SimulationBackend):
     :raises ValueError: If ``fixed_delta_s`` exceeds the safe limit.
     """
 
+    # One server, and trials would contend for it rather than run. The
+    # campaign runner refuses to parallelise a world that says this.
+    parallel_safe: bool = False
+
     def __init__(
         self,
         stop_positions: dict[str, tuple[float, float, float]],

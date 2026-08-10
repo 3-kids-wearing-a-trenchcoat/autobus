@@ -36,6 +36,20 @@ class SimulationBackend(ABC):
     has no passengers to render should not have to say so.
     """
 
+    #: Whether several of these may run at once in separate processes.
+    #:
+    #: True for any world that lives entirely inside its own process — the
+    #: dead-reckoning mock, a scripted timetable — which is every world the
+    #: experiment harness sweeps over. A world backed by a **shared external
+    #: resource** must say False: one CARLA server cannot host a campaign per
+    #: core, and trials would contend for it rather than run.
+    #:
+    #: Declared rather than inferred from the map, and the distinction is
+    #: worth keeping: a CARLA *town* driven by the mock backend uses no server
+    #: at all, and is both parallel-safe and genuinely useful — real geometry
+    #: and long legs at seconds per trial.
+    parallel_safe: bool = True
+
     # ------------------------------------------------------------------
     # Abstract interface — genuinely world-specific
     # ------------------------------------------------------------------

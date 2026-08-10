@@ -79,6 +79,34 @@ class BusAgent:
         """
         return self._route[0] if self._route else None
 
+    def replan_if_idle(self, sim_time: float) -> None:
+        """
+        Give a parked bus a chance to notice work that arrived while it sat.
+
+        Re-planning is otherwise triggered only by arriving somewhere, which
+        leaves a hole: a bus whose route runs out never arrives anywhere
+        again, so it never re-plans, so its route stays empty. It sleeps
+        through every request that follows. Measured with a 200 s demand
+        interval against 10 s legs, the bus served the first request and then
+        sat still for the remaining 20,000 s with four passengers waiting.
+
+        That went unseen because the runner used to end a trial the moment
+        the pool emptied — the same moment the bus would have parked — so the
+        deadlock was reachable only in the window the old termination check
+        closed. The two defects concealed each other.
+
+        Safe precisely because the bus is stationary: there is no committed
+        leg to contradict and no position to argue about, which is the
+        condition under which re-planning was already established to be free.
+        A bus **in motion** still re-plans only on arrival.
+        :param sim_time: Current simulation time, which becomes the clock the
+            new plan is projected from.
+        """
+        if self._route:
+            return
+        self._arrived_at = sim_time
+        self._replan()
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------

@@ -24,6 +24,21 @@ class GenerationPolicy(ABC):
         :return: Number of requests to generate (0 = none).
         """
 
+    @abstractmethod
+    def is_exhausted(self) -> bool:
+        """
+        Return whether this policy will ever emit another request.
+
+        The runner needs this to know when a run is genuinely over. Without
+        it, an empty pool looks like the end of the run even when more demand
+        is still to come, and a bus that happens to finish its only request
+        before the next one arrives ends the trial early — reporting perfect
+        service for the handful of requests that existed. A policy that
+        generates forever answers False forever, which is correct: such a run
+        ends on ``max_time`` instead.
+        :return: True when no further requests will be emitted.
+        """
+
 
 class PeriodicPolicy(GenerationPolicy):
     """
@@ -54,6 +69,13 @@ class PeriodicPolicy(GenerationPolicy):
         self._last_time = sim_time
         self._total += 1
         return 1
+
+    def is_exhausted(self) -> bool:
+        """
+        Return whether the request cap has been reached.
+        :return: True once ``max_requests`` have been emitted.
+        """
+        return self._total >= self._max_requests
 
 
 class DemandGenerator:
@@ -104,6 +126,13 @@ class DemandGenerator:
         count = self._policy.should_generate(sim_time)
         for _ in range(count):
             self._emit_request(sim_time)
+
+    def is_exhausted(self) -> bool:
+        """
+        Return whether any further requests will be generated.
+        :return: True when the policy has no more demand to emit.
+        """
+        return self._policy.is_exhausted()
 
     def _emit_request(self, sim_time: float) -> None:
         """

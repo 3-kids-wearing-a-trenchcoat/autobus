@@ -98,9 +98,25 @@ class SimulationRunner:
         self._metrics_tracker.record_tick(self._sim_time)
 
     def is_done(self) -> bool:
-        """Return True when no requests remain pending or on the bus."""
+        """
+        Return True when the run has nothing left to do.
+
+        That means an empty pool **and** a demand generator with nothing more
+        to emit. Both halves are necessary: an empty pool alone is the
+        ordinary state of a bus between requests, and treating it as the end
+        stops a trial the moment it happens to catch up with its own demand.
+
+        Measured on a CARLA pilot before this was required: at a 150 s demand
+        interval, 2 of 8 trials ended after serving **1 of 12** requests,
+        because the bus completed that first trip in under 150 s and the
+        second request had not been created yet. Both reported
+        ``served_fraction`` of 1.0 — perfect service over the one request
+        that existed — which is the kind of wrong number nobody queries.
+        :return: True when no work remains and no more is coming.
+        """
         return (
-            len(self._pool.get_pending()) == 0
+            self._demand_generator.is_exhausted()
+            and len(self._pool.get_pending()) == 0
             and len(self._pool.get_on_bus()) == 0
         )
 
@@ -153,7 +169,17 @@ class SimulationRunner:
         while remaining > 0.0:
             next_stop = self._agent.next_stop()
             if next_stop is None:
-                break
+                # An empty route is not necessarily an idle world: demand may
+                # have arrived since the bus last planned, and since it plans
+                # only on arrival, a parked bus would otherwise never wake.
+                # Gated on there being something to plan for, so an genuinely
+                # idle bus does not re-run the policy every tick.
+                if not self._pool.get_pending():
+                    break
+                self._agent.replan_if_idle(self._sim_time - remaining)
+                next_stop = self._agent.next_stop()
+                if next_stop is None:
+                    break
             self._backend.set_destination(next_stop)
             result = self._backend.advance(remaining)
             remaining -= result.consumed

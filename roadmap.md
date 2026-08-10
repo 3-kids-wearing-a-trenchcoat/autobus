@@ -982,6 +982,46 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
   `unwedges/min` column measures a mechanism that no longer exists. On the
   current code the same bus completes 15 of 15 legs and never stalls at all.
   Quote the invariance, not the numbers.
+- **Two termination bugs that were hiding each other.** Found 2026-08-10 by
+  the Phase 3.7 sizing pilot, which is the entire argument for running a
+  rehearsal before a campaign.
+
+  1. **`is_done()` ignored demand still to come.** It ended a run when the
+     pool held no `PENDING` and no `ON_BUS` requests — but an empty pool is
+     the ordinary state of a bus between requests. At a 150 s demand
+     interval, **2 of 8 CARLA trials ended having served 1 of 12 requests**,
+     because the bus finished that first trip in under 150 s and the second
+     request did not exist yet.
+
+     It reported **`served_fraction` of 1.0**: the metric is
+     `fulfilled / (fulfilled + cancelled + pending + on_bus)`, and the eleven
+     requests never created cannot count against it. A trial that did not
+     happen scored perfect service, on one of the design review's own
+     success criteria.
+  2. **A parked bus never woke up.** `BusAgent` re-plans in its constructor
+     and in `on_arrival`, and nowhere else — `next_stop()` is documented as
+     *"without triggering a re-plan"*. So a bus whose route empties never
+     arrives anywhere again, therefore never re-plans, therefore keeps an
+     empty route. It sleeps through every later request. Measured after
+     fixing (1): the bus served one request and sat still for the remaining
+     20,000 s with four passengers waiting.
+
+  **Each concealed the other.** The only moment the bus could park was the
+  moment the pool emptied — which is exactly when the old `is_done` ended the
+  trial. Fix one and the other appears immediately; leave both and the
+  simulation looks fine.
+
+  Fixed by requiring `demand_generator.is_exhausted()` in `is_done`, and by
+  `BusAgent.replan_if_idle(sim_time)`, called from `_process_movement` when
+  the route is empty and requests are pending. Idle-only is deliberate and
+  safe: the bus is stationary, so there is no committed leg to contradict.
+  **A bus in motion still re-plans only on arrival** — the separate
+  functional-requirement gap under Open questions.
+
+  **The golden master is bit-identical across both fixes**, so no recorded
+  mock result changes. On the campus map demand outran service, so the route
+  never emptied and neither bug could fire.
+
 - **`advance()` must never return a batch of arrivals.** Arrivals inside one
   tick are sequentially dependent: the agent boards, alights and re-plans on
   each one, and the leg that follows is not known until it has. The contract

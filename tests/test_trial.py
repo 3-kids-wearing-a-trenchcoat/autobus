@@ -392,3 +392,59 @@ def test_policy_counters_reach_the_trial_result(
         **_TRIAL,
     )
     assert result.policy_stats["repair_calls"] > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Termination — a quiet moment is not the end of the run
+# ---------------------------------------------------------------------------
+
+def test_a_trial_outlives_the_gaps_between_requests(
+    street_graph: PlanarStreetGraph,
+) -> None:
+    """
+    The regression test for a bug a CARLA pilot found, not a unit test.
+
+    Demand arrives every 200 s while a leg takes 10 s, so the bus finishes
+    each request long before the next exists and the pool empties repeatedly.
+    Ending the run at the first such moment served 1 request of 12 on 2 of 8
+    real trials — and reported a served fraction of 1.0, because the eleven
+    requests that were never created cannot count against it.
+    """
+    result = run_trial(
+        _policy,
+        street_graph,
+        backend_factory=lambda graph, start: ScriptedBackend(
+            start, leg_durations=(10.0,)
+        ),
+        seed=7,
+        max_requests=5,
+        demand_interval_s=200.0,
+        n_stops=10,
+        silent=True,
+        max_time=20000.0,
+    )
+    assert result.kpi.fulfilled_count == 5
+
+
+def test_the_run_still_ends_once_demand_is_spent(
+    street_graph: PlanarStreetGraph,
+) -> None:
+    """
+    The other half: waiting for demand must not become waiting for max_time.
+    """
+    result = run_trial(
+        _policy,
+        street_graph,
+        backend_factory=lambda graph, start: ScriptedBackend(
+            start, leg_durations=(10.0,)
+        ),
+        seed=7,
+        max_requests=3,
+        demand_interval_s=100.0,
+        n_stops=10,
+        silent=True,
+        max_time=20000.0,
+    )
+    # Demand stops at t=200; the last request needs a couple of short legs.
+    assert result.kpi.fulfilled_count == 3
+    assert result.tick_count < 400

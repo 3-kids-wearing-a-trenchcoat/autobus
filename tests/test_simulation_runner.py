@@ -90,6 +90,9 @@ def make_runner(
         pool.get_pending.return_value = []
         pool.get_on_bus.return_value = []
     demand_gen = MagicMock(spec=DemandGenerator)
+    # Stated rather than left to MagicMock's truthy default: is_done() reads
+    # this, and a test that passes because a Mock is truthy is not a test.
+    demand_gen.is_exhausted.return_value = True
     metrics = MagicMock(spec=MetricsTracker)
     metrics.snapshot.return_value = _EMPTY_KPI
     if backend is None:
@@ -414,11 +417,30 @@ def test_sync_passengers_receives_the_shared_pool() -> None:
 # Termination
 # ---------------------------------------------------------------------------
 
-def test_is_done_true_when_pool_empty() -> None:
+def test_is_done_true_when_pool_empty_and_demand_spent() -> None:
     runner, _, _, _, pool = make_runner()
     pool.get_pending.return_value = []
     pool.get_on_bus.return_value = []
     assert runner.is_done() is True
+
+
+def test_is_done_false_while_demand_is_still_coming() -> None:
+    """
+    An empty pool is the ordinary state of a bus between requests, not the
+    end of the run.
+
+    Treating it as the end stops a trial the moment it catches up with its
+    own demand. Measured on a CARLA pilot: at a 150 s demand interval, 2 of
+    8 trials ended having served 1 of 12 requests, because the bus finished
+    that first trip before the second request was created. Both reported a
+    served fraction of 1.0 — perfect service over the one request that
+    existed — which is exactly the kind of wrong number nobody queries.
+    """
+    runner, _, demand_gen, _, pool = make_runner()
+    demand_gen.is_exhausted.return_value = False
+    pool.get_pending.return_value = []
+    pool.get_on_bus.return_value = []
+    assert runner.is_done() is False
 
 
 def test_is_done_false_when_pending_requests() -> None:

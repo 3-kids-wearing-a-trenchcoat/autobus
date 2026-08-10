@@ -217,6 +217,34 @@ trial 1: seed = base_seed + 1  →  all policies see a different but shared sequ
 
 When `base_seed` is `None`, all trials are non-deterministic.
 
+### Comparing on another map, or in another world
+
+`provider` and `backend_factory` mean here what they mean on `run_trial`, and
+are shared by every trial. `graph` may be omitted entirely when a provider is
+given:
+
+```python
+from src.map.CarlaMapProvider import CarlaMapProvider
+
+results = compare_policies(
+    policies=[...],
+    provider=CarlaMapProvider("Town01"),
+    n_trials=10,
+    base_seed=0,
+)
+```
+
+Both were reachable through keyword forwarding before they were named
+parameters, so this is a documented and tested capability rather than a new
+one — but nothing pinned it, and `graph` used to be a required positional, so
+running on a provider meant passing `None` for a map you were not using.
+
+**The same backend factory serves every trial.** That is right for a
+deterministic world and wrong for one with luck of its own to resample: a
+CARLA campaign wants each trial's backend seeded differently, so that traffic
+and spawn placement vary across the sample rather than being held fixed. Such
+a campaign builds a factory per trial instead of sharing one here.
+
 ### Forwarding parameters to run_trial
 
 Any keyword argument not listed in `compare_policies`'s own signature is
@@ -250,8 +278,9 @@ results = compare_policies(
   without re-running the simulation.
 
 It takes the same arguments as `compare_policies` (`policies`, `graph`,
-`n_trials`, `base_seed`, `progress`, and any forwarded `run_trial` keywords),
-plus a `confidence` level (default `0.95`) for the margin of error.
+`n_trials`, `base_seed`, `progress`, `provider`, `backend_factory`, and any
+forwarded `run_trial` keywords), plus a `confidence` level (default `0.95`)
+for the margin of error.
 
 ```python
 from IPython.display import Markdown

@@ -153,6 +153,34 @@ def test_summarize_comparison_bundles_table_and_results(monkeypatch) -> None:
     assert summary.markdown == _format_summary_table(canned, 0.95)
 
 
+def test_summarize_comparison_forwards_the_world(monkeypatch) -> None:
+    """
+    provider and backend_factory must survive the trip to compare_policies.
+
+    summarize_comparison is the entry point every notebook uses, so a
+    parameter that stops here reaches nothing.
+    """
+    seen: dict = {}
+
+    def fake_compare_policies(policies, graph, **kwargs):
+        """Record the keywords and return one empty column."""
+        seen.update(kwargs)
+        return {"P": [_trial(_kpi())]}
+
+    monkeypatch.setattr(
+        "src.experiment.summary.compare_policies", fake_compare_policies
+    )
+    provider, factory = object(), object()
+    summarize_comparison(
+        [("P", lambda g: None)],
+        provider=provider,
+        backend_factory=factory,
+        n_trials=1,
+    )
+    assert seen["provider"] is provider
+    assert seen["backend_factory"] is factory
+
+
 def test_percentage_scaling() -> None:
     """Fulfillment rate is scaled by 100 and shown with a % unit."""
     results = {"P": [_trial(_kpi(fulfillment=0.75))]}

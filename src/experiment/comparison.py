@@ -5,17 +5,20 @@ from typing import Callable
 from tqdm.auto import tqdm
 
 from src.algorithm.DispatchPolicy import DispatchPolicy
-from src.experiment.trial import TrialResult, run_trial
+from src.experiment.trial import BackendFactory, TrialResult, run_trial
+from src.map.MapProvider import MapProvider
 from src.map.TransitGraph import TransitGraph
 from src.map.graph import PlanarStreetGraph
 
 
 def compare_policies(
     policies: list[tuple[str, Callable[[TransitGraph], DispatchPolicy]]],
-    graph: PlanarStreetGraph,
+    graph: PlanarStreetGraph | None = None,
     n_trials: int = 1,
     base_seed: int | None = None,
     progress: bool = True,
+    provider: MapProvider | None = None,
+    backend_factory: BackendFactory | None = None,
     **trial_kwargs,
 ) -> dict[str, list[TrialResult]]:
     """
@@ -25,18 +28,37 @@ def compare_policies(
     that policies are compared on identical request sequences. Trial i
     is seeded with base_seed + i when base_seed is provided.
 
+    ``provider`` and ``backend_factory`` are named here rather than left to
+    ``trial_kwargs`` so that comparing policies on a CARLA town, or in a
+    world other than the default mock, is a documented and tested capability
+    instead of an accident of keyword forwarding.
+
+    **The same backend factory is used for every trial**, which is right when
+    the world is deterministic and wrong when it has luck of its own to
+    resample: a CARLA campaign wants each trial's backend seeded differently,
+    and builds its own factory per trial rather than sharing one here.
+
     :param policies: List of (label, factory) pairs. Each factory
         accepts a TransitGraph and returns a DispatchPolicy.
-    :param graph: Pre-built street graph shared across all runs.
+    :param graph: Pre-built street graph shared across all runs. Ignored
+        when ``provider`` is given; required otherwise.
     :param n_trials: Number of independent trials per policy.
     :param base_seed: Base random seed. Trial i uses base_seed + i.
         None = non-deterministic.
     :param progress: When True, display one tqdm progress bar per policy
         (filling as trials complete). Set False to run silently.
+    :param provider: Map source shared across all runs, used instead of
+        ``graph``. Defaults to None, which wraps ``graph`` in a
+        PlanarMapProvider.
+    :param backend_factory: World builder shared across all runs, called
+        once per trial with the TransitGraph and the bus's starting stop.
+        Defaults to None, which gives every trial the usual mock backend.
     :param trial_kwargs: Additional keyword arguments forwarded to
         run_trial (e.g. max_requests, capacity, dt).
     :return: Dict mapping each policy label to a list of TrialResult,
         one per trial.
+    :raises ValueError: If neither ``graph`` nor ``provider`` is given.
+        Raised by run_trial on the first trial.
     """
     trial_kwargs.setdefault("silent", True)
 
@@ -68,6 +90,8 @@ def compare_policies(
                 policy_factory=factory,
                 graph=graph,
                 seed=seed,
+                provider=provider,
+                backend_factory=backend_factory,
                 **trial_kwargs,
             )
             results[label].append(result)

@@ -435,11 +435,19 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
      means re-running everything already collected.
 
    **Broken down 2026-08-10, after reading the harness rather than the
-   roadmap.** The gap is narrower than it looks in one place and wider in
-   another: *one* CARLA trial is a solved problem, because Phase 2 left
-   `run_trial` fully backend-agnostic. *N* CARLA trials has no code path at
-   all. Every CARLA figure recorded above was produced by hand from
-   `carla-demo.ipynb`.
+   roadmap.** *One* CARLA trial is a solved problem, because Phase 2 left
+   `run_trial` fully backend-agnostic. Every CARLA figure recorded above was
+   nevertheless produced by hand from `carla-demo.ipynb`, and nothing
+   persists a result anywhere.
+
+   *Corrected 2026-08-10, same day, on measurement:* this entry first said
+   "*N* CARLA trials has no code path at all", and that was wrong.
+   `compare_policies` forwards `**trial_kwargs` to `run_trial`, so
+   `provider` and `backend_factory` already reached it — a multi-trial CARLA
+   comparison ran on the first attempt. The real defect was narrower: the
+   capability was untyped, undocumented, untested and needed `graph=None`
+   passed positionally. Worth recording, because the lesson is the recurring
+   one — read the harness, do not reason about it.
 
    1. [X] **Backend stats into `TrialResult`** — done 2026-08-10.
       `backend_stats` *and* `policy_stats`, both filled by `run_trial` from
@@ -461,16 +469,28 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
       467 tests green. The notebooks that use `INSTANCES` were left alone —
       they hold committed results, and rewriting them belongs with the
       parallelisation work that actually needs it.
-   2. [ ] **Generalise the multi-trial layer** — the core of 3.6.
-      `compare_policies` and `summarize_comparison` are typed
-      `graph: PlanarStreetGraph` and forward `graph=graph`, so the layer
-      above `run_trial` never followed Phase 2 and is still planar-only.
-      Give both `provider` and `backend_factory`, mirroring `run_trial`'s
-      own API. **One wrinkle:** each CARLA trial needs a *fresh* backend
-      with its own seed, and `BackendFactory` is `(graph, start_stop_id)` —
-      no seed. Resolve it by having the campaign layer rebuild the factory
-      per trial rather than widening the signature, so `run_trial` is not
-      touched.
+   2. [X] **Generalise the multi-trial layer** — done 2026-08-10.
+      `compare_policies` and `summarize_comparison` now name `provider` and
+      `backend_factory`, and `graph` became optional rather than a required
+      positional. Smaller than billed, for the reason in the correction
+      above: both arguments already arrived via `**trial_kwargs`, so this
+      turned an accident into a contract — typed, documented, and pinned by
+      the new `tests/test_comparison.py`, which had no equivalent before.
+
+      Those tests also pin two invariants that had been resting on nothing:
+      every policy sees the same seed at a given trial index, and
+      `results[label][i]` is the trial seeded `base_seed + i`. Both are what
+      every paired statistic in the project assumes, and both would fail
+      silently — misaligned pairs produce wrong p-values, not errors. They
+      are exactly what a future parallel runner would break first.
+
+      **The seed wrinkle was left where it belongs.** A single
+      `backend_factory` serves every trial, which is right for a
+      deterministic world and wrong for CARLA, where traffic and spawn
+      placement should vary across the sample. `BackendFactory` was *not*
+      widened to carry a seed: doing so would have touched `run_trial` for
+      the benefit of one caller. Step 4 builds a factory per trial in its
+      own loop instead.
    3. [ ] **Per-trial world reload in `CarlaBackend`** — `start()` loads the
       town only when the *wrong* one is loaded, so trial 2 onward silently
       inherits whatever the previous trial left behind. Add

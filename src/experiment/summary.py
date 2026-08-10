@@ -8,7 +8,8 @@ from scipy import stats
 
 from src.algorithm.DispatchPolicy import DispatchPolicy
 from src.experiment.comparison import compare_policies
-from src.experiment.trial import TrialResult
+from src.experiment.trial import BackendFactory, TrialResult
+from src.map.MapProvider import MapProvider
 from src.map.TransitGraph import TransitGraph
 from src.map.graph import PlanarStreetGraph
 
@@ -60,11 +61,13 @@ class ComparisonSummary:
 
 def summarize_comparison(
     policies: list[tuple[str, Callable[[TransitGraph], DispatchPolicy]]],
-    graph: PlanarStreetGraph,
+    graph: PlanarStreetGraph | None = None,
     n_trials: int = 1,
     base_seed: int | None = None,
     confidence: float = 0.95,
     progress: bool = True,
+    provider: MapProvider | None = None,
+    backend_factory: BackendFactory | None = None,
     **trial_kwargs,
 ) -> ComparisonSummary:
     """
@@ -79,13 +82,19 @@ def summarize_comparison(
 
     :param policies: List of (label, factory) pairs. Each factory accepts
         a TransitGraph and returns a DispatchPolicy.
-    :param graph: Pre-built street graph shared across all runs.
+    :param graph: Pre-built street graph shared across all runs. Ignored
+        when ``provider`` is given; required otherwise.
     :param n_trials: Number of independent trials per policy.
     :param base_seed: Base random seed forwarded to compare_policies.
         Trial i uses base_seed + i. None = non-deterministic.
     :param confidence: Confidence level for the margin of error, in (0, 1).
     :param progress: When True, display one tqdm progress bar per policy
         while the trials run. Set False to run silently.
+    :param provider: Map source shared across all runs, used instead of
+        ``graph``. Defaults to None, which wraps ``graph`` in a
+        PlanarMapProvider.
+    :param backend_factory: World builder shared across all runs. Defaults
+        to None, which gives every trial the usual mock backend.
     :param trial_kwargs: Additional keyword arguments forwarded to
         run_trial (e.g. max_requests, capacity, dt).
     :return: A ComparisonSummary bundling the Markdown table and the raw
@@ -98,6 +107,8 @@ def summarize_comparison(
         n_trials=n_trials,
         base_seed=base_seed,
         progress=progress,
+        provider=provider,
+        backend_factory=backend_factory,
         **trial_kwargs,
     )
     markdown = _format_summary_table(results, confidence)

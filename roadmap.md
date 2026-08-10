@@ -3,8 +3,10 @@
 Living document. Phases 1 and 2 are complete. Phase 3 is built and
 driving: steps 3.1–3.5 are done, and a full `run_trial` serves every request
 on Town01 with a real vehicle and visible passengers. What remains is 3.6
-(campaign harness) and 3.7 (validation).
-Last updated 2026-08-05.
+(campaign harness) and 3.7 (validation), both now broken down into steps
+below and both scoped by the two decisions taken on 2026-08-10 — a full
+persistent campaign rather than a demo, validated on three policies at once.
+Last updated 2026-08-10.
 
 ---
 
@@ -423,15 +425,91 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    Several passengers at one stop are fanned out along the shoulder, since
    two walkers at the same point simply fail to spawn.
 6. [ ] **Campaign harness**
+
+   Original two bullets, both still the point:
+
    - Trial lifecycle with a world reload between trials — actor leakage is the
      classic cross-trial contaminant.
    - Per-trial result persistence so a stopped or crashed campaign resumes.
      The *seam* belongs here even if the storage is crude; retrofitting it
      means re-running everything already collected.
+
+   **Broken down 2026-08-10, after reading the harness rather than the
+   roadmap.** The gap is narrower than it looks in one place and wider in
+   another: *one* CARLA trial is a solved problem, because Phase 2 left
+   `run_trial` fully backend-agnostic. *N* CARLA trials has no code path at
+   all. Every CARLA figure recorded above was produced by hand from
+   `carla-demo.ipynb`.
+
+   1. [ ] **Backend stats into `TrialResult`** — small, and unblocks the
+      rest. A `backend_stats: dict[str, float]` field filled by `run_trial`
+      from an optional duck-typed `stats()` on the backend: no
+      `SimulationBackend` ABC change, so mocks are unaffected. Today
+      `CarlaBackend.stats()` — repaths, distance, walker spawn failures,
+      red-light ticks — is unreachable from a trial result, and
+      `carla-demo.ipynb` gets at it through a `holder = {}` closure hack.
+      Per-trial health is exactly what tells you whether trial 17 of a
+      campaign was sound. Same shape as the `policy_stats` idea sketched for
+      the parallel-trials work.
+   2. [ ] **Generalise the multi-trial layer** — the core of 3.6.
+      `compare_policies` and `summarize_comparison` are typed
+      `graph: PlanarStreetGraph` and forward `graph=graph`, so the layer
+      above `run_trial` never followed Phase 2 and is still planar-only.
+      Give both `provider` and `backend_factory`, mirroring `run_trial`'s
+      own API. **One wrinkle:** each CARLA trial needs a *fresh* backend
+      with its own seed, and `BackendFactory` is `(graph, start_stop_id)` —
+      no seed. Resolve it by having the campaign layer rebuild the factory
+      per trial rather than widening the signature, so `run_trial` is not
+      touched.
+   3. [ ] **Per-trial world reload in `CarlaBackend`** — `start()` loads the
+      town only when the *wrong* one is loaded, so trial 2 onward silently
+      inherits whatever the previous trial left behind. Add
+      `reload_world: bool = False`, defaulting to today's demo behaviour;
+      the campaign sets it True.
+   4. [ ] **`src/experiment/campaign.py`** — the persistent runner. A new
+      module in an existing package, and **no new dependency**: `json` is
+      stdlib. Append-only JSON lines, one record per completed trial —
+      policy label, seed, KPIs, wait and ride times, backend stats, wall
+      time. On start it reads the file and skips `(policy, trial)` pairs
+      already recorded, which *is* the resume. On finish it rehydrates
+      records into `dict[str, list[TrialResult]]` and hands them to the
+      existing `_format_summary_table`, which already takes exactly that
+      and needs no changes. `tick_history` and `transit_graph` are not
+      persisted.
+   5. [ ] **One tour at `npc_vehicles=20` before trusting any of it** — see
+      the open question below. Better learned now than at trial 22 of an
+      overnight run.
+
+   Steps 1–4 are ordinary Python needing no CARLA server, and are covered by
+   the existing test suite. Only step 5 needs the server up.
 7. [ ] **Validation**
    - Reproduce a mock finding qualitatively (design review §5.1 already
      frames CARLA as demonstration, with the synthetic map as the fast test
      bed).
+
+   **Decided 2026-08-10: reproduce both findings from one campaign.** Three
+   policies — `FixedRoutePolicy`, `WindowInsertionPolicy`,
+   `ReorderingInsertionPolicy` — on Town01, headless, sharing one seed
+   sequence, which costs roughly 1.5× a two-policy run and answers two
+   questions:
+
+   - **The design review's §3.2.2 success criteria**, whose only comparator
+     is a fixed-route bus: fulfilment ≥ 80%, and the *sum* of percentage
+     differences across the other three KPIs positive. Large effect, so it
+     needs the fewest trials, and it is what the project is assessed on.
+   - **Whether L1 survives real driving.** The execution-noise study makes a
+     falsifiable prediction: L1's mean-ride lead over L0 should *widen*
+     under CARLA, not narrow (−92 s clean → −136 s at σ=0.3, with L0
+     degrading ~5× faster). Smaller effect, so it is the one that sets the
+     trial count.
+
+   **Size the campaign from measurement, not from a guess.** CARLA's
+   trial-to-trial variance has never been measured, so whether 30 trials
+   clears the §3.2 bar (CI half-width < 5% of mean) is unknown and cannot be
+   known in advance. Run ~8 trials of one policy first, read the observed
+   spread, and size the real campaign from it. The wall clock is not the
+   risk: headless at 0 NPCs Town01 measured ~36× real time, putting a
+   3-policy × 30-trial campaign within an overnight run.
 
 ---
 
@@ -456,6 +534,8 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 | Who owns the traffic manager? | `CarlaBackend` creates its own on its own port, after the town is loaded, and shuts down only what it created | A traffic manager caches its map at creation and never re-caches it, so an inherited one steers the bus into the scenery — but it is also hosted by whichever *process* created it, so sharing or tearing down someone else's is worse. See the two traps below |
 | Unwedging (lifting a jammed bus onto the lane) | **Removed.** Re-planning on no progress stays | It teleported, and a leg saved that way is a KPI that did not happen. Once red lights, the stale traffic manager and the `set_path` loop were fixed it never fired at all: 15/15 legs over 10 km with zero lifts, and deleting it left the driven distances identical |
 | Which vehicle drives? | `vehicle.volkswagen.t2_2021`, a shuttle | Completes every leg on Town01 without needing recovery, and is indistinguishable from the Sprinter. The full-size `fusorosa` is **not supported**: it only got round on the lift-onto-the-lane recovery that has since been removed, needing 20 lifts over three tours where the shuttle needed none |
+| Demo or campaign on CARLA? | **A full persistent campaign** — resolving §3.2 against §5.1 in favour of §3.2 | Decided 2026-08-10. The multi-trial layer gets `provider` and `backend_factory`, a world reload per trial, and per-trial persistence with resume. Costs about a week more than hardening the demo notebook, and buys the ability to make a statistical claim about CARLA rather than an anecdotal one |
+| What does 3.7 validate? | **Both findings, from one campaign** | Decided 2026-08-10. Three policies sharing a seed sequence costs ~1.5× a two-policy run and answers both the §3.2.2 success criteria (against fixed-route) and whether L1's ride-time advantage survives real driving |
 
 ## Open questions
 
@@ -468,11 +548,18 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
   "the bus never stalls" and "recovery never fires", which is what justified
   deleting the recovery. Traffic can box a vehicle in where an empty town
   cannot. Worth one tour at 20 NPCs before trusting those two claims in a
-  campaign.
-- **Which reading of CARLA's role governs?** §3.2 says runs "will be done on
-  the CARLA server as well" at the same statistical bar (CI half-width < 5% of
-  mean); §5.1 says CARLA is for demonstrations. These conflict, and the
-  difference is a demo versus a campaign harness.
+  campaign — **now scheduled as step 3.6.5**, ahead of the campaign itself
+  rather than after it.
+- ~~**Which reading of CARLA's role governs?**~~ **Resolved 2026-08-10 in
+  favour of §3.2:** a campaign harness, not a demo. §3.2 says runs "will be
+  done on the CARLA server as well" at the same statistical bar (CI
+  half-width < 5% of mean); §5.1 says CARLA is for demonstrations. The
+  conflict was real and the difference was a demo versus a campaign harness.
+  Deciding for the campaign is affordable — the sizing in 3.1 puts an
+  overnight run well inside the budget — and it is the only reading under
+  which Phase 3.7 can make a claim rather than tell an anecdote. §5.1 still
+  governs *where the experiments live*: the synthetic map remains the fast
+  test bed, and CARLA is not where sweeps get run.
 - **Mid-route replanning.** Functional requirement 3 is *"the bus receives
   requests in real time (while potentially already in motion)"*. Today
   `on_arrival` is the only replan trigger. In the mock, legs are short and
@@ -481,6 +568,12 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
   a departure waits an entire leg before the bus can even consider it. This
   is the clearest remaining gap between the implementation and a stated
   functional requirement.
+
+  **Noted 2026-08-10: this is not a Phase 3 checkbox, so ticking 3.6 and 3.7
+  does not close it.** Neither does the other unverified requirement, §1.1.2
+  plan-call latency (see the known trap on it — cheap to instrument, and
+  never measured). Both are decisions about scope against the 31 August
+  deadline, not oversights.
 
 ---
 

@@ -496,16 +496,76 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
       inherits whatever the previous trial left behind. Add
       `reload_world: bool = False`, defaulting to today's demo behaviour;
       the campaign sets it True.
-   4. [ ] **`src/experiment/campaign.py`** — the persistent runner. A new
-      module in an existing package, and **no new dependency**: `json` is
-      stdlib. Append-only JSON lines, one record per completed trial —
-      policy label, seed, KPIs, wait and ride times, backend stats, wall
-      time. On start it reads the file and skips `(policy, trial)` pairs
-      already recorded, which *is* the resume. On finish it rehydrates
-      records into `dict[str, list[TrialResult]]` and hands them to the
-      existing `_format_summary_table`, which already takes exactly that
-      and needs no changes. `tick_history` and `transit_graph` are not
-      persisted.
+   4. [ ] **A results store, not a campaign file** — **redesigned
+      2026-08-10 in consultation, superseding what this step used to say.**
+
+      It used to describe a per-campaign append-only JSON lines file whose
+      only job was resume. What is wanted is a **store**: runs identified
+      globally rather than per campaign, queried across campaigns, and
+      turned into grouped graphs and statistics. Three decisions settled it:
+
+      - **The seed is part of a run's identity.** A run is one
+        `(parameters, seed)` pair. Repeated seeds against the same
+        parameters are how statistical power is bought; re-running a seed
+        already recorded is *skipped or overwritten, never appended*, so no
+        single run can be double-counted and bias the sample.
+      - **Policies declare their own parameters.** The alternative — the
+        caller declaring them at the call site — was rejected as leaving
+        room for errors that would be a nightmare to pinpoint later.
+      - **`results/` is tracked in git**: it is the evidence behind the
+        design review's success criteria, and hours of CARLA to regenerate.
+
+      Split into four commits:
+
+      1. [ ] **`params()` on every policy.** Abstract on `DispatchPolicy`,
+         **deliberately unlike `stats()`**, which is optional because most
+         components have nothing to report. Every policy has parameters, and
+         one that silently reported none would collide in the store with a
+         differently-configured sibling — so the failure belongs at
+         construction, not three weeks into a sweep. Eleven classes in
+         `src/algorithm` implement it, subclasses extending rather than
+         replacing; the notebook subclasses of `WindowInsertionPolicy`
+         inherit it and are untouched.
+
+         Two safety nets, because "it will be forgotten" is the entire
+         reason it is abstract: the identity also records
+         `type(policy).__name__`, so a subclass that forgets to extend
+         cannot collide with its parent; and a **meta-test** compares each
+         policy's `inspect.signature(__init__)` against its `params()` keys
+         and fails on any undeclared knob.
+      2. [ ] **`src/experiment/store.py`.** One **write-once** JSON file per
+         run, flat directory, filename the identity hash
+         (`sha256` of the canonical identity, 16 hex chars). Numerics are
+         normalised before hashing, or `dt=1` and `dt=1.0` become two
+         half-populated copies of one sweep.
+
+         Write-once files rather than one shared file or SQLite, for a
+         reason specific to this machine: **Syncthing syncs this directory
+         live and has overwritten files mid-edit before.** A conflict on a
+         write-once file costs one trial and leaves a visible
+         `.sync-conflict-*`; a corrupted database page costs the store. It
+         is also the only shape that stays correct if trials are ever
+         parallelised, and a SQLite index *derived* from these files remains
+         a pure addition later.
+
+         `save_run(..., overwrite=False) -> bool` returns whether it wrote,
+         and that boolean is the whole skip-or-overwrite rule.
+         `to_results()` rehydrates into `dict[str, list[TrialResult]]`, so
+         every existing plot helper and the summary table work on stored
+         runs unchanged.
+      3. [ ] **`src/experiment/campaign.py`.** Takes `seeds` rather than
+         `n_trials` + `base_seed`, so extending a campaign to seeds 30–59
+         later skips 0–29 by identity and runs only what is missing. Owns
+         its loop rather than calling `compare_policies`, so it can
+         check-then-skip per trial and hand each trial its own backend via
+         `backend_factory_for(seed)` — which is how a CARLA campaign varies
+         traffic across the sample instead of holding it fixed.
+      4. [ ] **Reading the results.** `summarize_results` (the existing
+         `_format_summary_table` with a public face) and
+         `plot_parameter_sweep`, a parameter on x against a KPI on y, one
+         line per policy, confidence intervals computed across the repeated
+         seeds. **No new dependency** — `json` and `hashlib` are stdlib, and
+         pandas and seaborn are already in `environment.yml`.
    5. [ ] **One tour at `npc_vehicles=20` before trusting any of it** — see
       the open question below. Better learned now than at trial 22 of an
       overnight run.

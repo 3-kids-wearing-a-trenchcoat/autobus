@@ -893,11 +893,39 @@ notebooks predating the store and were never filed as reproducible runs.
   is the clearest remaining gap between the implementation and a stated
   functional requirement.
 
-  **Noted 2026-08-10: this is not a Phase 3 checkbox, so ticking 3.6 and 3.7
-  does not close it.** Neither does the other unverified requirement, §1.1.2
-  plan-call latency (see the known trap on it — cheap to instrument, and
-  never measured). Both are decisions about scope against the 31 August
-  deadline, not oversights.
+  **Decided 2026-08-10: not worth building. "Maybe if we have time."**
+  Functional requirement 3 is not a rigid requirement, and the analysis
+  below is why the cost/benefit does not justify it.
+
+  **The cheap version buys nothing — this corrects an earlier claim here.**
+  It looked as though the bus could re-plan mid-leg without owning a mid-leg
+  position, by projecting to the end of the current leg:
+  `_build_projected_state` already starts its clock at `_arrived_at` and adds
+  whole legs, so it yields "at the current destination at time T" regardless
+  of how much of the leg has elapsed. True, and useless. With the current leg
+  locked, `_route[0]` is unchanged, so the commanded destination does not
+  move; the recomputed tail cannot be executed before arrival; and
+  `on_arrival` re-plans there anyway with strictly fresher information.
+  Boarding and alighting read the pool, not the route. **No KPI can move.**
+
+  **Only diverting the leg in progress could change an outcome**, and its
+  upside is bounded by roughly one leg (median ~160 s on Town01) for the
+  subset of requests that arrive mid-leg *and* justify a diversion. Against
+  that: it needs the mid-leg position ownership Phase 2 deferred — and CARLA
+  cannot report time-remaining on a leg; it means re-issuing `set_route`
+  mid-leg, poking the exact machinery that took days to stabilise; and it
+  invalidates every mock baseline, so the L1 ablation, window sweeps and
+  noise study would all need re-running.
+
+  **If it is ever reopened, measure the ceiling first**, cheaply: run
+  `CarlaMapProvider("Town01")` against the **mock** backend — real geometry
+  and long legs at seconds per trial — and compare current behaviour with a
+  deliberately unphysical oracle that re-plans freely every tick with no
+  committed leg. That overestimates the benefit, so a small ceiling closes
+  the question with evidence rather than argument.
+
+  §1.1.2 plan-call latency remains genuinely unverified and is cheap to
+  instrument; unlike this, it is worth doing.
 
 ---
 

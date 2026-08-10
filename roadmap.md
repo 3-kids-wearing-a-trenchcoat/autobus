@@ -653,9 +653,53 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    distinguish the two, which is what step 1 was for. The runs still filed
    separately, on `policy_class`.
 
-   5. [ ] **One tour at `npc_vehicles=20` before trusting any of it** — see
-      the open question below. Better learned now than at trial 22 of an
-      overnight run.
+   5. [X] **Traffic tested at `npc_vehicles=20`** — measured 2026-08-10.
+      Same trials run twice, 2 seeds, 6 requests, Town01, headless. Runs are
+      in `results/runs`; `npc_vehicles` is part of the world identity, so
+      the two arms file separately and stay comparable.
+
+      | | fulfilled | arrivals | km | repaths | speed |
+      |---|---|---|---|---|---|
+      | 0 NPCs, seed 0 | 6/6 | 11 | 5.69 | 0 | 38× |
+      | 0 NPCs, seed 1 | 6/6 | 11 | 5.10 | 0 | 38× |
+      | 20 NPCs, seed 0 | 6/6 | 11 | 5.69 | 0 | 13× |
+      | 20 NPCs, seed 1 | 6/6 | 11 | 5.10 | **3** | 13× |
+
+      **The service is untouched.** Every trial served 6/6 with the same 11
+      arrivals, and the distances match to the metre — the route is the
+      route, and traffic costs waiting rather than driving. Simulated time
+      moved by +3 s and +45 s. No unroutable legs, no spawn failures.
+      Throughput 38× → 13×, which lands on the 13.4× the Phase 3.1 spike
+      predicted for 20 NPCs.
+
+      **"Recovery never fires" does not survive traffic, and the reason is
+      structural.** `_is_held_at_red` exempts a bus only when
+      `is_at_traffic_light()` is true, and CARLA sets that only inside the
+      light's *trigger volume* — that is, at the head of the queue. A bus
+      queued **behind** other vehicles at a red is outside it, so the
+      exemption misses, and after 10 s of no movement the stall detector
+      re-plans.
+
+      Measured rather than reasoned, because three earlier stall diagnoses
+      here were wrong: instrumenting `_repath` on one 20-NPC trial, **4 of 5
+      firings had the bus not at a light with a stationary vehicle directly
+      ahead within 20 m**. One is unexplained.
+
+      This is the *same class* of false positive the red-light fix
+      addressed, and the empty town hid it structurally: with no traffic the
+      bus is always at the head of the queue, so the case could not arise.
+      The lesson generalises past this bug — a fix validated only in
+      conditions where the failure cannot occur has not been validated.
+
+      **Nothing is corrupted by it.** `_repath` re-plans from where the bus
+      is and moves nothing, so no KPI is affected; the teleport that could
+      have corrupted one is long gone, and this vindicates rather than
+      questions its removal. What degrades is the **diagnostic**: a non-zero
+      repath count no longer means "this run needed help", which is exactly
+      what `carla-demo.ipynb` tells the reader to investigate. Under traffic
+      it may only mean "queued". Left as is pending a decision; the cheap
+      fix is to exempt a bus stopped behind a stationary vehicle in its own
+      lane.
 
    Steps 1–4 are ordinary Python needing no CARLA server, and are covered by
    the existing test suite. Only step 5 needs the server up.
@@ -720,13 +764,21 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
   more realistic and is what the execution-noise study models synthetically.
   20 vehicles costs 4× throughput (50×→13×) and still leaves headroom.
 
-  This is now the largest untested assumption in Phase 3. **Every CARLA
-  result recorded here was measured with `npc_vehicles=0`** — including
-  "the bus never stalls" and "recovery never fires", which is what justified
-  deleting the recovery. Traffic can box a vehicle in where an empty town
-  cannot. Worth one tour at 20 NPCs before trusting those two claims in a
-  campaign — **now scheduled as step 3.6.5**, ahead of the campaign itself
-  rather than after it.
+  ~~This is the largest untested assumption in Phase 3.~~ **Tested
+  2026-08-10; see step 3.6.5 for the numbers.** Traffic costs 3× wall clock
+  (38× → 13×) and changes the service not at all: 6/6 served in every arm,
+  same arrivals, same distances to the metre. The bus is never boxed in — no
+  unroutable legs and no spawn failures.
+
+  One claim did fail. "Recovery never fires" holds only in an empty town,
+  because the red-light exemption misses a bus queued *behind* traffic. It
+  costs a misleading diagnostic rather than a wrong KPI.
+
+  **What remains open is the trade, not the risk.** Realism costs 3× on a
+  campaign already sized in hours. Empty is faster and more reproducible;
+  20 vehicles is closer to what the execution-noise study modelled
+  synthetically, and that study's prediction about L1 is half of what
+  Phase 3.7 sets out to test.
 - ~~**Which reading of CARLA's role governs?**~~ **Resolved 2026-08-10 in
   favour of §3.2:** a campaign harness, not a demo. §3.2 says runs "will be
   done on the CARLA server as well" at the same statistical bar (CI

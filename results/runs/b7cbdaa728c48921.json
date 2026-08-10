@@ -1,0 +1,98 @@
+{
+ "backend_stats": {
+  "arrivals": 11,
+  "distance_m": 5691.018986276476,
+  "legs_started": 11,
+  "red_light_ticks": 13371,
+  "repaths": 0,
+  "stops_without_shoulder": 0,
+  "ticks": 30649,
+  "unroutable_legs": 0,
+  "walker_spawn_failures": 0,
+  "walkers_removed": 6,
+  "walkers_spawned": 6
+ },
+ "identity": {
+  "policy": "Reordering",
+  "policy_class": "ReorderingInsertionPolicy",
+  "policy_params": {
+   "max_relocations": null,
+   "max_wait_s": 900.0,
+   "n_passes": 1,
+   "retry_rejected": false,
+   "safety_factor": 1.0,
+   "travel_model": null,
+   "wait_factor": 5.0
+  },
+  "seed": 0,
+  "trial": {
+   "capacity": 20,
+   "commitment": 0,
+   "demand_interval_s": 120.0,
+   "dt": 1.0,
+   "dwell_s": 10.0,
+   "max_requests": 6,
+   "max_time": 8000.0,
+   "max_wait_s": 2400.0,
+   "n_stops": 20,
+   "noise_seed": null,
+   "travel_noise": 0.0
+  },
+  "world": {
+   "backend": "CarlaBackend",
+   "blueprint": "vehicle.volkswagen.t2_2021",
+   "fixed_delta_s": 0.05,
+   "no_rendering": true,
+   "npc_vehicles": 0,
+   "town": "Town01"
+  }
+ },
+ "kpi": {
+  "cancelled_count": 0,
+  "fulfilled_count": 6,
+  "fulfillment_rate": 1.0,
+  "max_wait_time": 773.45,
+  "mean_journey_time": 629.5166666666668,
+  "mean_ride_time": 184.79999999999998,
+  "mean_wait_time": 444.7166666666667,
+  "p90_wait_time": 709.875,
+  "served_fraction": 1.0,
+  "throughput": 0.23498694516971277
+ },
+ "policy_stats": {
+  "cost_improvement": 19.830133933154457,
+  "dropoff_accepted": 0.0,
+  "dropoff_attempts": 10.0,
+  "pair_accepted": 1.0,
+  "pair_attempts": 19.0,
+  "repair_calls": 11.0,
+  "repair_passes": 11.0,
+  "retry_admitted": 0.0,
+  "retry_attempts": 0.0
+ },
+ "provenance": {
+  "finished_at": "2026-08-10T09:51:24+00:00",
+  "git_commit": "7f57bc8",
+  "python_hash_seed": "0",
+  "wall_seconds": 40.23
+ },
+ "ride_times": [
+  191.15000000000003,
+  99.39999999999998,
+  46.19999999999993,
+  253.30000000000007,
+  360.25,
+  158.5
+ ],
+ "run_id": "b7cbdaa728c48921",
+ "schema": 1,
+ "tick_count": 1532,
+ "wait_times": [
+  172.45,
+  211.20000000000005,
+  312.45000000000005,
+  646.3,
+  552.45,
+  773.45
+ ]
+}

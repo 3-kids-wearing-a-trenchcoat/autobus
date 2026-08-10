@@ -59,6 +59,17 @@ _HASH_PRECISION = 9
 # more than their author.
 _FILE_MODE = 0o644
 
+# Decimal places kept for the per-passenger arrays. These dominate a record:
+# 200 requests is 400 floats, and a full-precision float serialises to about
+# 18 characters, so they are roughly three quarters of the file. Two decimals
+# is a hundredth of a second on quantities the simulation reports in whole
+# seconds, and cuts the store by about 3x — which is the difference between a
+# multi-map sweep being a few tens of MB and being a few hundred.
+#
+# Applied when writing, never when hashing: the identity does not contain
+# these, so rounding cannot merge two runs.
+_SAMPLE_PRECISION = 2
+
 SCHEMA = 1
 
 
@@ -190,8 +201,10 @@ class RunRecord:
             "identity": self.identity.as_dict(),
             "kpi": asdict(self.kpi),
             "tick_count": self.tick_count,
-            "wait_times": list(self.wait_times),
-            "ride_times": list(self.ride_times),
+            "wait_times": [round(v, _SAMPLE_PRECISION) for v in
+                           self.wait_times],
+            "ride_times": [round(v, _SAMPLE_PRECISION) for v in
+                           self.ride_times],
             "backend_stats": dict(self.backend_stats),
             "policy_stats": dict(self.policy_stats),
             "provenance": dict(self.provenance),

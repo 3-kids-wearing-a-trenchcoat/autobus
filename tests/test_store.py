@@ -286,3 +286,36 @@ def test_a_written_run_is_readable_by_more_than_its_author(
 def test_no_temporary_files_are_left_behind(tmp_path) -> None:
     save_run(tmp_path, _record(_identity()))
     assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_per_passenger_samples_are_rounded_on_disk(tmp_path) -> None:
+    """
+    The arrays dominate a record and the precision is not real.
+
+    200 requests is 400 floats, each serialising to ~18 characters, so full
+    precision makes them roughly three quarters of the file. Two decimals is
+    a hundredth of a second on quantities the simulation reports in whole
+    seconds.
+    """
+    record = RunRecord(
+        identity=_identity(),
+        kpi=_kpi(),
+        tick_count=1,
+        wait_times=[10.123456789, 20.987654321],
+        ride_times=[5.555555555],
+    )
+    save_run(tmp_path, record)
+    (reloaded,) = load_runs(tmp_path)
+
+    assert reloaded.wait_times == [10.12, 20.99]
+    assert reloaded.ride_times == [5.56]
+
+
+def test_rounding_cannot_merge_two_runs(tmp_path) -> None:
+    """
+    The identity does not contain the samples, so rounding them can never
+    make two different runs collide.
+    """
+    first = _identity(seed=0)
+    second = _identity(seed=1)
+    assert first.run_id != second.run_id

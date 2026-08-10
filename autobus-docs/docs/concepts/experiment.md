@@ -380,6 +380,19 @@ copies that never dedupe against each other. Booleans are left alone, since
 only what the caller passed would file them as two runs. Arguments that cannot
 move a KPI — `silent`, `record_animation`, `keep_tick_history` — are excluded.
 
+**Per-passenger samples are rounded to two decimals on disk.** `wait_times`
+and `ride_times` dominate a record — 200 requests is 400 floats, each
+serialising to about 18 characters — and full precision made them roughly
+three quarters of the file. Measured, rounding halves a record: 8.6 kB to
+4.1 kB, which is the difference between a multi-map sweep costing tens of MB
+and hundreds. A hundredth of a second is far finer than anything the
+simulation reports.
+
+Applied when writing and never when hashing, so it cannot merge two runs.
+Records written before this change keep their original precision; they are
+still valid, and rewriting them would *add* to the repository rather than
+shrink it.
+
 ### Reading it back
 
 ```python

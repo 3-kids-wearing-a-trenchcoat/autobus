@@ -769,6 +769,19 @@ between-trial variance, since the demand seed is shared, so the seeds needed
 for a *difference* should be far below 182. Unmeasured: the pilot ran one
 policy, so there is nothing to pair yet.
 
+**Resolved 2026-08-10, after the numbers above:** the 5% bar applies to the
+**synthetic map**, not to CARLA. That is where many runs are produced and
+where tuning happens, and a trial there costs seconds. CARLA's job is to
+demonstrate transfer. So 3.7 does not need 182 seeds — it needs enough to
+show the mock's findings hold in a real town — and the statistical claim
+moves to a synthetic campaign that can afford whatever n the bar demands.
+See the decisions table and Open questions.
+
+**This adds a deliverable that was previously assumed rather than done:** a
+synthetic-map campaign, through the store, large enough to meet the bar on
+every KPI, as the formal §3.2 evidence. The existing mock figures come from
+notebooks predating the store and were never filed as reproducible runs.
+
 7. [ ] **Validation**
    - Reproduce a mock finding qualitatively (design review §5.1 already
      frames CARLA as demonstration, with the synthetic map as the fast test
@@ -821,7 +834,8 @@ policy, so there is nothing to pair yet.
 | Who owns the traffic manager? | `CarlaBackend` creates its own on its own port, after the town is loaded, and shuts down only what it created | A traffic manager caches its map at creation and never re-caches it, so an inherited one steers the bus into the scenery — but it is also hosted by whichever *process* created it, so sharing or tearing down someone else's is worse. See the two traps below |
 | Unwedging (lifting a jammed bus onto the lane) | **Removed.** Re-planning on no progress stays | It teleported, and a leg saved that way is a KPI that did not happen. Once red lights, the stale traffic manager and the `set_path` loop were fixed it never fired at all: 15/15 legs over 10 km with zero lifts, and deleting it left the driven distances identical |
 | Which vehicle drives? | `vehicle.volkswagen.t2_2021`, a shuttle | Completes every leg on Town01 without needing recovery, and is indistinguishable from the Sprinter. The full-size `fusorosa` is **not supported**: it only got round on the lift-onto-the-lane recovery that has since been removed, needing 20 lifts over three tours where the shuttle needed none |
-| Demo or campaign on CARLA? | **A full persistent campaign** — resolving §3.2 against §5.1 in favour of §3.2 | Decided 2026-08-10. The multi-trial layer gets `provider` and `backend_factory`, a world reload per trial, and per-trial persistence with resume. Costs about a week more than hardening the demo notebook, and buys the ability to make a statistical claim about CARLA rather than an anecdotal one |
+| Demo or campaign on CARLA? | **A persistent campaign, but not a statistical one** | Decided 2026-08-10, then **refined the same day once the pilot priced it**. The harness, store and world reload were worth building and are used. What changed is what CARLA is *for* — see the next row |
+| Where does the **CI half-width < 5%** bar apply? | **To the synthetic map, not to CARLA** | Decided 2026-08-10. The synthetic map is where many runs are produced, parameters and strategies compared, and tuning done — so that is where a statistical claim belongs and where it is cheap. CARLA stands in for a real deployment: its job is to show the result **carries over**, not to re-establish it. This is §5.1 governing the *statistics* while §3.2 governs the *synthetic* campaigns, and it is what makes the numbers affordable — the pilot priced the bar at 182 seeds and 27.5 hours on CARLA against seconds per trial on the mock |
 | What does 3.7 validate? | **Both findings, from one campaign** | Decided 2026-08-10. Three policies sharing a seed sequence costs ~1.5× a two-policy run and answers both the §3.2.2 success criteria (against fixed-route) and whether L1's ride-time advantage survives real driving |
 
 ## Open questions
@@ -845,16 +859,31 @@ policy, so there is nothing to pair yet.
   20 vehicles is closer to what the execution-noise study modelled
   synthetically, and that study's prediction about L1 is half of what
   Phase 3.7 sets out to test.
-- ~~**Which reading of CARLA's role governs?**~~ **Resolved 2026-08-10 in
-  favour of §3.2:** a campaign harness, not a demo. §3.2 says runs "will be
-  done on the CARLA server as well" at the same statistical bar (CI
-  half-width < 5% of mean); §5.1 says CARLA is for demonstrations. The
-  conflict was real and the difference was a demo versus a campaign harness.
-  Deciding for the campaign is affordable — the sizing in 3.1 puts an
-  overnight run well inside the budget — and it is the only reading under
-  which Phase 3.7 can make a claim rather than tell an anecdote. §5.1 still
-  governs *where the experiments live*: the synthetic map remains the fast
-  test bed, and CARLA is not where sweeps get run.
+- ~~**Which reading of CARLA's role governs?**~~ **Resolved 2026-08-10, in
+  two steps, and the second corrected the first.**
+
+  §3.2 says runs "will be done on the CARLA server as well" at the same
+  statistical bar (CI half-width < 5% of mean); §5.1 says CARLA is for
+  demonstrations. The first reading took §3.2 literally and built toward a
+  statistical CARLA campaign. **The sizing pilot then priced that at 182
+  seeds — 27.5 hours for three policies**, which is not a thing this project
+  can afford three weeks from the deadline.
+
+  **The resolution is a split, not a compromise.** The bar belongs to the
+  **synthetic map**: that is where many runs are produced, where parameters
+  and routing strategies are compared, where tuning happens, and where a
+  trial costs seconds rather than three minutes. CARLA stands in for a real
+  deployment, and its job is to show that what the synthetic map established
+  **carries over** — a demonstration of transfer, not an independent
+  re-establishment of the result.
+
+  So Phase 3.7 needs only enough seeds to show the mock's findings hold in a
+  real town, and the statistical claim moves to a synthetic campaign that is
+  cheap to run at whatever n the bar demands.
+
+  **The harness was not wasted by this.** The store, the campaign runner and
+  the per-trial world reload are what make either kind of run reproducible
+  and resumable, and the synthetic campaign will use all three.
 - **Mid-route replanning.** Functional requirement 3 is *"the bus receives
   requests in real time (while potentially already in motion)"*. Today
   `on_arrival` is the only replan trigger. In the mock, legs are short and

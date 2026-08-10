@@ -256,6 +256,26 @@ So the backend searches upward from port 8000 for one nobody is using, and
 which case managing it becomes the caller's job. See
 [Running the Project](../running.md#running-the-carla-server).
 
+#### A clean world per trial
+
+`start()` loads the town when the wrong one is up. `reload_world=True` makes
+it load unconditionally, so the trial begins in a world nothing has touched.
+
+`close()` already destroys the actors this backend created, so an ordinary
+sequence of trials does not leak. The case it does not cover is a trial that
+failed part-way and left something behind, and leaked actors are the classic
+cross-trial contaminant: a stray vehicle parked across a junction changes the
+next trial's driving and nothing reports it. A campaign therefore reloads
+between trials and pays the map load — seconds — for a world with a known
+state.
+
+It defaults to `False` because a single interactive run wants the opposite:
+re-running a notebook cell would otherwise pay the load every time for
+nothing.
+
+The load happens **before** the traffic manager is created, which is the same
+ordering constraint as above and for the same reason.
+
 ## Termination is not the backend's business
 
 `is_done()` lives on the runner and reads the `RequestPool`: no `PENDING` and

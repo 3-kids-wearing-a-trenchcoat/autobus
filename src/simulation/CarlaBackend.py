@@ -117,6 +117,12 @@ class CarlaBackend(SimulationBackend):
         only to share an existing traffic manager, in which case it is yours
         to manage — and see ``_acquire_traffic_manager`` for why sharing one
         is usually a mistake.
+    :param reload_world: Load the town on ``start`` even when it is already
+        loaded, so the trial begins in a world nothing has touched. Costs a
+        map load — seconds — and is what a campaign wants: leaked actors are
+        the classic cross-trial contaminant, and a trial that failed part-way
+        may have left some behind. Defaults to False, which loads only on a
+        town mismatch and suits a single interactive run.
     :raises ValueError: If ``fixed_delta_s`` exceeds the safe limit.
     """
 
@@ -138,6 +144,7 @@ class CarlaBackend(SimulationBackend):
         repath_after_s: float = 10.0,
         follow_camera: bool = False,
         tm_port: int | None = None,
+        reload_world: bool = False,
     ) -> None:
         if fixed_delta_s > MAX_SAFE_DELTA_S:
             raise ValueError(
@@ -166,6 +173,7 @@ class CarlaBackend(SimulationBackend):
         self._repath_after_s = repath_after_s
         self._follow_camera = follow_camera
         self._tm_port = tm_port
+        self._reload_world = reload_world
         self._owns_traffic_manager = False
 
         self._client: carla.Client | None = None
@@ -219,9 +227,7 @@ class CarlaBackend(SimulationBackend):
         self._client = carla.Client(self._host, self._port)
         self._client.set_timeout(self._timeout_s)
 
-        world = self._client.get_world()
-        if self._town not in world.get_map().name:
-            world = self._client.load_world(self._town)
+        world = self._acquire_world()
         self._world = world
         self._original_settings = world.get_settings()
 
@@ -237,6 +243,30 @@ class CarlaBackend(SimulationBackend):
 
         self._spawn_npcs()
         self._spawn_bus()
+
+    def _acquire_world(self) -> "carla.World":
+        """
+        Get the world to drive in, loading the town when that is needed.
+
+        Loading is unconditional under ``reload_world`` and otherwise happens
+        only when the wrong town is up. A campaign wants the unconditional
+        form: `close` destroys the actors this backend created, but a trial
+        that failed part-way may have left others, and a world carried from
+        one trial into the next is the classic cross-trial contaminant.
+
+        A single interactive run wants the opposite, which is why this is not
+        simply always on — a map load costs seconds, and re-running a cell
+        would pay it every time for nothing.
+
+        Called before the traffic manager is created, and that ordering is
+        load-bearing: a traffic manager caches the road network when it is
+        built and never re-caches it. See ``_acquire_traffic_manager``.
+        :return: The world, freshly loaded or the one already up.
+        """
+        world = self._client.get_world()
+        if self._reload_world or self._town not in world.get_map().name:
+            return self._client.load_world(self._town)
+        return world
 
     def _acquire_traffic_manager(self) -> "carla.TrafficManager":
         """

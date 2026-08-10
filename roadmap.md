@@ -491,11 +491,24 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
       widened to carry a seed: doing so would have touched `run_trial` for
       the benefit of one caller. Step 4 builds a factory per trial in its
       own loop instead.
-   3. [ ] **Per-trial world reload in `CarlaBackend`** — `start()` loads the
-      town only when the *wrong* one is loaded, so trial 2 onward silently
-      inherits whatever the previous trial left behind. Add
-      `reload_world: bool = False`, defaulting to today's demo behaviour;
-      the campaign sets it True.
+   3. [X] **Per-trial world reload in `CarlaBackend`** — done 2026-08-10.
+      `reload_world: bool = False` loads the town unconditionally on
+      `start()`; the default keeps the demo's behaviour, since re-running a
+      cell should not pay a map load for nothing.
+
+      The world acquisition moved out of `start()` into `_acquire_world()`,
+      which is what made it testable: it is the only part of `start()` that
+      can be exercised without a server, and the existing `_FakeClient`
+      pattern extends to a fake recording `load_world` calls. Both branches
+      and the default are pinned.
+
+      Worth being precise about what this fixes, since `close()` already
+      destroys the actors the backend created and an ordinary sequence of
+      trials does not leak. The case it does not cover is a trial that
+      **failed part-way** and left something behind — a stray vehicle across
+      a junction changes the next trial's driving and nothing reports it.
+      The load still happens before the traffic manager is created, so the
+      map-caching trap stays respected.
    4. [ ] **A results store, not a campaign file** — **redesigned
       2026-08-10 in consultation, superseding what this step used to say.**
 

@@ -267,3 +267,86 @@ def test_walkers_stand_clear_of_the_driving_lane() -> None:
     not move aside.
     """
     assert WALKER_LATERAL_OFFSET_M > 0.0
+
+
+# ---------------------------------------------------------------------------
+# _acquire_world — a clean world per trial
+# ---------------------------------------------------------------------------
+
+class _FakeMap:
+    """Answers for its name, which is all the town check reads."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+class _FakeWorld:
+    """A world that knows which map it is."""
+
+    def __init__(self, name: str) -> None:
+        self._map = _FakeMap(name)
+
+    def get_map(self) -> _FakeMap:
+        """Return this world's map."""
+        return self._map
+
+
+class _WorldClient:
+    """Records town loads instead of talking to a server."""
+
+    def __init__(self, current_town: str) -> None:
+        self.current = _FakeWorld(f"Carla/Maps/{current_town}")
+        self.loaded: list[str] = []
+
+    def get_world(self) -> _FakeWorld:
+        """Return whatever world is already up."""
+        return self.current
+
+    def load_world(self, town: str) -> _FakeWorld:
+        """Record the load and hand back a new world."""
+        self.loaded.append(town)
+        return _FakeWorld(f"Carla/Maps/{town}")
+
+
+def _with_client(current_town: str, **overrides: object) -> tuple:
+    """Build a backend wired to a fake client, and return both."""
+    backend = _backend(**overrides)
+    client = _WorldClient(current_town)
+    backend._client = client
+    return backend, client
+
+
+def test_the_right_town_is_not_reloaded_by_default() -> None:
+    """
+    A map load costs seconds, and an interactive re-run must not pay it.
+    """
+    backend, client = _with_client("Town01", town="Town01")
+    world = backend._acquire_world()
+    assert client.loaded == []
+    assert world is client.current
+
+
+def test_the_wrong_town_is_always_loaded() -> None:
+    """A fresh server starts on Town10HD, so this is the common case."""
+    backend, client = _with_client("Town10HD_Opt", town="Town01")
+    backend._acquire_world()
+    assert client.loaded == ["Town01"]
+
+
+def test_reload_world_loads_a_town_already_up() -> None:
+    """
+    The campaign's reason for existing: trial 2 must not inherit trial 1's
+    world. close() destroys the actors this backend made, but a trial that
+    failed part-way may have left others behind.
+    """
+    backend, client = _with_client(
+        "Town01", town="Town01", reload_world=True
+    )
+    world = backend._acquire_world()
+    assert client.loaded == ["Town01"]
+    assert world is not client.current
+
+
+def test_reload_world_defaults_off() -> None:
+    """The demo notebook's behaviour must be what an unset flag gives."""
+    assert _backend()._reload_world is False

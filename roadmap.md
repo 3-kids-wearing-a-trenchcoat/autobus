@@ -1363,6 +1363,53 @@ trade worth making three weeks from the deadline.
    residual would shrink on a second pass rather than vanish, so chasing it
    to zero is not worth the CARLA time; one policy-driven pass is enough.
 
+### Four towns surveyed, authored and calibrated — 2026-08-11
+
+**The survey caught a town choice that would have failed at runtime.**
+The server has **Town01–05 and Town10HD only**; Town06 and Town07 ship in
+the separately-downloaded Additional Maps, and Town07 was in the placeholder
+list. Excluded: **Town10HD** (no speed-limit landmarks at all, so extraction
+finds nothing, and already measured as barely able to move a bus) and
+**Town04** (37.9 km of road makes every trial expensive).
+
+| town | road km | junc % | shoulder % | signs | efficiency | bias | red % | σ within | σ between | m/s |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Town01 | 9.6 | 13.5 | 80.9 | 22 | **0.455** | 2.20 | 32.1 | 0.034 | 0.280 | 4.21 |
+| Town02 | 4.0 | 18.0 | 75.5 | 21 | **0.410** | 2.44 | 32.4 | 0.172 | 0.519 | 3.36 |
+| Town03 | 17.9 | 31.0 | 29.4 | 6 | **0.497** | 2.01 | 37.0 | 0.258 | 0.582 | 4.27 |
+| Town05 | 25.7 | 23.9 | 33.0 | 18 | **0.328** | 3.05 | 55.2 | 0.382 | 0.799 | 3.18 |
+
+**`traffic_efficiency` decisively does not transfer**: 0.33 to 0.50, a 1.5×
+range. Quoting Town01's 0.455 anywhere else would be badly wrong, and the
+mechanism is visible in the table — **red-light share drives it.** Town05
+spends **55%** of every run stationary at a light and has the lowest
+efficiency; Town03 spends 37% and has the highest.
+
+**Execution noise is *not* the 0.034 Town01 showed** — it rises an order of
+magnitude with map complexity, to **0.382 on Town05**. That matters: the
+`safety_factor` decision was settled on Town01's 0.034 being far below
+anything the sweep priced. On Town05 the noise sits squarely inside the
+0.1–0.3 range where the sweep says 1.25 cuts breaches meaningfully.
+**The "leave safety_factor at 1.0" conclusion is Town01-specific and should
+be revisited per town.**
+
+**Two limitations, both material:**
+
+1. **Town03 and Town05's calibrations are survivorship-biased.** Of 30 legs
+   attempted, **22 arrived on Town03 and only 18 on Town05** — the rest hit
+   the 900 s `LEG_TIMEOUT_S` cap. The legs that timed out are the long ones,
+   so the measured bias is fitted to the short legs that finished. At 3.18
+   m/s a 900 s cap is 2.9 km, and Town05 has 25.7 km of road. **Raise the
+   cap and re-calibrate before trusting those two figures**, and treat "is a
+   15-stop scenario even sensible on a 25 km map" as an open question.
+2. **σ within-leg is estimated from 2 tours here**, against Town01's 3, so
+   it has one degree of freedom and is itself noisy. The 10× spread is far
+   too large to be estimator noise, but the individual values are soft.
+
+**Speed-limit extraction transfers well**: 206/211 roads agree on Town03,
+156/161 on Town05, 49/53 on Town02 — the same pattern as Town01, where
+disagreements are the multi-sign roads the harmonic mean sits between.
+
 ### ⚠ An earlier campaign ran on the wrong map — corrected 2026-08-11
 
 **The campaign above used `stop_density` at its default 0.15, giving a 6-stop

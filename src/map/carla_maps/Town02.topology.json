@@ -1,9 +1,9 @@
 {
  "schema_version": 1,
  "map": "Town02",
- "note": "dumped for the cross-town campaign; 9 signed roads",
+ "note": "traffic_efficiency 0.4098 over 30 legs at 20 NPCs",
  "default_speed_limit_kph": 30.0,
- "traffic_efficiency": 1.0,
+ "traffic_efficiency": 0.4098,
  "speed_limit_overrides": {
   "18": 30.0,
   "13": 31.98,

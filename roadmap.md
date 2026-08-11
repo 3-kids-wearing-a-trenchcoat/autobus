@@ -8,14 +8,21 @@ percentage differences +145% Window / +138% Reordering), and the statistical
 evidence lives in the synthetic campaign as the 2026-08-10 split decided.
 What remains of 3.7 is writing it up.
 
-The evidence base is now four campaigns, all in `results/runs` and all
-reproducible: the synthetic campaign (2,280 runs), the map-seed sweep
-(7,000), the load sweep (4,950) and the safety-factor sweep (3,840).
+The evidence base is now five campaigns: the synthetic campaign (2,280
+runs), the map-seed sweep (7,000), the load sweep (4,950), the safety-factor
+sweep (3,840) and the calibrated CARLA campaign (30). `results/runs` is
+gitignored as of 2026-08-11 — the volume is impractical to track, and the
+notebooks are the record.
 
 **§1.1.2 plan-call latency was the last unverified stated requirement, and
 it is now measured and satisfied** (2026-08-11, on two machines). The one
 requirement still not met is mid-route replanning (functional requirement
 3), which was deliberately dropped — see Open questions.
+
+**§3.2.2 now passes on a calibrated CARLA Town01** (2026-08-11, 30 runs):
+Window +81.5% and Reordering +76.4% on the sum, at 89.7% and 87.3%
+fulfilment against fixed route's 63.3%. What remains for CARLA is more
+towns, and the artifacts each one needs.
 Last updated 2026-08-11.
 
 ---
@@ -1229,6 +1236,90 @@ rather than grows while L1's repair loop still pays for it.
 throughput grounds and would come back only if latency bound. It does not
 bind. Trigger to revisit, now measured: a dwell under ~2.5 s, or loads past
 ~30 pending.
+
+### The CARLA campaign, post-calibration — run 2026-08-11
+
+30 runs, Town01, 3 policies × 10 seeds, 20 NPCs, 2.29 h at 4.6 min/trial.
+`notebooks/carla-campaign-towns.ipynb`. The first campaign against the
+calibrated travel model; everything before it was purged.
+
+**§3.2.2 passes, and this time the gate did real work.**
+
+| policy | served | wait | ride | throughput | sum vs fixed | §3.2.2 |
+|---|---|---|---|---|---|---|
+| Fixed route | 63.3% | 347 s | 561 s | 0.30 | — | — |
+| Window W750 | **89.7%** | 355 s | 390 s | 0.46 | **+81.5%** | **PASS** |
+| Reordering W750 | **87.3%** | 372 s | 367 s | 0.45 | **+76.4%** | **PASS** |
+
+The win is carried by **ride time (+31/+35%) and throughput (+53/+49%)**,
+not by wait. **Fixed route's wait is survivorship and must not be quoted as
+competitive**: 347 s is the mean over the 19 requests it managed, ignoring
+the 11 it abandoned. Trap 1, live on CARLA.
+
+**The scenario had to be calibrated first, and the obvious lever was the
+wrong one.** The first two trials came back 100% served for *fixed route*,
+which makes the gate inert. Sizing was then done on the **mock backend
+against Town01's real calibrated geometry** — 480 trials in under a minute,
+no server — and found that raising the arrival rate does almost nothing
+(everything still served ~100% at one request per 60 s). **Patience is the
+lever**: at 1800 s nobody gives up and the bus always catches up.
+
+| patience | 1800 | 1200 | 900 | 750 | 600 |
+|---|---|---|---|---|---|
+| fixed route served | 100.0% | 100.0% | 77.9% | 62.5% | 52.5% |
+
+Settled on 30 requests every 90 s at `window == patience == 750`, the
+operating point rather than a tuned corner.
+
+**The mock predicted CARLA to within 1 pp**, which is the most reusable
+finding here:
+
+| | mock | CARLA |
+|---|---|---|
+| fixed route | 62.3% | **63.3%** |
+| contenders | 93.3% | 87.3–89.7% |
+| trial cost | 4.3 min | **4.6 min** |
+
+**Never size a CARLA scenario by guessing again.** `CarlaMapProvider` against
+`MockBackend` gives real geometry and calibrated leg times at seconds per
+trial, and it predicted both the baseline and the runtime.
+
+**L1's advantage does not replicate here, and the honest word is
+under-powered rather than refuted.** Paired over 10 seeds:
+
+| metric | L0 | L1 | L1 − L0 | p |
+|---|---|---|---|---|
+| served | 89.7% | 87.3% | −2.3 pp | 0.37 |
+| wait | 355 s | 372 s | +16.6 s | 0.20 |
+| ride | 390 s | 367 s | **−23.0 s** | 0.60 |
+
+Ride moves in the predicted direction at a third of the expected magnitude
+(−70 s on both the synthetic map and the mock). The paired sd is ~132 s, so
+detecting −70 s at p<0.05 needs about **20 seeds**; the synthetic result
+needed 60 on one map. **This is the expected outcome given the 2026-08-10
+split** — the statistical case lives on the synthetic map and CARLA
+demonstrates transfer. Write it as *"the point estimate is in the predicted
+direction; CARLA at n=10 cannot resolve it"*, never as "confirmed on CARLA".
+
+**The calibration is ~10% optimistic for policy-chosen routes.**
+
+| | campaign | calibration tour |
+|---|---|---|
+| effective speed | 3.77 m/s | 4.21 m/s (**−10.3%**) |
+| red-light share | 30.9% | 32.1% |
+
+Red lights transfer; overall speed does not quite. The calibration tour
+visits all 15 stops in a fixed order while the policy picks a different and
+slower mix of legs — and 3.77 m/s is exactly what the pre-calibration store
+showed for 20-NPC runs, so this is a stable property of policy-driven routes
+rather than noise. **`traffic_efficiency` should be re-derived from a
+policy-driven run before it is applied to new towns**, or documented as
+carrying this bias.
+
+**The integration itself is flawless**: **0 repaths and 0 unroutable legs**
+over 30 trials and ~1,233 driven legs, with 4.4% of time queued behind
+traffic. Breach was 0.00% everywhere, by construction at
+`window == patience` — the window is kept for every rider served at all.
 
 ### ⚠ An earlier campaign ran on the wrong map — corrected 2026-08-11
 

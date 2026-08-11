@@ -41,7 +41,12 @@ from src.experiment.store import (
     save_run,
     to_results,
 )
-from src.experiment.trial import BackendFactory, TrialResult, run_trial
+from src.experiment.trial import (
+    BackendFactory,
+    TrialResult,
+    require_pinned_hash_seed,
+    run_trial,
+)
 from src.map.MapProvider import MapProvider
 from src.map.PlanarMapProvider import PlanarMapProvider
 from src.map.TransitGraph import TransitGraph
@@ -357,7 +362,11 @@ def run_campaign(
         than the call that launched it.
     :return: A CampaignResult holding every run belonging to this campaign.
     :raises ValueError: If neither ``graph`` nor ``provider`` is given.
+    :raises RuntimeError: If PYTHONHASHSEED is not pinned. Every campaign run
+        is seeded, so run_trial would refuse each of them in turn; checking
+        here fails the campaign before it builds a graph or forks a worker.
     """
+    require_pinned_hash_seed("run_campaign")
     transit_graph = _transit_graph(graph, provider)
     trial_params = _effective_trial_params(trial_kwargs)
     seeds = list(seeds)

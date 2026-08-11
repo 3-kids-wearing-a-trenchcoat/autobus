@@ -11,7 +11,12 @@ import pytest
 from src.algorithm.ReorderingInsertionPolicy import ReorderingInsertionPolicy
 from src.algorithm.TravelModel import GraphTravelModel, NoisyTravelModel
 from src.algorithm.WindowInsertionPolicy import WindowInsertionPolicy
-from src.experiment.trial import _execution_model, run_trial
+from src.experiment.trial import (
+    ALLOW_UNPINNED_HASH,
+    _execution_model,
+    require_pinned_hash_seed,
+    run_trial,
+)
 from src.map.CarlaMapProvider import CarlaMapProvider
 from src.map.PlanarMapProvider import PlanarMapProvider
 from src.map.TransitGraph import TransitGraph
@@ -448,3 +453,66 @@ def test_the_run_still_ends_once_demand_is_spent(
     # Demand stops at t=200; the last request needs a couple of short legs.
     assert result.kpi.fulfilled_count == 3
     assert result.tick_count < 400
+
+
+# --- The reproducibility guard ---
+#
+# A seed alone does not make a trial reproducible: several policies break ties
+# with min() over a set[str], so their output follows PYTHONHASHSEED. These
+# check that bypassing the launchers fails loudly instead of quietly producing
+# a run nobody can reproduce.
+
+
+@pytest.mark.parametrize("unpinned", [None, "random"])
+def test_seeded_trial_refuses_an_unpinned_hash_seed(
+    street_graph: PlanarStreetGraph,
+    monkeypatch: pytest.MonkeyPatch,
+    unpinned: str | None,
+) -> None:
+    """
+    A seeded run is refused when PYTHONHASHSEED is unset or randomised.
+    """
+    monkeypatch.delenv(ALLOW_UNPINNED_HASH, raising=False)
+    if unpinned is None:
+        monkeypatch.delenv("PYTHONHASHSEED", raising=False)
+    else:
+        monkeypatch.setenv("PYTHONHASHSEED", unpinned)
+
+    with pytest.raises(RuntimeError, match="PYTHONHASHSEED"):
+        run_trial(_policy, street_graph, **{**_TRIAL, "seed": 1})
+
+
+def test_unseeded_trial_does_not_need_a_pinned_hash_seed(
+    street_graph: PlanarStreetGraph, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    An unseeded run claims nothing about reproducibility, so it is allowed.
+    """
+    monkeypatch.delenv("PYTHONHASHSEED", raising=False)
+    monkeypatch.delenv(ALLOW_UNPINNED_HASH, raising=False)
+
+    unseeded = {**_TRIAL, "seed": None}
+    assert run_trial(_policy, street_graph, **unseeded) is not None
+
+
+def test_opt_out_allows_an_unpinned_seeded_trial(
+    street_graph: PlanarStreetGraph, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    The escape hatch exists for throwaway exploration and must work.
+    """
+    monkeypatch.delenv("PYTHONHASHSEED", raising=False)
+    monkeypatch.setenv(ALLOW_UNPINNED_HASH, "1")
+
+    seeded = {**_TRIAL, "seed": 1}
+    assert run_trial(_policy, street_graph, **seeded) is not None
+
+
+def test_any_pinned_value_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    The launchers let you choose your own value; only absence is the problem.
+    """
+    monkeypatch.delenv(ALLOW_UNPINNED_HASH, raising=False)
+    monkeypatch.setenv("PYTHONHASHSEED", "12345")
+
+    require_pinned_hash_seed("anything")

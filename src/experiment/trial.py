@@ -2,6 +2,7 @@
 
 import contextlib
 import io
+import os
 import random
 from dataclasses import dataclass, field
 from typing import Callable
@@ -115,6 +116,47 @@ def _execution_model(
     )
 
 
+# Escape hatch for throwaway exploration. Deliberately an environment
+# variable and not an argument: a run that opts out should be awkward to
+# produce and impossible to file in the store by accident.
+ALLOW_UNPINNED_HASH = "AUTOBUS_ALLOW_UNPINNED_HASH"
+
+
+def require_pinned_hash_seed(what: str) -> None:
+    """
+    Refuse work that claims to be seeded but cannot reproduce.
+
+    A seed alone does not make a trial reproducible across processes. Several
+    policies break ties with ``min()`` over a ``set[str]``, and set iteration
+    order follows Python's per-process string hash randomisation — so
+    FixedRoutePolicy builds a literally different cycle from the same graph
+    in a different process, which means the baseline comparator drives a
+    different route depending on how it was launched. ``run.sh`` and
+    ``jupyter-run.sh`` pin ``PYTHONHASHSEED`` for exactly this reason; this
+    turns bypassing them from a silent wrong answer into an error.
+    :param what: The call being refused, quoted at the head of the message.
+    :return: None.
+    :raises RuntimeError: If PYTHONHASHSEED is unset or "random", unless
+        ALLOW_UNPINNED_HASH is set in the environment.
+    """
+    pinned = os.environ.get("PYTHONHASHSEED")
+    # Any pinned value reproduces; the launchers let you choose your own, and
+    # the store records which one a run used in its provenance.
+    if pinned is not None and pinned != "random":
+        return
+    if os.environ.get(ALLOW_UNPINNED_HASH):
+        return
+    raise RuntimeError(
+        f"{what} cannot reproduce: PYTHONHASHSEED is "
+        f"{'unset' if pinned is None else 'random'}. Several policies break "
+        "ties with min() over a set[str], so a seed alone does not fix "
+        "their output across processes.\n"
+        "Launch via ./run.sh or ./jupyter-run.sh, or export "
+        "PYTHONHASHSEED=0 yourself.\n"
+        f"Set {ALLOW_UNPINNED_HASH}=1 to run anyway."
+    )
+
+
 def run_trial(
     policy_factory: Callable[[TransitGraph], DispatchPolicy],
     graph: PlanarStreetGraph | None = None,
@@ -206,8 +248,13 @@ def run_trial(
     :return: TrialResult with KPIs, tick history, and timing
         distributions.
     :raises ValueError: If neither ``graph`` nor ``provider`` is given.
+    :raises RuntimeError: If a seed is given while PYTHONHASHSEED is not
+        pinned, so the run could not be reproduced in another process.
     """
     if seed is not None:
+        # Only a seeded trial claims reproducibility, so only a seeded trial
+        # is held to it.
+        require_pinned_hash_seed(f"run_trial(seed={seed})")
         random.seed(seed)
 
     if provider is None:

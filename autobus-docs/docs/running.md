@@ -59,15 +59,27 @@ Two of them are the entry points:
     Two identical runs in separate processes therefore disagree, and results
     recorded in one session cannot be reproduced exactly in another.
 
-Pin it whenever the numbers matter:
+Both launchers pin it for you, so the ordinary way of launching is also the
+reproducible one:
 
 ```bash
-PYTHONHASHSEED=0 ./run.sh my_experiment.py
-PYTHONHASHSEED=0 bash jupyter-run.sh
+./run.sh my_experiment.py
+bash jupyter-run.sh
 ```
 
-Neither `run.sh` nor `jupyter-run.sh` sets it for you, so a notebook launched
-the ordinary way inherits a random hash seed.
+Each exports `PYTHONHASHSEED=0` unless you exported a value of your own first,
+in which case yours wins — any pinned value reproduces, and the store records
+which one was used.
+
+!!! warning "A seeded run refuses to start without it"
+    `run_trial(seed=...)` and `run_campaign` raise `RuntimeError` when
+    `PYTHONHASHSEED` is unset or `random`, so bypassing the launchers fails
+    loudly instead of quietly producing a run nobody can reproduce. An
+    unseeded `run_trial` claims nothing about reproducibility and is left
+    alone.
+
+    For throwaway exploration, `AUTOBUS_ALLOW_UNPINNED_HASH=1` runs anyway.
+    Do not file the results of a run that used it.
 
 Every run filed in the [results store](concepts/experiment.md#the-results-store)
 records the value it ran under in `provenance.python_hash_seed`, so a record

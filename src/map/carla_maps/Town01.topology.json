@@ -1,9 +1,19 @@
 {
  "schema_version": 1,
  "map": "Town01",
- "note": "dumped from Carla/Maps/Town01 at 2.0 m resolution; speed limit 30.0 km/h is an assumption, CARLA 0.9.16 publishes none",
+ "note": "traffic_efficiency 0.4550 calibrated over 45 legs at 20 NPCs; previous factor 1.0",
  "default_speed_limit_kph": 30.0,
- "speed_limit_overrides": {},
+ "traffic_efficiency": 0.455,
+ "speed_limit_overrides": {
+  "22": 30.0,
+  "15": 40.61,
+  "0": 30.0,
+  "5": 39.92,
+  "6": 68.99,
+  "8": 53.99,
+  "1": 51.46,
+  "17": 30.0
+ },
  "segments": [
   {
    "road_id": 355,

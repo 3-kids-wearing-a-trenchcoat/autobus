@@ -22,12 +22,33 @@ from src.map.carla_stops import CARLA_MAPS_DIR, town_name
 
 SCHEMA_VERSION = 1
 
-# CARLA's own fallback where no speed-limit sign exists, which in 0.9.16 is
-# everywhere: the towns carry no type-274 landmarks and no
-# traffic.speed_limit.* actors. Leaving it unset would fall through to
-# DEFAULT_SPEED_LIMIT (130 km/h) and make every urban estimate four times
-# too fast.
+# Applied to roads carrying no speed-limit sign of their own. Leaving it
+# unset would fall through to DEFAULT_SPEED_LIMIT (130 km/h) and make every
+# urban estimate four times too fast.
+#
+# CORRECTION, 2026-08-11: this constant previously carried a comment claiming
+# CARLA 0.9.16's towns publish no speed limits at all -- "no type-274
+# landmarks and no traffic.speed_limit.* actors". **That is false.** Measured
+# on a live Town01: 21 traffic.speed_limit.* actors, 22 type-274 landmarks,
+# and 3,041 samples of vehicle.get_speed_limit() taken while driving, all
+# three agreeing on values of 30, 60 and 90 km/h. The flat 30 was mispricing
+# every fast road on the map by a factor of two to three. Limits are now read
+# from the landmarks by ``carla_dump.read_speed_limits`` and this is only the
+# fallback it was always meant to be.
 DEFAULT_TOWN_SPEED_LIMIT_KPH = 30.0
+
+# How much of the posted limit a bus actually averages door to door, once
+# traffic lights, junctions and acceleration are paid for. 1.0 means the
+# posted limit is achieved exactly, which is true of the mock backend by
+# construction and of nothing that drives.
+#
+# Measured on Town01 (``carla_calibrate``, 45 legs x 2 traffic levels): the
+# graph's free-flow estimate is 1.75x optimistic, of which 1.57x is time
+# spent stationary at red lights -- 31-41% of every run. This is a *bias*,
+# not noise; execution noise measured 0.003 (no traffic) to 0.028 (20 NPCs),
+# which is an order of magnitude below anything safety_factor was swept over.
+# A margin cannot repair a biased estimator, so the correction belongs here.
+DEFAULT_TRAFFIC_EFFICIENCY = 1.0
 
 
 @dataclass(frozen=True)
@@ -161,18 +182,27 @@ class CarlaTopology:
     :param default_speed_limit_kph: Speed limit applied to every road with no
         override. See ``DEFAULT_TOWN_SPEED_LIMIT_KPH`` for why this is
         configured rather than read from CARLA.
-    :param speed_limit_overrides: Per-road speed limits, keyed by road ID.
+    :param speed_limit_overrides: Per-road speed limits, keyed by road ID,
+        read from the town's own speed-limit landmarks.
     :param segments: Every lane segment in the town.
+    :param traffic_efficiency: Fraction of the posted limit a bus averages
+        door to door. See ``DEFAULT_TRAFFIC_EFFICIENCY``.
     """
 
     map: str
     default_speed_limit_kph: float
     speed_limit_overrides: dict[int, float]
     segments: tuple[RoadSegment, ...]
+    traffic_efficiency: float = DEFAULT_TRAFFIC_EFFICIENCY
 
     def speed_limit_for(self, road_id: int) -> float:
         """
-        Return the speed limit that applies to a road.
+        Return the posted speed limit that applies to a road.
+
+        This is what the signs say, not what a bus achieves — see
+        ``traffic_efficiency`` for the difference, and note that the two are
+        deliberately kept apart: a limit is a fact about the map, an
+        efficiency is a fact about driving through it.
         :param road_id: OpenDRIVE road ID.
         :return: Speed limit in km/h.
         """
@@ -251,6 +281,10 @@ def load_topology(
             document.get("speed_limit_overrides", {}).items()
         },
         segments=tuple(segments),
+        # Absent in schema 1 dumps, which predate the measurement.
+        traffic_efficiency=float(
+            document.get("traffic_efficiency", DEFAULT_TRAFFIC_EFFICIENCY)
+        ),
     )
 
 
@@ -273,6 +307,7 @@ def save_topology(
         "map": town_name(topology.map),
         "note": note,
         "default_speed_limit_kph": topology.default_speed_limit_kph,
+        "traffic_efficiency": topology.traffic_efficiency,
         "speed_limit_overrides": {
             str(road_id): limit
             for road_id, limit in topology.speed_limit_overrides.items()

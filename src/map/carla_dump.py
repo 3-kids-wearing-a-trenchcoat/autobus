@@ -19,6 +19,7 @@ import sys
 import carla
 
 from src.map.carla_topology import (
+    DEFAULT_TRAFFIC_EFFICIENCY,
     DEFAULT_TOWN_SPEED_LIMIT_KPH,
     CarlaTopology,
     RoadSegment,
@@ -141,17 +142,111 @@ def to_points(waypoints: list["carla.Waypoint"]) -> tuple[SegmentPoint, ...]:
     return tuple(points)
 
 
+# OpenDRIVE's signal type code for a speed-limit sign.
+SPEED_LIMIT_LANDMARK_TYPE = "274"
+
+
+def read_speed_limits(
+    carla_map: "carla.Map",
+    segments: list[RoadSegment],
+    default_kph: float = DEFAULT_TOWN_SPEED_LIMIT_KPH,
+) -> dict[int, float]:
+    """
+    Read per-road speed limits from a town's own speed-limit landmarks.
+
+    Until 2026-08-11 this was not attempted, on the recorded belief that
+    0.9.16's towns publish nothing. They do: Town01 carries 22 type-274
+    landmarks at 30, 60 and 90, and a driving vehicle reads all three back
+    from ``get_speed_limit()``. Treating every road as 30 mispriced the
+    town's arterials — **37.7% of its length** — by two to three times.
+
+    **A road can carry several signs**, each governing from where it stands
+    until the next: Town01's road 8 runs 30, 90, 60, 30 along its length.
+    Taking the minimum would throw the fast sections away and taking the
+    maximum would promise pickups the bus cannot reach, so the sections are
+    combined by a **length-weighted harmonic mean** — the average that
+    preserves total travel time, since time is the sum of ``length / speed``
+    and not of the speeds. A road is a single graph edge, so one number per
+    road is all the model can carry.
+
+    Two known approximations, both quantified by ``carla_calibrate``, which
+    checks this table against what a driving vehicle reports:
+
+    * **Orientation is ignored.** A sign is valid for one direction of
+      travel, but both directions of a road share a road ID here.
+    * **Sign units are ignored.** CARLA declares these landmarks in ``mph``
+      while ``get_speed_limit()`` returns the bare number and the traffic
+      manager drives it as km/h. The number is what governs the driving, so
+      the number is what is recorded.
+    :param carla_map: The map to read landmarks from.
+    :param segments: Already-dumped segments, used to learn how far each
+        road extends so the sections can be weighted.
+    :param default_kph: Limit in force before a road's first sign.
+    :return: Speed limit in km/h per OpenDRIVE road ID; roads with no sign
+        are absent, and fall back to the town default.
+    """
+    # How far each road runs, in its own s coordinate.
+    extent: dict[int, float] = {}
+    for segment in segments:
+        reach = max(abs(point.s) for point in segment.points)
+        extent[segment.road_id] = max(extent.get(segment.road_id, 0.0), reach)
+
+    signs: dict[int, set[tuple[float, float]]] = {}
+    for landmark in carla_map.get_all_landmarks_of_type(
+            SPEED_LIMIT_LANDMARK_TYPE):
+        value = float(landmark.value)
+        if value <= 0.0:
+            # A sign with no usable value tells us nothing, and zero would
+            # divide by zero below.
+            continue
+        # Both directions post their own sign at the same place; identical
+        # (position, value) pairs are one constraint, not two.
+        signs.setdefault(int(landmark.road_id), set()).add(
+            (round(float(landmark.s), 1), value)
+        )
+
+    limits: dict[int, float] = {}
+    for road_id, marks in signs.items():
+        road_length = extent.get(road_id)
+        if not road_length:
+            # A sign on a road that was not dumped governs nothing we route
+            # over, so it cannot be weighted and is dropped.
+            continue
+        ordered = sorted(marks)
+        # Walk the road, charging each section the limit in force along it.
+        boundaries = [s for s, _ in ordered] + [road_length]
+        in_force = default_kph
+        travelled = travel_time = 0.0
+        for index, upper in enumerate(boundaries):
+            section = min(upper, road_length) - travelled
+            if section > 0.0:
+                travelled += section
+                travel_time += section / in_force
+            if index < len(ordered):
+                in_force = ordered[index][1]
+        if travelled > 0.0 and travel_time > 0.0:
+            limits[road_id] = round(travelled / travel_time, 2)
+    return limits
+
+
 def dump_world(
     world: "carla.World",
     default_speed_limit_kph: float = DEFAULT_TOWN_SPEED_LIMIT_KPH,
     overrides: dict[int, float] | None = None,
+    traffic_efficiency: float = DEFAULT_TRAFFIC_EFFICIENCY,
 ) -> CarlaTopology:
     """
     Read a live world's topology into a CarlaTopology.
 
     :param world: The connected carla.World to read. Not modified.
-    :param default_speed_limit_kph: Limit applied to roads with no override.
-    :param overrides: Optional per-road speed limits, keyed by road ID.
+    :param default_speed_limit_kph: Limit applied to roads with no sign.
+    :param overrides: Per-road speed limits, keyed by road ID. Defaults to
+        None, which reads them from the town's own landmarks; pass a dict to
+        override that, or an empty dict to record none at all.
+    :param traffic_efficiency: Fraction of the posted limit a bus averages
+        here, from ``carla_calibrate``. Defaults to 1.0 — free flow, which
+        no real town achieves — so a dump is honest about not being
+        calibrated rather than silently carrying another town's number.
     :return: The topology, ready to be saved.
     """
     carla_map = world.get_map()
@@ -186,10 +281,16 @@ def dump_world(
             points=points,
         ))
 
+    if overrides is None:
+        overrides = read_speed_limits(
+            carla_map, segments, default_speed_limit_kph
+        )
+
     return CarlaTopology(
         map=carla_map.name,
         default_speed_limit_kph=default_speed_limit_kph,
-        speed_limit_overrides=dict(overrides or {}),
+        speed_limit_overrides=dict(overrides),
+        traffic_efficiency=traffic_efficiency,
         segments=tuple(segments),
     )
 
@@ -230,12 +331,14 @@ def main(argv: list[str] | None = None) -> int:
     topology = dump_world(
         world, default_speed_limit_kph=arguments.speed_limit
     )
+    signed = len(topology.speed_limit_overrides)
     path = save_topology(
         topology,
         note=(f"dumped from {world.get_map().name} at "
-              f"{SAMPLE_STEP_M} m resolution; speed limit "
-              f"{arguments.speed_limit} km/h is an assumption, CARLA "
-              f"0.9.16 publishes none"),
+              f"{SAMPLE_STEP_M} m resolution; per-road limits read from "
+              f"{signed} signed roads, {arguments.speed_limit} km/h "
+              f"applied to the rest; traffic_efficiency "
+              f"{topology.traffic_efficiency} (1.0 = uncalibrated)"),
     )
 
     points = sum(len(s.points) for s in topology.segments)
@@ -246,7 +349,11 @@ def main(argv: list[str] | None = None) -> int:
           f"({junctions} inside junctions)")
     print(f"sampled points     {points}")
     print(f"total lane length  {length_km:.1f} km")
-    print(f"speed limit        {topology.default_speed_limit_kph} km/h")
+    print(f"default limit      {topology.default_speed_limit_kph} km/h")
+    print(f"signed roads       {signed} "
+          f"{sorted(set(topology.speed_limit_overrides.values()))} km/h")
+    print(f"traffic efficiency {topology.traffic_efficiency} "
+          f"{'(uncalibrated)' if topology.traffic_efficiency == 1.0 else ''}")
     print(f"wrote              {path}")
     print(f"size               {path.stat().st_size / 1024:.0f} KB")
     return 0

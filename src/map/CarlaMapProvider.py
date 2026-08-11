@@ -104,6 +104,17 @@ class CarlaMapProvider(MapProvider):
         """Return every directed road edge, segments split at their stops."""
         return list(self._edges)
 
+    def traffic_efficiency(self) -> float:
+        """
+        Return the fraction of the posted limit a bus averages in this town.
+
+        Read from the town's dump rather than assumed, and 1.0 for a town
+        that has never been calibrated — which reproduces the free-flow
+        estimates every earlier CARLA run was made under.
+        :return: Multiplier on the posted limit, in (0, 1].
+        """
+        return self._topology.traffic_efficiency
+
     # ------------------------------------------------------------------
     # Health
     # ------------------------------------------------------------------

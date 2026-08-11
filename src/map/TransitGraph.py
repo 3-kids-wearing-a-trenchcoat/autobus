@@ -25,16 +25,29 @@ def _dict_edge_by_origin_node(road_nodes: list[RoadNodeRecord],
         output[from_id].append(edge)
     return output
 
-def _calc_weights(graph: nx.DiGraph) -> None:
-    """Calculate edge weights according to their nodes"""
+def _calc_weights(graph: nx.DiGraph, traffic_efficiency: float = 1.0) -> None:
+    """
+    Calculate edge weights according to their nodes.
+    :param graph: The edge-node graph to weight, modified in place.
+    :param traffic_efficiency: Fraction of the posted limit actually achieved,
+        from the map provider. 1.0 leaves the free-flow estimate untouched,
+        which is exact for a world that drives what it predicts. Below 1.0 it
+        stretches every leg by the same factor, which is what a town full of
+        traffic lights does — see MapProvider.traffic_efficiency.
+    :return: None.
+    """
     # Currently, this just sets each edge's weight to the expected travel time on its parent node.
     # Which is very simple, but would probably need to be updated later to account for things like congestion
+    if not 0.0 < traffic_efficiency <= 1.0:
+        raise ValueError(
+            f"traffic_efficiency must be in (0, 1], got {traffic_efficiency}"
+        )
     for origin_id, dest_id in graph.edges():
         origin_data = graph.nodes[origin_id]
         length_m: float = origin_data.get("length")
         speed_limit_kph: float = origin_data.get("speed_limit") or DEFAULT_SPEED_LIMIT
         speed_limit_mps = speed_limit_kph * 1000 / 3600
-        travel_time_s = length_m / speed_limit_mps
+        travel_time_s = length_m / (speed_limit_mps * traffic_efficiency)
         graph[origin_id][dest_id]["weight"] = travel_time_s
 
 def _build_map(provider: MapProvider) -> nx.DiGraph:
@@ -66,7 +79,7 @@ def _build_map(provider: MapProvider) -> nx.DiGraph:
         for dest in destination_edges:
             output.add_edge(origin_edge_id, dest.id)
     # Give edges weights, that they may be used with built-in networkx algorithms
-    _calc_weights(output)
+    _calc_weights(output, provider.traffic_efficiency())
 
     return output
 

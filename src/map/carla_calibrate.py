@@ -43,6 +43,8 @@ import statistics
 import sys
 import time
 from collections import Counter, defaultdict
+
+from tqdm.auto import tqdm
 from pathlib import Path
 
 from src.algorithm.TravelModel import GraphTravelModel
@@ -55,6 +57,11 @@ from src.map.carla_topology import (
 from src.map.CarlaMapProvider import CarlaMapProvider
 from src.map.TransitGraph import TransitGraph
 from src.simulation.CarlaBackend import CarlaBackend, stop_positions_from
+from src.algorithm.RequestPool import RequestPool
+from src.simulation.SimulationBackend import (
+    AdvanceResult,
+    SimulationBackend,
+)
 
 # Ticks between speed-limit samples. At 0.05 s a bus covers a couple of
 # metres in this, which is far finer than the roads being checked.
@@ -311,6 +318,194 @@ def report(summary: dict[str, object]) -> None:
         print(f"  road {row['road_id']}: dumped {row['dumped']} km/h, "
               f"vehicle reported {row['vehicle_reported']} km/h "
               f"({row['samples']} samples)")
+
+
+class LegRecordingBackend(SimulationBackend):
+    """
+    Wraps a backend and times every leg against what the graph predicted.
+
+    Exists because the fixed tour ``calibrate`` drives is not the route a
+    policy takes: measured on Town01, a campaign averages 3.77 m/s against
+    the tour's 4.21, so a factor fitted on the tour is ~10% optimistic for
+    the legs a policy actually chooses. This records the same
+    predicted-versus-actual pairs while the *policy* decides where to go.
+
+    Delegates rather than subclasses so the recorded run drives exactly the
+    backend a campaign drives.
+    """
+
+    def __init__(
+        self, inner: SimulationBackend, travel_model: GraphTravelModel
+    ) -> None:
+        """
+        :param inner: The backend actually driving.
+        :param travel_model: The model whose predictions are being checked.
+            Must be the one the policy plans against, so the measured ratio
+            is against the estimate in force rather than a fresh one.
+        """
+        # Set first: __getattr__ delegates through it.
+        self._inner = inner
+        self._travel_model = travel_model
+        self.legs: list[dict] = []
+        self._destination: str | None = None
+        self._origin: str | None = None
+        self._elapsed = 0.0
+
+    parallel_safe = False
+
+    def set_destination(self, stop_id: str) -> None:
+        """
+        Start timing a new leg when the destination changes, then delegate.
+        :param stop_id: Stop to drive to.
+        :return: None.
+        """
+        if stop_id != self._destination:
+            self._destination = stop_id
+            self._origin = self._inner.current_location()
+            self._elapsed = 0.0
+        self._inner.set_destination(stop_id)
+
+    def advance(self, dt: float) -> AdvanceResult:
+        """
+        Delegate, accumulate, and close out the leg on arrival.
+        :param dt: Seconds of simulation to advance.
+        :return: Whatever the wrapped backend returned.
+        """
+        result = self._inner.advance(dt)
+        self._elapsed += result.consumed
+        if result.arrived_at is not None:
+            origin = self._origin
+            if origin is not None and origin != result.arrived_at:
+                predicted = self._travel_model.travel_time(
+                    origin, result.arrived_at
+                )
+                if predicted > 0.0:
+                    self.legs.append({
+                        "leg": f"{origin}->{result.arrived_at}",
+                        "predicted_s": predicted,
+                        "actual_s": self._elapsed,
+                    })
+            # A re-issued destination must start a fresh leg, so forget it.
+            self._destination = None
+            self._elapsed = 0.0
+        return result
+
+    def current_location(self) -> str:
+        """Delegate; the wrapper holds no position of its own."""
+        return self._inner.current_location()
+
+    # SimulationBackend gives start, close and sync_passengers **concrete
+    # no-op defaults**, so they resolve on the base class and __getattr__ is
+    # never consulted for them. Without these three the wrapped backend is
+    # never started and never cleaned up -- which fails as a null world on
+    # the first tick.
+    def start(self) -> None:
+        """Start the wrapped backend."""
+        self._inner.start()
+
+    def close(self) -> None:
+        """Close the wrapped backend."""
+        self._inner.close()
+
+    def sync_passengers(self, pool: "RequestPool") -> None:
+        """
+        Delegate passenger rendering.
+        :param pool: The request pool to mirror into the world.
+        :return: None.
+        """
+        self._inner.sync_passengers(pool)
+
+    def __getattr__(self, name: str) -> object:
+        """
+        Delegate everything else -- start, close, sync_passengers, stats.
+        :param name: Attribute being looked up.
+        :return: The wrapped backend's attribute.
+        """
+        return getattr(self._inner, name)
+
+
+def calibrate_policy_driven(
+    town: str, seeds: list[int], npc_vehicles: int, host: str, port: int,
+    trial_kwargs: dict, policy_factory=None, verbose: bool = True,
+) -> dict[str, object]:
+    """
+    Calibrate against the legs a *policy* chooses, not a fixed tour.
+
+    The number this produces is the one a campaign lives under, and it is
+    the one to record. ``calibrate`` remains useful for a town with no
+    authored demand scenario yet, and for separating execution noise from
+    model error, which needs the same leg driven repeatedly.
+    :param town: Town to drive; must be dumped, authored and calibrated.
+    :param seeds: Trial seeds to run. Three is usually plenty — the residual
+        being corrected is a bias, not a noise term.
+    :param npc_vehicles: Traffic to spawn.
+    :param host: CARLA server host.
+    :param port: CARLA server port.
+    :param trial_kwargs: The campaign's own trial parameters, so the legs
+        measured are the legs the campaign drives.
+    :param policy_factory: Builds the policy to follow. Defaults to None,
+        which uses ReorderingInsertionPolicy at the trial's own window.
+    :return: The measured bias and the efficiency it implies.
+    """
+    from src.algorithm.ReorderingInsertionPolicy import (
+        ReorderingInsertionPolicy,
+    )
+    from src.experiment.trial import run_trial
+
+    provider = CarlaMapProvider(town)
+    positions = stop_positions_from(provider)
+    current = provider.traffic_efficiency()
+    window = trial_kwargs.get("max_wait_s", 750.0)
+    if policy_factory is None:
+        def policy_factory(graph):
+            """The recommended policy at the campaign's own window."""
+            return ReorderingInsertionPolicy(graph, max_wait_s=window)
+
+    recorders: list[LegRecordingBackend] = []
+    # run_trial does not hand the seed to the backend factory, so it is
+    # carried here: CARLA's traffic and spawn placement are luck of their
+    # own, and holding them fixed would under-sample the variance.
+    current_seed = [0]
+
+    def backend_factory(graph, start_stop_id: str) -> SimulationBackend:
+        """Build the campaign's backend, wrapped in a leg recorder."""
+        inner = CarlaBackend(
+            stop_positions=positions, position=start_stop_id, town=town,
+            host=host, port=port, npc_vehicles=npc_vehicles,
+            seed=current_seed[0], no_rendering=True,
+            dwell_s=trial_kwargs.get("dwell_s", 0.0),
+        )
+        recorder = LegRecordingBackend(
+            inner, GraphTravelModel(TransitGraph(provider),
+                                    dwell_s=trial_kwargs.get("dwell_s", 0.0))
+        )
+        recorders.append(recorder)
+        return recorder
+
+    legs: list[dict] = []
+    for seed in tqdm(seeds, desc=f"{town} policy-driven", unit="trial",
+                     disable=not verbose):
+        recorders.clear()
+        current_seed[0] = seed
+        run_trial(policy_factory, provider=provider, seed=seed,
+                  backend_factory=backend_factory, silent=True,
+                  **trial_kwargs)
+        legs.extend(recorders[0].legs)
+
+    ratios = [leg["actual_s"] / leg["predicted_s"] for leg in legs]
+    bias, sigma = geo_stats(ratios)
+    return {
+        "town": town_name(town),
+        "mode": "policy-driven",
+        "seeds": list(seeds),
+        "legs": len(legs),
+        "current_efficiency": current,
+        "residual_bias": round(bias, 4),
+        "sigma": round(sigma, 4),
+        # The estimate in force is already scaled by `current`; a residual
+        # bias of b means it is still b times too fast, so divide again.
+        "suggested_efficiency": round(current / bias, 4),
+    }
 
 
 def main(argv: list[str] | None = None) -> int:

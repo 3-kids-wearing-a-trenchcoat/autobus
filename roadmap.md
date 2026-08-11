@@ -12,11 +12,10 @@ The evidence base is now four campaigns, all in `results/runs` and all
 reproducible: the synthetic campaign (2,280 runs), the map-seed sweep
 (7,000), the load sweep (4,950) and the safety-factor sweep (3,840).
 
-Two requirements the roadmap does not track and 3.7 will not close:
-mid-route replanning (functional requirement 3) and plan-call latency
-(§1.1.2). Both are under Open questions; **latency is the one still worth
-doing**, and it is the last unverified stated requirement in the design
-review.
+**§1.1.2 plan-call latency was the last unverified stated requirement, and
+it is now measured and satisfied** (2026-08-11, on two machines). The one
+requirement still not met is mid-route replanning (functional requirement
+3), which was deliberately dropped — see Open questions.
 Last updated 2026-08-11.
 
 ---
@@ -1167,6 +1166,70 @@ against a noise level never measured. It is recoverable from the Town01 runs
 already in the store — driven leg durations against the graph's estimates —
 and until it exists, 1.0 vs 1.25 is a choice made by feel.
 
+### Plan-call latency, §1.1.2 — measured 2026-08-11
+
+23,536 plan calls over 140 trials, run twice: a desktop **Ryzen 7 5800X3D**
+and a laptop **Ryzen AI 9 HX 370**, identical configuration.
+`notebooks/plan-latency-local.ipynb` and `-remote.ipynb`. Sequential and
+unstored by design — workers contending for cores would inflate every
+measurement, and a `TimedPolicy` wrapper would corrupt run identity.
+
+**Satisfied. Zero calls exceeded the budget on either machine.**
+
+| arm | 5800X3D max | margin | HX 370 max | margin |
+|---|---|---|---|---|
+| **Reordering W900** — the operating point | 2,011 ms | **2.5x** | 1,272 ms | 3.9x |
+| Reordering W1800 — stress bound, not an operating point | 3,042 ms | 1.6x | 1,944 ms | 2.6x |
+| Window W900 (L0) | 952 ms | 5.3x | 613 ms | 8.2x |
+
+**The claim to quote**: at the recommended operating point the worst plan
+call in 23,536 was 2.0 s on the slower machine, against the ~5 s a bus is
+stopped for boarding anyway. Quote **max and p99, never the median**, and
+name the load — 200 requests on the campus map, up to 29 pending at a call.
+
+**The budget was the wrong one in this document until today.** It is
+passenger dwell, not the 50 ms CARLA tick: the bus plans only from
+`on_arrival` and is stationary throughout, so the tick binds only under
+mid-leg re-planning, which was deliberately not built. In synchronous mode a
+slow call pauses the whole world rather than stranding the bus.
+
+**5 s of dwell was chosen, not measured, and the verdict is sensitive to
+it**: at a 2 s dwell the desktop running L1 at W900 would breach and L0
+would not. Quote the assumption wherever the claim is quoted.
+
+**The two machines differ by a constant 1.57x** — wall clock 1.57, p50 1.57,
+p99 1.58, max 1.58, with the scaling curves the same shape merely rescaled.
+So the workload is purely single-thread-bound, the measurement is clean
+(noise would not hold a constant ratio across median, tail and total), and
+**any other machine can be predicted by benchmarking its single-thread speed
+and scaling**. The *laptop* is the faster one — the X3D trades clock for
+cache, and interpreter dispatch is clock- and IPC-bound. Quote the desktop:
+it is conservative and it hosts CARLA.
+
+**Scaling is smooth but still climbing.** No cliff, which was the risk; but
+no plateau either — p99 rises monotonically and steeply in pending requests
+and is still rising at the largest load seen. Eyeballed off the curve, the
+5 s crossing sits near 30 pending at W1800 and roughly double at W900.
+*Eyeballed, not fitted*: the notebook discards its per-call frame, so a fit
+needs a re-run. Structurally mitigating — the scenarios that stress latency
+are the hard maps already failing the coverage gate, where the answer is
+already a second bus, and a second bus cuts pending per bus.
+
+**L1's latency cost is worse than its throughput cost implied**: ~1.4x per
+trial, but 2.1x on max and **3.5x on p99**. Its tail is much fatter than its
+mean. Does not change the recommendation; does add a term nobody had priced.
+
+**One anomaly, unexplained.** For L0 the widest window is the *cheapest*
+(p99 277 ms at W1800 against 356/379 at W750/W900) while for L1 it is the
+most expensive. Hypothesis, unchecked: at W1800 against 900 s patience,
+accepted requests are abandoned before pickup, so L0's schedule churns
+rather than grows while L1's repair loop still pays for it.
+
+**This does not reopen the `forward_slack` optimisation.** It was refused on
+throughput grounds and would come back only if latency bound. It does not
+bind. Trigger to revisit, now measured: a dwell under ~2.5 s, or loads past
+~30 pending.
+
 ### ⚠ An earlier campaign ran on the wrong map — corrected 2026-08-11
 
 **The campaign above used `stop_density` at its default 0.15, giving a 6-stop
@@ -1364,8 +1427,8 @@ actually want is too slow at that.
   committed leg. That overestimates the benefit, so a small ceiling closes
   the question with evidence rather than argument.
 
-  §1.1.2 plan-call latency remains genuinely unverified and is cheap to
-  instrument; unlike this, it is worth doing.
+  ~~§1.1.2 plan-call latency remains genuinely unverified~~ **Measured
+  2026-08-11 and satisfied** — see the section below.
 
 ---
 
@@ -1600,11 +1663,14 @@ actually want is too slow at that.
   and it is a partial one: it removes the noise-driven part and leaves the
   ~3% floor untouched, which is why that floor is worth attributing. See the
   safety-factor sweep above and `window_insertion.md`.
-- **Real-time requirement is unverified.** Design review §1.1.2 requires
-  routing to be fast enough that the bus never waits. We have only measured
-  wall-clock per *trial*, never latency per *plan call*. Rough arithmetic puts
-  L1 at ~30 ms/call at W750 against a 50 ms tick — fits, but the margin is
-  thin at wider windows.
+- ~~**Real-time requirement is unverified.**~~ **Measured 2026-08-11 and
+  satisfied**, but not in the way this entry predicted, and both halves of
+  its arithmetic were wrong. The budget is **passenger dwell (~5 s)**, not
+  the 50 ms tick — `BusAgent` plans only from `on_arrival`, so the bus is
+  stationary throughout, and the tick would bind only under mid-leg
+  re-planning, which was deliberately not built. And the cost is not
+  ~30 ms/call: the *worst* call is **2.0 s** at the operating point. Both
+  errors were large and they happened to cancel. See the section below.
 
 ---
 

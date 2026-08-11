@@ -65,6 +65,32 @@ Measured at 200 paired trials, `commitment=0`, W900, 200 requests
 per-trial difference against L0, and **every one is significant with no
 regression anywhere**:
 
+!!! tip "Superseded on magnitude — the effect is larger than this table"
+
+    The table below is a 200-trial ablation at a **single** window. Two
+    larger campaigns have since measured the same effect with far more
+    power, and both put it higher:
+
+    - map 42, 60 paired seeds, W900: mean ride **−70 s**, p < 0.0001.
+    - 25 maps, 1,000 paired (map, seed) pairs: mean ride
+      **−111.5 ± 7.4 s**, p ≈ 2e-138; wait −7.3 ± 1.5 s; served
+      +0.53 ± 0.17 pp. Map 42 is an easier map than typical, which is why
+      the single-map figure understates the effect.
+
+    And the advantage **grows as the window tightens** — a dependence a
+    single-window ablation could not have seen. A tighter deadline
+    constrains the schedule harder, which is exactly when repairing its
+    order pays:
+
+    | window | 450 | 600 | 750 | 900 | 1200 | 1800 |
+    |---|---|---|---|---|---|---|
+    | ride, L1 − L0 | **−229 s** | −155 s | −91 s | −70 s | −31 s | −19 s |
+
+    Quote **−111.5 s** for a general claim about the policy and **−70 s**
+    for one about the campus map. What is superseded here is the
+    *magnitude*; the direction, the significance and the mechanism below
+    all stand.
+
 !!! danger "`stop_density=0.5` is required to reproduce any of this"
 
     The "campus map" is

@@ -2,14 +2,22 @@
 
 Living document. Phases 1 and 2 are complete. **Phase 3 steps 3.1–3.6 are
 done**, including the campaign harness and the results store, all exercised
-end to end against a live server. **Only 3.7 (validation) remains**, scoped
-by the decisions of 2026-08-10: a full persistent campaign rather than a
-demo, three policies at once, and traffic at `npc_vehicles=20`.
+end to end against a live server. **3.7 is substantively satisfied**: §3.2.2
+passes on CARLA over 8 seeds on Town01 with 20 NPCs (fulfilment 100%, sum of
+percentage differences +145% Window / +138% Reordering), and the statistical
+evidence lives in the synthetic campaign as the 2026-08-10 split decided.
+What remains of 3.7 is writing it up.
+
+The evidence base is now four campaigns, all in `results/runs` and all
+reproducible: the synthetic campaign (2,280 runs), the map-seed sweep
+(7,000), the load sweep (4,950) and the safety-factor sweep (3,840).
 
 Two requirements the roadmap does not track and 3.7 will not close:
 mid-route replanning (functional requirement 3) and plan-call latency
-(§1.1.2). Both are under Open questions.
-Last updated 2026-08-10.
+(§1.1.2). Both are under Open questions; **latency is the one still worth
+doing**, and it is the last unverified stated requirement in the design
+review.
+Last updated 2026-08-11.
 
 ---
 
@@ -1060,6 +1068,105 @@ almost everywhere. So the honest claim is "met on the campus map, and on 21 of
 which is a statement about the load those maps present rather than about the
 routing.
 
+### The load sweep — 2026-08-11
+
+4,950 runs, 5 maps × 3 policies × 30 seeds × (7 demand rates + 4 capacities),
+40 min. Maps chosen by measured difficulty from the sweep above: 17
+(hardest), 24 (25th pct), 10 (median), 42 (campus, 75th), 15 (easiest).
+`notebooks/load-sweep.ipynb`.
+
+**The claim it existed to settle is supported: the four §3.2.2 failures above
+are a load limit, not a routing limit.**
+
+| map | 17 | 24 | 10 | 42 | 15 |
+|---|---|---|---|---|---|
+| clears 80% (Reordering W900) | from 180 s | from 60 s | always | always | always |
+
+Map 17 — the one that bottomed out at 65.5% — climbs monotonically to
+**94.6% at one request every 300 s**. There is only one bus in this
+simulation, so the honest statement is about **fleet size**, not about the
+algorithm. Quote §3.2.2 as "met on the campus map and on 21 of 25 random
+maps, with the four failures load-limited and recovering above roughly one
+request per 180 s on the hardest".
+
+**Fixed route does not benefit from thinner demand at all** — the finding
+nobody was looking for, and the more useful one. It sits at 33–37% across
+the entire 10× range of demand rates on map 17, and is pinned at ~81% on the
+easiest map while both dynamic policies reach 100%. The comparator's coverage
+is bounded by its cycle geometry rather than by load, so **the dynamic
+advantage is structural and widens as demand thins.**
+
+**Capacity refines the headroom finding rather than confirming it.** Pooled
+over the five maps at the standard 60 s interval:
+
+| capacity | 10 | 20 | 40 | 80 |
+|---|---|---|---|---|
+| Reordering W900 | 73.3 | 85.1 | **86.3** | 85.8 |
+| Window W900 | 67.6 | 82.7 | 85.8 | 85.3 |
+| Fixed route | 53.9 | 57.2 | 57.8 | 57.2 |
+
+"Rejections are caused by the deadline rather than by seats" was measured at
+capacity 40 and holds **from 20 seats up** — a 4× increase past that moves
+coverage 1.2 pp. Below 20 it is simply false: 10 seats costs L1 13 pp. State
+it as *"at capacity ≥ 20, seats are not the binding constraint"*. L1 also
+degrades more gracefully into the seat-limited regime than L0 (73.3 vs 67.6).
+
+Two limits worth naming before quoting this. The load explanation is
+demonstrated directly on **map 17 only** — map 24 already clears at the
+standard rate — so "the four failures are load" is a well-supported inference
+from one instance, not four measurements. And capacity was swept only at the
+60 s interval, so the ≥20 claim is unverified in the saturated regime where
+seats would bind hardest.
+
+### The safety-factor sweep — 2026-08-11
+
+3,840 runs, 3 maps × 4 noise levels × 4 factors × 2 policies × 40 seeds,
+30 min. **W750 against 900 s patience**, deliberately: at window == patience
+a breach is structurally impossible, because anyone who waits that long has
+already been cancelled. `notebooks/safety-factor-sweep.ipynb`.
+
+**The mechanism is real.** Breach rate rises 3.41% → 7.29% as σ goes 0 → 0.3
+at `safety_factor=1.0`, and a higher factor pulls it back monotonically with
+the gap widening as noise grows. Reordering, pooled over three maps:
+
+| σ | 1.0 | 1.1 | 1.25 | 1.5 |
+|---|---|---|---|---|
+| breach | 3.41 → 7.29% | −1.4 to −1.8 pp | −0.4 to −3.0 pp | −0.3 to −3.5 pp |
+| Δ ride at σ=0.2 | — | +28 s | +53 s | +111 s |
+
+**Two findings underneath the headline matter more than it does.**
+
+1. **There is a ~3% breach floor `safety_factor` cannot touch.** At σ=0 the
+   mock backend drives exactly what the graph promises — there is no
+   execution error to protect against — and 3.41% of fulfilled riders still
+   breach, with 1.5 barely denting it (3.11%, inside the error bars) for
+   +65 s of ride. So **most breaches at the recommended operating point are
+   structural, not execution noise.** The likely cause is the progress
+   fallback, which drives to the nearest pending pickup ignoring the window
+   entirely. Worth an hour to attribute, because "3% of promises are broken
+   by a fallback we wrote" is a different sentence from "by traffic", and
+   only one of them is fixable.
+2. **Under the design review's own scoring, raising the factor loses
+   points.** Breach rate is not one of the four §3.1 KPIs. Ride time is, and
+   it is inside the §3.2.2 sum. At σ=0.2, `1.25` costs +53 s on a ~759 s
+   baseline — a 7% regression against a graded criterion, to fix something
+   that is not scored at all.
+
+**The knee is 1.25**; 1.25 → 1.5 buys ~0.5 pp more breach for another +25 s
+ride and −0.8 pp coverage. Nothing above 1.25 is defensible.
+
+**Statistical caveat.** The deltas are differences of *unpaired* means pooled
+over three maps of very different difficulty, which is why the coverage and
+ride error bars dwarf the effects. The breach trend is large and monotone and
+is safe to quote; the **±0.3 pp coverage deltas are indistinguishable from
+zero**, and the notebook's verdict column reads noise on that axis. A paired
+test per (map, seed) is cheap and would settle it.
+
+**What is still missing is CARLA's actual σ.** The whole sweep prices a knob
+against a noise level never measured. It is recoverable from the Town01 runs
+already in the store — driven leg durations against the graph's estimates —
+and until it exists, 1.0 vs 1.25 is a choice made by feel.
+
 ### ⚠ An earlier campaign ran on the wrong map — corrected 2026-08-11
 
 **The campaign above used `stop_density` at its default 0.15, giving a 6-stop
@@ -1157,7 +1264,7 @@ actually want is too slow at that.
 | `retry_rejected` | Default off | 0.9% admissions, no KPI change, ~13% more compute |
 | `n_passes` | Default 1 — L1 is finished | Converging adds nothing (all p>0.4); the second sweep accepts 0.086% of attempts |
 | Does L1 survive CARLA-like driving? | **Yes, and its advantage grows** | Under execution noise L1's mean-ride lead widens −92 s → −136 s; L0 degrades ~5× faster. Do not re-litigate in Phase 3 |
-| `safety_factor` | Default 1.0, but it is the CARLA lever | At σ=0.2, 1.25 cuts breaches 4.9%→2.0% free of coverage cost, for +107 s ride (L0) / +67 s (L1) |
+| `safety_factor` | **Stays 1.0. If it is ever raised, 1.25 and no higher, and only on CARLA** | Swept properly 2026-08-11 (3,840 runs, 3 maps). It does cut breaches — 7.29% → 4.33% at σ=0.3 — but breach rate is not a scored KPI and ride time is, so at σ=0.2 the +53 s it costs is a 7% regression against §3.2.2 for a gain the criteria do not count. At σ=0 it buys nothing at all: a ~3% floor survives every factor, so most breaches are structural rather than noise. Above 1.25 the curve is flat and coverage starts to fall. **Blocked on measuring CARLA's actual σ**, which nobody has done |
 | Which CARLA town? | **Town01** for now, but nothing may hard-code it — several maps are wanted eventually | Town choice does not affect throughput; Town01 drives a bus well, Town10HD_Opt barely moves one even on plain autopilot |
 | How is the bus steered? | `traffic_manager.set_route`, given turns from our own route planner in `src/simulation/carla_routing.py` | `set_path` with a single destination is not navigation — it is a junction-decision API, and given one distant point the bus cycles. Planning the route and handing over the turns took a five-tour campaign from 17/25 legs to 21/25. See the trap below |
 | Why not CARLA's `GlobalRoutePlanner`? | Measured identical, and ours is 60 lines against 1,240 | The pip wheel is client bindings only and does not ship `agents`, so either way the code would be copied into this repository. Ours reproduces theirs exactly — same 21/25, same per-tour split, same four failures to the metre — with no vendoring and no `shapely` |
@@ -1487,8 +1594,12 @@ actually want is too slow at that.
   negative wait times, and it survived the refactor deliberately.)
 - **The service window is not a hard guarantee.** The progress fallback drives
   to the nearest pending pickup when nothing can be scheduled, ignoring the
-  window — **2.3%** of fulfilled requests at W750 with exact driving, rising
-  to 4.9% at σ=0.2. `safety_factor` is the lever; see `window_insertion.md`.
+  window — **2.3%** of fulfilled requests at W750 with exact driving on map
+  42, rising to 4.9% at σ=0.2. Pooled over three maps (2026-08-11) the same
+  two figures are **3.41%** and **6.05%**. `safety_factor` is the only lever
+  and it is a partial one: it removes the noise-driven part and leaves the
+  ~3% floor untouched, which is why that floor is worth attributing. See the
+  safety-factor sweep above and `window_insertion.md`.
 - **Real-time requirement is unverified.** Design review §1.1.2 requires
   routing to be fast enough that the bus never waits. We have only measured
   wall-clock per *trial*, never latency per *plan call*. Rough arithmetic puts

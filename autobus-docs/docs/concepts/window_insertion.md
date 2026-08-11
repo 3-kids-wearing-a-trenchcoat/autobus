@@ -49,6 +49,25 @@ a later plan, when the bus is somewhere more convenient.
     and +67 s for L1. Since ride time is a graded KPI and breach rate is not,
     the default stays 1.0. See `notebooks/execution-noise.ipynb`.
 
+    **Swept properly over three maps on 2026-08-11**
+    (`notebooks/safety-factor-sweep.ipynb`, 3,840 runs), which changes the
+    reading of the lever rather than the decision:
+
+    | σ | 0.0 | 0.1 | 0.2 | 0.3 |
+    |---|---|---|---|---|
+    | breach at 1.0 | 3.41% | 4.93% | 6.05% | 7.29% |
+    | breach at 1.25 | 3.00% | 3.22% | 3.46% | 4.33% |
+    | mean ride cost | +45 s | +56 s | +53 s | +78 s |
+
+    The important part is the **σ=0 column**: with driving that is exact by
+    construction there is no execution error to protect against, and yet
+    3.41% still breach and no factor removes it. So `safety_factor` corrects
+    only the noise-driven part of the problem, and **most breaches at the
+    recommended operating point are structural** — the fallback above, not
+    slow driving. 1.25 is the knee; 1.5 buys ~0.5 pp more for another +25 s
+    of ride and −0.8 pp of coverage. The default stays 1.0 for the same
+    reason as before, now measured across maps rather than on one.
+
 ## `Schedule`
 
 An immutable, ordered list of `Event`s — a node, a load delta (`+1` boarding,

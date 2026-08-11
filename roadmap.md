@@ -1321,6 +1321,48 @@ over 30 trials and ~1,233 driven legs, with 4.4% of time queued behind
 traffic. Breach was 0.00% everywhere, by construction at
 `window == patience` — the window is kept for every rider served at all.
 
+### `traffic_efficiency`, re-derived from policy-driven legs — 2026-08-11
+
+108 legs over 3 seeds, Town01, 20 NPCs, the campaign's own trial
+parameters. `carla_calibrate.calibrate_policy_driven`, which wraps the
+backend in a `LegRecordingBackend` and times each leg against the graph's
+prediction while the **policy** picks the route.
+
+| | value |
+|---|---|
+| current `traffic_efficiency` | 0.455 |
+| **residual bias** | **1.1075** |
+| implied efficiency | **0.4108** |
+| per-leg sigma | 0.378 |
+
+**The tour-fitted factor is 10.75% optimistic for the legs a policy
+actually drives** — and that corroborates, by a completely independent
+route, the 10.3% inferred from comparing the campaign's effective speed
+(3.77 m/s) with the calibration tour's (4.21). Two different methods, the
+same answer to within half a point.
+
+The per-leg sigma is **0.378** against the tour's 0.278: a policy visits a
+more varied mix of legs than a fixed tour of every stop, so the estimator is
+wrong by more *varied* amounts as well as by more on average.
+
+**Town01's stored factor is deliberately left at 0.455.** Changing it
+changes every estimate, hence run identity, hence **invalidates the 30-run
+campaign** that has just passed §3.2.2 — 2.29 h of compute, for a 10%
+refinement to a result that already clears the criterion decisively. Not a
+trade worth making three weeks from the deadline.
+
+**Two things to carry forward instead:**
+
+1. **Calibrate new towns policy-driven from the outset**, using
+   `calibrate_policy_driven` rather than `calibrate`. The tour version
+   remains the right tool for a town with no demand scenario yet, and for
+   separating execution noise from model error — which needs the same leg
+   driven repeatedly and so cannot be done policy-driven.
+2. **It is a fixed point, not a one-shot correction.** Changing the factor
+   changes which legs the policy chooses, which changes the factor. The
+   residual would shrink on a second pass rather than vanish, so chasing it
+   to zero is not worth the CARLA time; one policy-driven pass is enough.
+
 ### ⚠ An earlier campaign ran on the wrong map — corrected 2026-08-11
 
 **The campaign above used `stop_density` at its default 0.15, giving a 6-stop

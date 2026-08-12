@@ -1703,6 +1703,56 @@ actually want is too slow at that.
   So: a correctness fix for the pairs that cycle, and a worthwhile speed-up
   everywhere else.
 
+- **A turn list is issued once per leg, and nothing notices when it runs
+  out.** `set_destination` hands the traffic manager one list and never
+  refreshes it; `_track_stall` reacts only to a bus that has *stopped*, with
+  red lights and queues exempted. So when the list is consumed or slips out
+  of step, `ImportRoute` drops the route, the bus reverts to **random
+  navigation**, and because it is still driving briskly every correction
+  path stays silent — `repaths` reads 0 throughout.
+
+  Traced on Town03 (2026-08-12): a 474 m leg with 4 turns issued executed
+  the first three correctly, went `Straight` where the list said `Right`,
+  and then crossed **125 further junctions** over 10 km without arriving. A
+  healthy leg on the same town crosses 5.
+
+  **What this looked like before it was understood:** legs that "fail". They
+  do not fail — they take 6–20x too long, and a per-leg cap converts that
+  into an apparent failure. `s11->s12` reproduces at 2658.3 s against a
+  healthy 150 s, to the tenth of a second, across separate sessions.
+
+  `replan_every_s` on `CarlaBackend` re-issues the route periodically while
+  the bus moves. It corrects no individual turn; it re-establishes the
+  alignment from where the bus actually is. Full tours, 20 NPCs on Town05:
+
+  | | legs arrived | simulated time |
+  |---|---|---|
+  | Town03, once per leg | 14/14 | 6802 s |
+  | Town03, every 300 s | 14/14 | **2257 s (−67%)** |
+  | Town05, once per leg | 12/14 | 10205 s |
+  | Town05, every 300 s | **14/14** | **5110 s (−50%)** |
+
+  **Size the period above a healthy leg.** At 300 s on Town05 every leg
+  shorter than that was *bit-identical* to leaving it alone — the fix only
+  touches legs already going wrong. At 30 s and 120 s the same tour turned a
+  233 s leg into 778 s. At 600 s it still rescues but intervenes too late to
+  help the total.
+
+  **Do not pass `empty_buffer=False`.** It looks like the obvious way to
+  re-issue without disturbing the vehicle, and it is 28% *worse than doing
+  nothing*: the stale buffer's junctions consume entries from the new list
+  before the bus reaches the junctions they were computed for. Emptying the
+  buffer is what makes re-issuing work.
+
+  **What this is not.** It is a workaround. The underlying cause is that
+  `set_route`'s labels cannot be reproduced from outside CARLA — see the
+  `set_path` trap above — and re-issuing merely stops the error compounding.
+  Hypotheses that were measured and **refuted** on the way: `auto_lane_change`
+  (bit-identical with it disabled), lateral gap at the stop (3.5 m against a
+  6 m arrival radius), multi-level roads (the *healthy* Town05 legs are the
+  ones crossing a 10 m overpass), stop placement, wall-clock rate (identical
+  at 1x real time), and `fixed_delta_s` (0.025/0.05/0.1 agree to the metre).
+
 - **A bus at a red light is indistinguishable from a wedged bus, unless you
   look.** `_track_stall` counts any tick covering less than 0.05 m — 1 m/s at
   the default delta — as a stall. Town01 has **36 traffic lights cycling in

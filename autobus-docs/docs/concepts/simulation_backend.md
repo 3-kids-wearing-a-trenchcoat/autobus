@@ -182,6 +182,51 @@ Two things fall out of this that are easy to get wrong:
   it and reproduces it exactly, in a fraction of the code and with no extra
   dependency.
 
+#### Keeping the instructions fresh
+
+`set_destination` hands the traffic manager one turn list per leg and never
+refreshes it. That is enough on a simple town and not enough on a complex
+one, because the list is consumed **one entry per junction**: when it runs
+out, or slips out of step with the junctions the traffic manager actually
+counts, `ImportRoute` drops the route and the vehicle reverts to *random
+navigation*.
+
+Nothing notices, and that is the crux. `_track_stall` reacts only to a bus
+that has **stopped**, with red lights and queues exempted — so a bus driving
+briskly in the wrong direction is invisible to every correction path, and
+`repaths` stays at zero while it wanders. Measured on Town03: a 474 m leg
+lost its list at the fourth of four turns, then crossed **125 more
+junctions** and covered 10 km without arriving.
+
+`replan_every_s` closes that gap by re-issuing the route periodically from
+wherever the bus actually is. It does not correct any individual turn — it
+re-establishes the *alignment*, so accumulated drift is discarded instead of
+compounding for the rest of the leg. Over full tours:
+
+| | legs arrived | simulated time |
+|---|---|---|
+| Town03, once per leg | 14/14 | 6802 s |
+| Town03, every 300 s | 14/14 | **2257 s (−67%)** |
+| Town05, once per leg | 12/14 | 10205 s |
+| Town05, every 300 s | **14/14** | **5110 s (−50%)** |
+
+Two things about the period are worth knowing, both measured rather than
+reasoned:
+
+- **Make it longer than a healthy leg.** At 300 s on Town05 every leg
+  shorter than that came out *bit-identical* to leaving it alone, so a leg
+  going well is never disturbed. At 30 s and 120 s the same tour turned a
+  233 s leg into a 778 s one.
+- **Do not keep the old buffer.** `set_route` takes an `empty_buffer`
+  argument that defaults to True, and that default is correct. Passing False
+  lets the stale buffer's junctions consume entries from the *new* list
+  before the bus reaches the junctions they were computed for — which is the
+  very desynchronisation being cured. It measured 28% *worse* than doing
+  nothing at all.
+
+It defaults to `None`, meaning the original once-per-leg behaviour, so
+nothing changes unless a run asks for it.
+
 #### Knowing it has arrived
 
 Proximity, never waypoint equality: the traffic manager routes *through* a

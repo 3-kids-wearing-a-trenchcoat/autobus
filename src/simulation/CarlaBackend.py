@@ -116,6 +116,14 @@ class CarlaBackend(SimulationBackend):
         in its junctions — see ``FULL_SIZE_BUS_ID``.
     :param repath_after_s: Seconds of no movement before the destination is
         re-issued to the traffic manager. Cheap and often enough.
+    :param replan_every_s: Simulated seconds between re-issuing the route
+        *while the bus is moving*, or None to issue it once per leg as
+        before. ``repath_after_s`` only fires on a bus that has stopped, so
+        without this nothing corrects one that is driving briskly in the
+        wrong direction — see ``_track_replan``. Pick a value longer than a
+        healthy leg on the town in question, so it never disturbs a leg that
+        is going well: 300 s was measured good on Town03 and Town05, where
+        healthy legs run 120–350 s.
     :param follow_camera: Move the spectator camera to sit behind and above
         the bus on every tick, so a rendering server shows a chase view.
         Pointless with ``no_rendering=True``, where there is nothing to look
@@ -154,6 +162,7 @@ class CarlaBackend(SimulationBackend):
         seed: int = 0,
         blueprint_id: str = DEFAULT_BUS_ID,
         repath_after_s: float = 10.0,
+        replan_every_s: float | None = None,
         follow_camera: bool = False,
         tm_port: int | None = None,
         reload_world: bool = False,
@@ -183,6 +192,7 @@ class CarlaBackend(SimulationBackend):
         self._seed = seed
         self._blueprint_id = blueprint_id
         self._repath_after_s = repath_after_s
+        self._replan_every_s = replan_every_s
         self._follow_camera = follow_camera
         self._tm_port = tm_port
         self._reload_world = reload_world
@@ -199,6 +209,7 @@ class CarlaBackend(SimulationBackend):
         self._leg_armed = False
         self._dwell_remaining = 0.0
         self._since_repath_s = 0.0
+        self._since_replan_s = 0.0
 
         # Request ID to walker actor ID, and to the stop it waits at.
         self._walkers: dict[str, int] = {}
@@ -211,6 +222,7 @@ class CarlaBackend(SimulationBackend):
             "legs_started": 0,
             "distance_m": 0.0,
             "repaths": 0,
+            "replans": 0,
             "red_light_ticks": 0,
             "queued_ticks": 0,
             "unroutable_legs": 0,
@@ -394,6 +406,7 @@ class CarlaBackend(SimulationBackend):
 
         self._destination = stop_id
         self._leg_armed = True
+        self._since_replan_s = 0.0
         self._stats["legs_started"] += 1
 
         bus = self._bus()
@@ -532,6 +545,44 @@ class CarlaBackend(SimulationBackend):
             self._stats["distance_m"] += step
             self._track_stall(bus, step)
         self._last_location = here
+
+        self._track_replan(bus)
+
+    def _track_replan(self, bus: "carla.Actor") -> None:
+        """
+        Re-issue the route periodically, for a bus that is still moving.
+
+        `set_destination` hands the traffic manager one turn list per leg and
+        never refreshes it, and `_track_stall` only reacts to a bus that has
+        *stopped*. Between them there is a gap: the turn list is consumed one
+        entry per junction, and when it runs out or slips out of step,
+        `ImportRoute` drops the route and the vehicle reverts to random
+        navigation — driving briskly, so nothing notices. Measured on Town03,
+        a 474 m leg lost its list at the fourth of four turns and then
+        crossed 125 more junctions, covering 10 km without arriving.
+
+        Re-issuing does not correct any individual turn. It re-establishes
+        the alignment from wherever the bus actually is, so accumulated drift
+        is discarded rather than compounding for the rest of the leg.
+        Measured over full tours: Town03 −67% and Town05 −50% of simulated
+        time, with Town05 going from 12/14 legs arriving to 14/14.
+
+        The period wants to be **longer than a healthy leg**, so a leg that
+        is going well finishes untouched — at 300 s on Town05 the four legs
+        shorter than that came out bit-identical to leaving it alone, while
+        30 s and 120 s made one of them three times slower.
+        :param bus: The bus actor.
+        """
+        if self._replan_every_s is None or not self._leg_armed:
+            return
+        if self._destination is None or self._dwell_remaining > 0.0:
+            return
+
+        self._since_replan_s += self._delta
+        if self._since_replan_s >= self._replan_every_s:
+            self._steer_towards(bus, self._destination)
+            self._stats["replans"] += 1
+            self._since_replan_s = 0.0
 
     def _point_camera_at(self, bus: "carla.Actor") -> None:
         """

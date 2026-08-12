@@ -69,7 +69,16 @@ SPEED_SAMPLE_EVERY = 40
 
 # A leg still running after this did not arrive, and its timing is
 # meaningless; the tour continues so one bad leg does not lose the run.
-LEG_TIMEOUT_S = 900.0
+#
+# Sized against the legs these towns actually have, which is the whole
+# difficulty: a cap below the real span does not protect a calibration, it
+# silently *biases* it, because the legs that breach it are the long ones
+# and dropping them fits the factor to the short ones. At 900 s this
+# discarded 8 of 30 legs on Town03 and 12 of 30 on Town05 — yet Town05's
+# slowest measured leg is 1120 s and arrives perfectly well, and Town03 has
+# legs reaching 3000 s. Measured 2026-08-12 across four towns; the same
+# mistake at 200 s once manufactured "4 of 25 legs fail" on Town01.
+LEG_TIMEOUT_S = 3000.0
 
 
 def geo_stats(values: list[float]) -> tuple[float, float]:

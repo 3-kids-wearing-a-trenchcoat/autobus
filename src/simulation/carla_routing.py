@@ -49,10 +49,21 @@ def _lane_key(waypoint: "carla.Waypoint") -> tuple[int, int, int]:
     Two waypoints on the same lane a few centimetres apart are the same
     place for routing purposes; without quantising, `next()` returns
     slightly different objects for ever and the frontier never closes.
+
+    Rounded rather than truncated, and that is load-bearing. `next()`
+    accumulates a little floating-point error at every step, so a waypoint
+    that should sit at ``s = 30.0`` arrives as ``29.999995``. Truncating
+    drops it into the *previous* bucket, where it collides with its own
+    predecessor, is pruned as already-seen, and — on a lane with a single
+    continuation — empties the frontier and reports no route along a clear
+    road. Measured on Town03: a search from ``s = 18.0`` died after six
+    nodes while the same search from ``s = 20.0`` explored 6,747 and
+    arrived. Rounding tolerates drift up to half a bucket, a metre here,
+    against the micrometres actually seen.
     :param waypoint: Waypoint to identify.
     :return: Road, lane, and quantised distance along the lane.
     """
-    return (waypoint.road_id, waypoint.lane_id, int(waypoint.s / STEP_M))
+    return (waypoint.road_id, waypoint.lane_id, round(waypoint.s / STEP_M))
 
 
 def plan_route(

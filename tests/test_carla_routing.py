@@ -8,6 +8,8 @@ wrong or missing entry throws every later turn onto the wrong junction.
 """
 
 from src.simulation.carla_routing import (
+    _lane_key,
+    plan_route,
     TURN_THRESHOLD_DEG,
     _heading_change,
     turns_along,
@@ -137,3 +139,101 @@ def test_turns_come_back_in_the_order_they_must_be_made() -> None:
 
 def test_an_empty_route_is_handled() -> None:
     assert turns_along([]) == []
+
+
+# ---------------------------------------------------------------------------
+# The search survives floating-point drift along a lane
+# ---------------------------------------------------------------------------
+
+class _Point:
+    """Stands in for carla.Location, for the search rather than the turns."""
+
+    def __init__(self, x: float) -> None:
+        self.x = x
+
+    def distance(self, other: "_Point") -> float:
+        """Distance along a straight lane."""
+        return abs(self.x - other.x)
+
+
+class _SearchTransform:
+    """Stands in for carla.Transform, carrying a location."""
+
+    def __init__(self, x: float) -> None:
+        self.location = _Point(x)
+
+
+class _LaneWaypoint:
+    """
+    Stands in for carla.Waypoint on a single straight lane.
+
+    :param s: Distance along the lane, as CARLA reports it -- including the
+        error `next()` accumulates.
+    """
+
+    def __init__(self, s: float, road_id: int = 1) -> None:
+        self.s = s
+        self.road_id = road_id
+        self.lane_id = -2
+        self.is_junction = False
+        self.transform = _SearchTransform(s)
+        self.following: list["_LaneWaypoint"] = []
+
+    def next(self, distance: float) -> list["_LaneWaypoint"]:
+        """Return the single continuation of this lane."""
+        return list(self.following)
+
+
+class _StubMap:
+    """A map with one lane, answering `get_waypoint` by nearest node."""
+
+    def __init__(self, lane: list["_LaneWaypoint"]) -> None:
+        self._lane = lane
+
+    def get_waypoint(self, location, lane_type=None) -> "_LaneWaypoint":
+        """Snap a location to the nearest waypoint on the lane."""
+        return min(self._lane,
+                   key=lambda w: abs(w.transform.location.x - location.x))
+
+
+def _drifting_lane() -> list[_LaneWaypoint]:
+    """
+    One lane whose `s` drifts a hair below each 2 m mark, as CARLA's does.
+
+    The drift is what makes the last waypoint quantise into its own
+    predecessor's bucket when the key is truncated rather than rounded.
+    """
+    lane = [_LaneWaypoint(18.0), _LaneWaypoint(20.0), _LaneWaypoint(22.0),
+            _LaneWaypoint(24.0), _LaneWaypoint(26.0), _LaneWaypoint(28.0),
+            _LaneWaypoint(29.999995), _LaneWaypoint(31.999995),
+            _LaneWaypoint(33.999995), _LaneWaypoint(35.999995),
+            _LaneWaypoint(37.999995), _LaneWaypoint(39.999995)]
+    for current, following in zip(lane, lane[1:]):
+        current.following = [following]
+    return lane
+
+
+def test_a_lane_is_followed_across_a_quantisation_boundary() -> None:
+    """
+    A waypoint landing a micrometre below a bucket boundary must not be
+    mistaken for its own predecessor. Truncating the key did exactly that,
+    and on a lane with one continuation it emptied the frontier and
+    reported no route along a completely clear road -- measured on Town03,
+    where a search from s=18.0 died after six nodes while the same search
+    from s=20.0 explored 6,747 and arrived.
+    """
+    lane = _drifting_lane()
+    route = plan_route(_StubMap(lane), lane[0].transform.location,
+                       lane[-1].transform.location)
+
+    assert route is not None
+    assert route[0].s == lane[0].s
+    # The point of the test: the search got *past* the drifting waypoint
+    # rather than mistaking it for the one before and giving up.
+    assert 29.999995 in [waypoint.s for waypoint in route]
+
+
+def test_the_drifting_waypoint_gets_its_own_key() -> None:
+    """The specific collision, pinned at the level it happens."""
+    lane = _drifting_lane()
+    assert _lane_key(lane[5]) != _lane_key(lane[6])

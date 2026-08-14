@@ -1496,6 +1496,88 @@ parallelism already gives 6.8×. At 3 s/trial and `n_jobs=8`, a
 7-policy × 800-seed sweep is about 40 minutes. Revisit only if a sweep you
 actually want is too slow at that.
 
+### The RoadOption message: the map, not the replan — 2026-08-14
+
+Town03 and Town05 print `"We couldn't find the RoadOption you were looking
+for. This route might diverge from the one expected."` throughout a
+campaign; Town01 and Town02 appear not to. The overnight run of
+`carla-campaign-towns.ipynb` (2026-08-13) emitted 245 of them on Town03 and
+91 on Town05 before it was interrupted.
+
+**The campaign cannot answer why, because two explanations are perfectly
+collinear in it.** Town01 and Town02 recorded **zero replans** across 60
+runs — every leg is shorter than the 300 s period — while Town03 and Town05
+recorded 231 and 388. "Town" and "a replan fired" name the same rows.
+
+Before anything could be measured the message had to be made readable at
+all. It never passes through `sys.stdout` — the traffic manager runs in the
+*client* process and writes with C++ `std::cout` — and it was
+**block-buffered**, surfacing in clumps of ~40 wherever glibc's 4 KB buffer
+happened to fill. `src/simulation/carla_stdout.py` captures fd 1 and tags
+each line with the town, seed, leg and road position; see the trap below.
+
+#### The experiment
+
+A fixed 14-leg tour of every stop, 3 seeds, 20 NPCs, legs capped at 1200 s.
+Replans forced onto a town that has never had one, and taken away from a
+town that complains.
+
+| arm | legs | arrived | replans | **drops** | sim time | distance |
+|---|---|---|---|---|---|---|
+| Town01, once per leg | 42 | 42 | 0 | **0** | 5 735 s | 24.5 km |
+| Town01, every 30 s | 42 | 42 | **171** | **0** | 5 734 s | 24.5 km |
+| Town03, once per leg | 42 | 32 | 0 | **10** | 19 173 s | 82.4 km |
+| Town03, every 300 s | 42 | 39 | 33 | **20** | 14 234 s | 56.2 km |
+
+**It is the map.** Three independent lines agree:
+
+- **171 forced replans on Town01 dropped nothing.** Two of the three seeds
+  came out *bit-identical* to their no-replan counterparts, to the
+  centisecond and to twelve significant figures of distance — on a
+  single-lane grid the re-issued list is the list already in force.
+- **Town03 dropped 10 routes with `replans=0`.** No re-issuing involved.
+- **Seed 0's first four drops are identical with replanning on and off** —
+  same times (199.65, 222.50, 289.20, 355.30 s), same roads, same
+  coordinates. Replanning neither caused them nor prevented them.
+
+**Do not pursue the replan-inside-a-junction theory.** It predicted exactly
+the opposite of all three. 26 of 30 drops fired with the bus on open road.
+
+**But `junction=False` does not clear junction geometry** — it says the
+instrument is in the wrong place. The traffic manager validates its route
+against a look-ahead buffer *in front of* the vehicle, so what matters is
+the junction some tens of metres ahead, not the one the bus is sitting in.
+
+#### Replanning is not the culprit, and is still worth having
+
+It roughly triples the message rate — 0.12 drops/km without, 0.36 with —
+while **improving the outcome**: arrivals 32/42 → 39/42, simulated time
+−26%, distance −32%. The extra messages are a consequence of re-issuing
+more often, not damage. Keep `replan_every_s=300`.
+
+#### The drops are geographically concentrated
+
+This is the finding to act on. They are not diffuse:
+
+- **13 of 30 fall on one leg**, `n_s03_n0166 -> n_s04_n0289`.
+- **Two coordinates recur across independent seeds**: `(150.0, -105.7)` on
+  road 74 (four times, seeds 1 and 2) and `(-23.6, -2.7)` on road 1624
+  (seeds 1 and 2). Independent seeds failing at the identical metre is a
+  fixed map feature, not traffic noise.
+- Seed 0's four drops walk one corridor northward at x≈−84 — roads
+  2 → 3 → 4 → 69 — losing the route about every 140 m.
+
+23 of 30 drops are on multi-lane roads against 54% of Town03's non-junction
+roads being multi-lane, which is enrichment but not proof — the baseline is
+not exposure-weighted, and **the worst single hotspot, road 74, is
+single-lane**, so lane drift cannot be the whole story. All four
+`junction=True` drops are on junction connector roads (1566, 1577, 1624),
+which keeps junction chaining alive as a cause.
+
+Sanity check on the instrument: 0.24–0.48 drops per leg here against 0.34
+per leg in the overnight campaign, so the tour reproduces the campaign's
+phenomenon at the right magnitude.
+
 ## Decisions already made
 
 | Question | Answer | Source |
@@ -1743,6 +1825,42 @@ actually want is too slow at that.
   nothing*: the stale buffer's junctions consume entries from the new list
   before the bus reaches the junctions they were computed for. Emptying the
   buffer is what makes re-issuing work.
+
+  **The route is also dropped without any replanning.** Measured 2026-08-14:
+  Town03 dropped 10 routes over three tours with `replans=0`. Re-issuing is
+  a *response* to drift, not its cause — see "The RoadOption message: the
+  map, not the replan".
+
+- **CARLA's own diagnostics never reach `sys.stdout`, and are
+  block-buffered.** The traffic manager runs in the **client** process — the
+  string `"We couldn't find the RoadOption you were looking for"` lives in
+  the pip wheel's `libcarla` `.so`, not on the server — and it is written
+  with C++ `std::cout`, so it reaches **fd 1** without passing through
+  Python. `contextlib.redirect_stdout` cannot see it; capture has to be a
+  pipe `dup2`'d over the descriptor.
+
+  Worse, glibc gives `stdout` a 4 KB buffer whenever fd 1 is not a terminal
+  — under `conda run` and Jupyter it never is — so the messages surfaced in
+  clumps of roughly forty, long after the tick that caused them and in the
+  wrong order relative to anything Python printed. **Ordering in any saved
+  notebook output from before 2026-08-14 is therefore not evidence of which
+  town or leg produced a message.** The fix is
+  `libc.setvbuf(stdout, NULL, _IONBF, 0)` **after** the `dup2`: glibc picks
+  a stream's buffering mode from what fd 1 was at first use and never
+  revisits it.
+
+  `src/simulation/carla_stdout.py` does both, and tags every matched line
+  with the bus's town, seed, leg, road, lane and position;
+  `CarlaBackend.stats()` gains a `route_drops` counter. Two traps inside
+  that one:
+
+  - **pytest's own fd capture re-`dup2`s its tmpfile onto fd 1 between the
+    setup and call phases**, so a capture installed in a fixture is silently
+    undone before the test body runs. Install it inside the test body.
+  - **A clean run proves nothing** — no message and a broken capture look
+    identical. The positive control is
+    `traffic_manager.set_route(bus, ["Left"] * 40)` with
+    `replan_every_s=None`, which makes Town03 print the real thing in ~34 s.
 
   **What this is not.** It is a workaround. The underlying cause is that
   `set_route`'s labels cannot be reproduced from outside CARLA — see the

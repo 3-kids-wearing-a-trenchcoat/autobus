@@ -212,6 +212,12 @@ class CarlaBackend(SimulationBackend):
         self._since_repath_s = 0.0
         self._since_replan_s = 0.0
 
+        # The last turn list handed to the traffic manager, and when. Only
+        # diagnostics read these: a dropped route is about a list that ran
+        # out or slipped, so its length and age are the first questions.
+        self._issued_turns: list[str] = []
+        self._issued_at_s = 0.0
+
         # Request ID to walker actor ID, and to the stop it waits at.
         self._walkers: dict[str, int] = {}
         self._walker_stops: dict[str, str] = {}
@@ -552,6 +558,7 @@ class CarlaBackend(SimulationBackend):
         bus had drifted off the one its route was planned along.
         :return: One line of context, for the front of the message.
         """
+        now = self._stats["ticks"] * self._delta
         parts = [
             self._town,
             f"seed={self._seed}",
@@ -561,8 +568,10 @@ class CarlaBackend(SimulationBackend):
             # alike in the tag, since ``_position`` becomes ``_destination``
             # on arrival.
             f"armed={self._leg_armed}",
-            f"t={self._stats['ticks'] * self._delta:.2f}s",
+            f"t={now:.2f}s",
             f"since_replan={self._since_replan_s:.1f}s",
+            f"issued={len(self._issued_turns)}",
+            f"issued_ago={now - self._issued_at_s:.1f}s",
         ]
         bus = self._bus()
         if bus is not None:
@@ -574,7 +583,65 @@ class CarlaBackend(SimulationBackend):
             parts.append(f"road={waypoint.road_id}")
             parts.append(f"lane={waypoint.lane_id}")
             parts.append(f"at=({here.x:.1f},{here.y:.1f})")
+            parts += self._lookahead(bus, waypoint)
         return " ".join(parts)
+
+    def _lookahead(self, bus: "carla.Actor",
+                   waypoint: "carla.Waypoint") -> list[str]:
+        """
+        Describe the road in front of the bus, not the road under it.
+
+        This is the correction the first round of tagging asked for. The
+        traffic manager validates the turn list against a buffer that runs
+        *ahead* of the vehicle, so where the bus is says little about which
+        junction the missing turn belonged to — measured 2026-08-14, 26 of
+        30 messages fired with the bus on open road.
+        :param bus: The bus actor.
+        :param waypoint: The bus's own snapped waypoint.
+        :return: Tag fields naming what the traffic manager intends to do
+            next and where the next junction along the lane is.
+        """
+        action, target = self._traffic_manager.get_next_action(bus)
+        gap = target.transform.location.distance(bus.get_location())
+        parts = [
+            f"tm_next={action}",
+            f"tm_next_at={gap:.0f}m",
+            f"tm_buffer={len(self._traffic_manager.get_all_actions(bus))}",
+        ]
+
+        ahead = self._junction_ahead(waypoint)
+        if ahead is None:
+            parts.append("next_junction=none")
+        else:
+            junction, distance = ahead
+            parts.append(f"next_junction={junction.road_id}@{distance:.0f}m")
+        return parts
+
+    def _junction_ahead(
+        self, waypoint: "carla.Waypoint", limit_m: float = 80.0
+    ) -> "tuple[carla.Waypoint, float] | None":
+        """
+        Find the first junction along the lane in front of the bus.
+
+        Follows the first continuation at each step rather than every
+        branch. That is enough for the question being asked — which junction
+        is coming — because every branch out of a lane enters the same
+        junction; it would not be enough to plan with.
+        :param waypoint: Where to start looking from.
+        :param limit_m: How far ahead to bother looking.
+        :return: The junction's first waypoint and its distance, or None if
+            there is no junction within the limit.
+        """
+        step, travelled, current = 2.0, 0.0, waypoint
+        while travelled < limit_m:
+            following = current.next(step)
+            if not following:
+                return None
+            current = following[0]
+            travelled += step
+            if current.is_junction:
+                return current, travelled
+        return None
 
     def _tick_once(self) -> None:
         """Advance the world one step and accumulate diagnostics."""
@@ -793,6 +860,8 @@ class CarlaBackend(SimulationBackend):
             return
 
         turns = turns_along(route)
+        self._issued_turns = turns
+        self._issued_at_s = self._stats["ticks"] * self._delta
         if turns:
             self._traffic_manager.set_route(bus, turns)
         # An empty list means the route crosses no junction where there is

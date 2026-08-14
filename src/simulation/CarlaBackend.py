@@ -19,6 +19,7 @@ import random
 import socket
 
 from src.algorithm.RequestPool import RequestPool
+from src.simulation import carla_stdout
 from src.simulation.carla_routing import plan_route, turns_along
 from src.simulation.SimulationBackend import AdvanceResult, SimulationBackend
 
@@ -226,6 +227,11 @@ class CarlaBackend(SimulationBackend):
             "red_light_ticks": 0,
             "queued_ticks": 0,
             "unroutable_legs": 0,
+            # Times the traffic manager reported it could not find the turn
+            # it was told to make, and so threw the route away. See
+            # ``carla_stdout``: the message itself carries no context, and
+            # the tagged line on stdout is where the detail lives.
+            "route_drops": 0,
             "walkers_spawned": 0,
             "walkers_removed": 0,
             "walker_spawn_failures": 0,
@@ -249,6 +255,10 @@ class CarlaBackend(SimulationBackend):
         ``_acquire_traffic_manager`` — getting this wrong drives the bus into
         the scenery and is silent.
         """
+        # Before anything touches CARLA: the traffic manager's diagnostics
+        # go straight to fd 1 from C++, and are worthless untagged.
+        carla_stdout.install()
+
         self._client = carla.Client(self._host, self._port)
         self._client.set_timeout(self._timeout_s)
 
@@ -357,6 +367,11 @@ class CarlaBackend(SimulationBackend):
         caller who named a port keeps theirs and a notebook sharing the
         server keeps working.
         """
+        # Whatever the traffic manager printed since the last tick still
+        # belongs to this trial, so take it before handing fd 1 back.
+        self._collect_messages()
+        carla_stdout.restore()
+
         if self._client is None or self._world is None:
             return
         actor_ids = [
@@ -518,10 +533,54 @@ class CarlaBackend(SimulationBackend):
         x, y, z = self._stop_positions[stop_id]
         return carla.Location(x=x, y=y, z=z)
 
+    def _collect_messages(self) -> None:
+        """Tag and count whatever the traffic manager has printed."""
+        for name, hits in carla_stdout.drain(self._context).items():
+            self._stats[name] = self._stats.get(name, 0) + hits
+
+    def _context(self) -> str:
+        """
+        Describe where the bus is, to label a traffic manager message.
+
+        Built only once a message has actually arrived: the waypoint lookup
+        is a map query, and at twenty ticks a simulated second over a
+        campaign it would cost far more than the diagnostic is worth.
+
+        The road fields are the whole point. A message raised while the bus
+        sits *inside* a junction says the turn list was re-issued from a
+        place ``turns_along`` cannot describe, and the lane says whether the
+        bus had drifted off the one its route was planned along.
+        :return: One line of context, for the front of the message.
+        """
+        parts = [
+            self._town,
+            f"seed={self._seed}",
+            f"leg={self._position}->{self._destination}",
+            # Without this a message raised while the bus idles between legs
+            # reads as a leg that went wrong. It also makes the two look
+            # alike in the tag, since ``_position`` becomes ``_destination``
+            # on arrival.
+            f"armed={self._leg_armed}",
+            f"t={self._stats['ticks'] * self._delta:.2f}s",
+            f"since_replan={self._since_replan_s:.1f}s",
+        ]
+        bus = self._bus()
+        if bus is not None:
+            here = bus.get_location()
+            waypoint = self._world.get_map().get_waypoint(
+                here, lane_type=carla.LaneType.Driving
+            )
+            parts.append(f"junction={waypoint.is_junction}")
+            parts.append(f"road={waypoint.road_id}")
+            parts.append(f"lane={waypoint.lane_id}")
+            parts.append(f"at=({here.x:.1f},{here.y:.1f})")
+        return " ".join(parts)
+
     def _tick_once(self) -> None:
         """Advance the world one step and accumulate diagnostics."""
         self._world.tick()
         self._stats["ticks"] += 1
+        self._collect_messages()
 
         bus = self._bus()
         if bus is None:

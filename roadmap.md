@@ -1667,6 +1667,87 @@ we issue against what the traffic manager actually asks for, via
 `n_s03->n_s04`. That says which specific junctions we disagree about,
 instead of counting.
 
+### Fixed: an entry is spent at a *labelled* junction — 2026-08-14
+
+Read out of CARLA 0.9.16's own source rather than inferred. Two functions
+settle the whole thing.
+
+**`LocalizationStage.cpp:583` — what spends an entry:**
+
+```cpp
+if (latest_road_option != next_wp_selection->GetRoadOption() &&
+    next_road_option == next_wp_selection->GetRoadOption()) {
+  imported_actions.erase(imported_actions.begin());
+}
+```
+
+Consumption has nothing to do with junctions or with branching. An entry is
+spent whenever the waypoint buffer crosses a **RoadOption label transition**
+into a stretch labelled with the option currently requested. The complaint
+at line 561 is separate, and fires only where `next_waypoints.size() > 1`
+and no branch matches — so a junction can silently eat an entry without
+ever printing anything.
+
+**`InMemoryMap.cpp:388` — what gets labelled:**
+
+```cpp
+else if (next_swp_size > 1 ||
+         (!swp->CheckJunction() && next_waypoints.front()->CheckJunction()))
+```
+
+— it branches, **or** it is about to enter a junction; and in that second
+case only if `GetAllLandmarksInDistance(15.0)` finds a landmark of type
+`1000001` (traffic light), `206` (stop) or `205` (yield). Otherwise it stays
+`LaneFollow` and no entry is spent there.
+
+**Why only two towns.** `turns_along` tested `len(previous.next(STEP_M)) > 1`
+— *branching*. The traffic manager tests *labelling*. Those coincide exactly
+when every junction branches, which is true of a single-lane grid and false
+of a multi-lane map, where a dedicated turn lane has one continuation
+through a signalised junction. Audited per junction:
+
+| | junctions on tour | non-branching **and** signalised |
+|---|---|---|
+| Town01 | 52 | **0** |
+| Town03 | 94 | **15** |
+
+Town03 junction 655 is one of them, and is the junction the live diff caught
+spending entry `[0]` a junction early.
+
+**The fix.** `_is_labelled` in `carla_routing`, mirroring `InMemoryMap`:
+emit where the lane branches **or** a signal landmark is within 15 m.
+Offline it is inert where it should be — Town01 and Town02 come out
+identical on 14/14 legs, Town03 gains exactly the predicted 15 entries,
+Town05 gains 9 — and the landmark query costs nothing measurable
+(`turns_along` stays at 0.1 ms per leg).
+
+**Measured.** Town03 full tour, seed 0, **no replanning**, 20 NPCs, legs
+capped at 1200 s. The baseline arm reproduced bit-identically for the third
+time (`sim_s=7394.55`), so the delta is the rule change alone:
+
+| arm | arrived | timed out | drops | sim time | distance |
+|---|---|---|---|---|---|
+| branching only | 9/14 | 5 | 4 | 7 395 s | 29.4 km |
+| **signal-aware** | **14/14** | **0** | **3** | **3 948 s** | **16.3 km** |
+
+Every leg arrives, no leg hits the cap, and simulated time falls **47%** —
+without any replanning at all.
+
+**Not everything is fixed.** Three drops remain, all on one leg
+(`n_s12->n_s13`), and three legs still run long (841 s, 892 s, 689 s). The
+label geometry is a known remaining difference: CARLA measures the angle
+between the first and last waypoint *inside* the junction with
+`STRAIGHT_DEG = 19.0` (`Constants.h:107`), while `turns_along` measures the
+approach against the exit with `TURN_THRESHOLD_DEG = 35.0`. That disagreed
+on only **1 junction in 146** across both tours, so it was left alone.
+
+!!! danger "Every Town03 and Town05 CARLA result is now stale"
+    The bus drives a different route, so travel times, `traffic_efficiency`
+    calibrations and campaign KPIs for those two towns were all measured
+    against a route the fix changes. **Town01 and Town02 are unaffected** —
+    their turn lists are identical under both rules, verified on 14/14 legs
+    each — so their runs stand. Re-calibrate and re-run Town03 and Town05.
+
 ## Decisions already made
 
 | Question | Answer | Source |

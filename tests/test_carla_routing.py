@@ -38,31 +38,50 @@ class _Waypoint:
     :param is_junction: Whether this point lies inside a junction.
     :param exits: How many continuations ``next()`` offers, which is how a
         real junction advertises that there is a choice to make.
+    :param signals: Landmark type codes within range, which is the other
+        way a junction gets labelled -- see ``_is_labelled``.
     """
 
     def __init__(self, yaw: float, is_junction: bool = False,
-                 exits: int = 2) -> None:
+                 exits: int = 2, signals: tuple[str, ...] = ()) -> None:
         self.transform = _Transform(yaw)
         self.is_junction = is_junction
         self._exits = exits
+        self._signals = signals
 
     def next(self, distance: float) -> list["_Waypoint"]:
         """Return as many continuations as this waypoint was given."""
         return [self] * self._exits
 
+    def get_landmarks(self, distance: float) -> list["_Landmark"]:
+        """Return the landmarks this waypoint was given."""
+        return [_Landmark(code) for code in self._signals]
 
-def _through_junction(entry_yaw: float, exit_yaw: float,
-                      exits: int = 2) -> list[_Waypoint]:
+
+class _Landmark:
+    """Stands in for carla.Landmark.
+
+    :param type: The landmark's type code.
+    """
+
+    def __init__(self, type: str) -> None:
+        self.type = type
+
+
+def _through_junction(entry_yaw: float, exit_yaw: float, exits: int = 2,
+                      signals: tuple[str, ...] = ()) -> list[_Waypoint]:
     """
     Build the shortest route that enters and leaves one junction.
 
     :param entry_yaw: Heading on the approach.
     :param exit_yaw: Heading on the way out.
     :param exits: Continuations offered on the approach.
+    :param signals: Landmark type codes on the approach.
     :return: Waypoints in travel order.
     """
     return [
-        _Waypoint(entry_yaw, is_junction=False, exits=exits),
+        _Waypoint(entry_yaw, is_junction=False, exits=exits,
+                  signals=signals),
         _Waypoint(entry_yaw, is_junction=True),
         _Waypoint(exit_yaw, is_junction=False),
     ]
@@ -113,43 +132,48 @@ def test_a_turn_that_straddles_the_wrap_is_still_a_turn() -> None:
 # Only decisions are reported
 # ---------------------------------------------------------------------------
 
-def test_a_junction_with_no_choice_yields_no_instruction() -> None:
+def test_a_signalised_junction_is_reported_even_without_a_choice() -> None:
     """
-    Where the lane has one continuation there is nothing to tell the
-    traffic manager. Emitting a turn anyway would be worse than saying
-    nothing, because `set_route` consumes the list in order and every later
-    turn would then land on the wrong junction.
+    The traffic manager spends an entry wherever it labelled the waypoint,
+    and `InMemoryMap.cpp` labels a non-branching junction approach when a
+    traffic light, stop or yield sign is within 15 m. A list built on
+    branching alone is then one short from that junction onward -- traced
+    end to end on Town03 junction 655, 2026-08-14.
+    """
+    lit = _through_junction(0.0, 90.0, exits=1, signals=("1000001",))
+    assert turns_along(lit) == ["Right"]
+    assert turns_along(lit, branching_only=True) == []
+
+
+def test_an_unsignalised_junction_with_no_choice_stays_silent() -> None:
+    """
+    Without a landmark the waypoint keeps LaneFollow, no entry is spent, and
+    emitting one would throw every later turn onto the wrong junction. That
+    is what made the every-junction list 15x worse on 2026-08-14.
     """
     assert turns_along(_through_junction(0.0, 90.0, exits=1)) == []
 
 
-def test_at_every_junction_reports_the_choiceless_junction_too() -> None:
-    """
-    The guard above cuts both ways, and on a multi-lane map it cuts the
-    wrong way far more often: a dedicated turn lane has one continuation
-    through its junction, so the choice exists at the road level and not at
-    the lane level. Measured 2026-08-14, Town03's tour loses 48 entries to
-    it and Town01's loses none.
-    """
-    route = _through_junction(0.0, 90.0, exits=1)
-    assert turns_along(route) == []
-    assert turns_along(route, at_every_junction=True) == ["Right"]
+def test_an_irrelevant_landmark_does_not_count() -> None:
+    """Only the three types InMemoryMap tests for label a junction."""
+    speed_limit = _through_junction(0.0, 90.0, exits=1, signals=("274",))
+    assert turns_along(speed_limit) == []
 
 
-def test_at_every_junction_changes_nothing_where_there_is_a_choice() -> None:
-    """A single-lane grid must come out identical, or Town01 regresses."""
+def test_a_branching_junction_needs_no_landmark() -> None:
+    """A single-lane grid must be unaffected, or Town01 regresses."""
     route = (
         _through_junction(0.0, 90.0)
         + _through_junction(90.0, 90.0)[1:]
         + _through_junction(90.0, 0.0)[1:]
     )
-    assert turns_along(route, at_every_junction=True) == turns_along(route)
+    assert turns_along(route) == ["Right", "Straight", "Left"]
+    assert turns_along(route, branching_only=True) == turns_along(route)
 
 
 def test_a_route_with_no_junctions_yields_no_turns() -> None:
     straight = [_Waypoint(0.0) for _ in range(5)]
     assert turns_along(straight) == []
-    assert turns_along(straight, at_every_junction=True) == []
 
 
 def test_turns_come_back_in_the_order_they_must_be_made() -> None:

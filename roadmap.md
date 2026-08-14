@@ -1578,7 +1578,7 @@ Sanity check on the instrument: 0.24–0.48 drops per leg here against 0.34
 per leg in the overnight campaign, so the tour reproduces the campaign's
 phenomenon at the right magnitude.
 
-### The turn list is short — root cause found 2026-08-14
+### The turn list is short — a strong marker, **not** the cause 2026-08-14
 
 Tagging the road *in front of* the bus rather than under it settled where
 the failure happens: **every drop fires 16–26 m short of a junction**, at
@@ -1632,9 +1632,40 @@ chained by 2 m stubs at `STEP_M=2.0`'s resolution limit, and
   yet it was the worse town overnight — 155 unroutable legs and two runs
   hitting the tick cap. That is `plan_route` returning None and the bus
   reverting to random navigation, and it is still open.
-- **The obvious fix is unverified.** Emitting an entry at every junction
-  contradicts the reasoning in the existing comment and touches the code
-  behind every recorded CARLA baseline.
+#### ⚠ The every-junction fix is **refuted** — measured 2026-08-14
+
+Emitting an entry at every junction the route enters was the obvious repair,
+and it is **15× worse**. Town03's full tour, seed 0, no replanning, 20 NPCs,
+legs capped at 1200 s. The baseline arm reproduced the earlier run
+*bit-identically* (`sim_s=7394.55` to the centisecond), so the difference is
+the change and nothing else:
+
+| arm | arrived | timed out | drops | sim time | distance |
+|---|---|---|---|---|---|
+| choice junctions only | 9/14 | 5 | **4** | 7 395 s | 29.4 km |
+| every junction | **7/14** | **7** | **61** | **12 102 s** | 48.3 km |
+
+Offline it looked ideal: Town01 and Town02 came out **identical on 14 of 14
+legs**, so it could not regress them, and Town03's 48 missing entries and
+Town05's 10 both closed to zero. It still failed.
+
+**What this establishes.** The traffic manager does *not* consume one entry
+per junction, so the original guard's premise was right and its comment's
+warning was accurate — over-supplying entries throws every later turn onto
+the wrong junction, exactly as it said. **Do not retry this.**
+
+**What it costs us.** The junction-vs-turn gap is a genuine and very tight
+marker — 0 on both silent towns, 48 on the town that drops 30 routes — but
+it is a *symptom of multi-lane geometry*, not the mechanism. The cause of
+the drops is open again.
+
+**Where to look next.** The gap analysis assumed every suppressed entry was
+wrong. It is more likely only some are, and possibly some emitted ones are
+wrong too. The precise instrument is a junction-by-junction diff of the list
+we issue against what the traffic manager actually asks for, via
+`get_next_action` as the bus crosses each junction on the failing leg
+`n_s03->n_s04`. That says which specific junctions we disagree about,
+instead of counting.
 
 ## Decisions already made
 

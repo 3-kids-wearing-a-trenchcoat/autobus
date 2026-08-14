@@ -147,7 +147,9 @@ def _heading_change(before: float, after: float) -> float:
     return (after - before + 180.0) % 360.0 - 180.0
 
 
-def turns_along(route: list["carla.Waypoint"]) -> list[str]:
+def turns_along(
+    route: list["carla.Waypoint"], at_every_junction: bool = False
+) -> list[str]:
     """
     Read the junction manoeuvres off a planned route.
 
@@ -156,6 +158,10 @@ def turns_along(route: list["carla.Waypoint"]) -> list[str]:
     are the strings the traffic manager itself uses, as returned by
     `TrafficManager.get_next_action`.
     :param route: Waypoints in travel order, as from `plan_route`.
+    :param at_every_junction: Emit an entry for every junction the route
+        enters, including those where the lane offers a single continuation.
+        Default False, which is the behaviour every recorded CARLA result
+        was measured under. See the guard below for what it is testing.
     :return: Ordered turn names, e.g. ``["Left", "Left", "Straight"]``.
     """
     turns: list[str] = []
@@ -165,16 +171,24 @@ def turns_along(route: list["carla.Waypoint"]) -> list[str]:
         entering = waypoint.is_junction and not previous.is_junction
         leaving = previous.is_junction and not waypoint.is_junction
         if entering:
-            # Only a junction that offers a choice is a decision. Where the
-            # lane has exactly one continuation the traffic manager has
-            # nothing to be told, and CARLA's own planner reports nothing
-            # there either. Emitting a turn anyway would be worse than
-            # useless: `set_route` consumes the list in order, so one
-            # spurious entry makes every later turn happen at the wrong
-            # junction.
+            # The reasoning behind this guard was that only a junction
+            # offering a choice is a decision: where the lane has one
+            # continuation the traffic manager has nothing to be told, and a
+            # spurious entry would be worse than useless, since `set_route`
+            # consumes the list in order and one extra entry makes every
+            # later turn happen at the wrong junction.
+            #
+            # Measured 2026-08-14, that argument is half of one. A *missing*
+            # entry misaligns the list exactly as badly, and on a multi-lane
+            # map this guard suppresses a great many: the choice exists at
+            # the road level but not at the lane level, because a dedicated
+            # turn lane has a single continuation through its junction.
+            # Town03's tour loses 48 entries this way and Town01's loses
+            # none, which is the whole difference between the town that
+            # drops routes and the town that does not.
             entry_yaw = (
                 previous.transform.rotation.yaw
-                if len(previous.next(STEP_M)) > 1
+                if at_every_junction or len(previous.next(STEP_M)) > 1
                 else None
             )
         elif leaving and entry_yaw is not None:

@@ -123,9 +123,33 @@ def test_a_junction_with_no_choice_yields_no_instruction() -> None:
     assert turns_along(_through_junction(0.0, 90.0, exits=1)) == []
 
 
+def test_at_every_junction_reports_the_choiceless_junction_too() -> None:
+    """
+    The guard above cuts both ways, and on a multi-lane map it cuts the
+    wrong way far more often: a dedicated turn lane has one continuation
+    through its junction, so the choice exists at the road level and not at
+    the lane level. Measured 2026-08-14, Town03's tour loses 48 entries to
+    it and Town01's loses none.
+    """
+    route = _through_junction(0.0, 90.0, exits=1)
+    assert turns_along(route) == []
+    assert turns_along(route, at_every_junction=True) == ["Right"]
+
+
+def test_at_every_junction_changes_nothing_where_there_is_a_choice() -> None:
+    """A single-lane grid must come out identical, or Town01 regresses."""
+    route = (
+        _through_junction(0.0, 90.0)
+        + _through_junction(90.0, 90.0)[1:]
+        + _through_junction(90.0, 0.0)[1:]
+    )
+    assert turns_along(route, at_every_junction=True) == turns_along(route)
+
+
 def test_a_route_with_no_junctions_yields_no_turns() -> None:
     straight = [_Waypoint(0.0) for _ in range(5)]
     assert turns_along(straight) == []
+    assert turns_along(straight, at_every_junction=True) == []
 
 
 def test_turns_come_back_in_the_order_they_must_be_made() -> None:

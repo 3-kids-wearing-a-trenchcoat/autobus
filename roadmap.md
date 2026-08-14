@@ -1578,6 +1578,64 @@ Sanity check on the instrument: 0.24–0.48 drops per leg here against 0.34
 per leg in the overnight campaign, so the tour reproduces the campaign's
 phenomenon at the right magnitude.
 
+### The turn list is short — root cause found 2026-08-14
+
+Tagging the road *in front of* the bus rather than under it settled where
+the failure happens: **every drop fires 16–26 m short of a junction**, at
+consecutive junctions (Town03 seed 0: 743, 875, 263, 341), against a list of
+five turns issued once at the start of the leg. The bus is not wandering
+lost between junctions; it is refused at each one in turn.
+
+So compare the two counts directly. Junctions each planned route enters,
+against entries `turns_along` emits, over every leg of every tour:
+
+| town | legs disagreeing | missing entries | drops observed |
+|---|---|---|---|
+| Town01 | **0/14** | **0** | 0 |
+| Town02 | **0/14** | **0** | 0 |
+| Town03 | **13/14** | **48** | 30 |
+| Town05 | 10/14 | 10 | — |
+
+The two silent towns match one-to-one on **every leg**. Town03's worst leg,
+`n_s03->n_s04`, **crosses 14 junctions and issues 6 turns**, and carries 13
+of the 30 drops.
+
+**The guard is the bug, not the classification.** In every row of that audit
+`choices == turns`, so the turn directions are never wrong. What suppresses
+entries is:
+
+```python
+entry_yaw = (previous.transform.rotation.yaw
+             if len(previous.next(STEP_M)) > 1 else None)
+```
+
+Its comment argues that a spurious entry would throw every later turn onto
+the wrong junction. That is true, and **so does a missing one** — which is
+what actually happens.
+
+**Why it splits by town.** On a multi-lane road the choice exists at the
+*road* level but not at the *lane* level: a dedicated turn lane has exactly
+one continuation through its junction, so the guard suppresses it. Town01
+and Town02 are single-lane grids where every junction genuinely branches.
+This collapses the earlier "multi-lane" and "chained junction" hypotheses
+into one cause. The hotspot geometry agrees — `(-23.6,-2.7)` reads
+`junction 2m | road 2m | junction 12m | road 2m | junction 18m`, junctions
+chained by 2 m stubs at `STEP_M=2.0`'s resolution limit, and
+`(150.0,-105.7)` is a **five-lane** road with junctions every ~45 m.
+
+**Three things this does not explain, and must not be stretched to cover:**
+
+- **The gap is not sufficient.** `n_s05->n_s06` has gap 0 and dropped 3
+  routes; `n_s07->n_s08` has gap +7 and dropped none. 26 of 29 attributable
+  drops are on gap>0 legs — a strong contributor, not the whole mechanism.
+- **Town05 is a different illness.** Its gaps total 10 against Town03's 48,
+  yet it was the worse town overnight — 155 unroutable legs and two runs
+  hitting the tick cap. That is `plan_route` returning None and the bus
+  reverting to random navigation, and it is still open.
+- **The obvious fix is unverified.** Emitting an entry at every junction
+  contradicts the reasoning in the existing comment and touches the code
+  behind every recorded CARLA baseline.
+
 ## Decisions already made
 
 | Question | Answer | Source |

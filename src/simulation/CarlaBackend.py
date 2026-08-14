@@ -212,11 +212,16 @@ class CarlaBackend(SimulationBackend):
         self._since_repath_s = 0.0
         self._since_replan_s = 0.0
 
-        # The last turn list handed to the traffic manager, and when. Only
-        # diagnostics read these: a dropped route is about a list that ran
-        # out or slipped, so its length and age are the first questions.
+        # The last turn list handed to the traffic manager, when, and from
+        # where. Only diagnostics read these: a dropped route is about a
+        # list that ran out or slipped, so its contents, its age and the
+        # point it was planned from are the questions asked of it. The
+        # origin matters because the route is planned from wherever the bus
+        # actually is, not from the stop it nominally left — without it a
+        # drop cannot be reconstructed after the fact.
         self._issued_turns: list[str] = []
         self._issued_at_s = 0.0
+        self._issued_from: tuple[float, float] | None = None
 
         # Request ID to walker actor ID, and to the stop it waits at.
         self._walkers: dict[str, int] = {}
@@ -572,6 +577,12 @@ class CarlaBackend(SimulationBackend):
             f"since_replan={self._since_replan_s:.1f}s",
             f"issued={len(self._issued_turns)}",
             f"issued_ago={now - self._issued_at_s:.1f}s",
+            # The list itself and the point it was planned from, so a drop
+            # can be reconstructed offline instead of guessed at. The route
+            # is planned from where the bus stood, which is not the stop it
+            # left, so the destination alone does not identify it.
+            f"turns={','.join(self._issued_turns) or '-'}",
+            f"planned_from={self._as_point(self._issued_from)}",
         ]
         bus = self._bus()
         if bus is not None:
@@ -585,6 +596,19 @@ class CarlaBackend(SimulationBackend):
             parts.append(f"at=({here.x:.1f},{here.y:.1f})")
             parts += self._lookahead(bus, waypoint)
         return " ".join(parts)
+
+    @staticmethod
+    def _as_point(position: "tuple[float, float] | None") -> str:
+        """
+        Format a planning origin for the tag.
+
+        :param position: The x and y it was planned from, or None if no
+            route has been issued yet.
+        :return: ``(x,y)``, or ``none``.
+        """
+        if position is None:
+            return "none"
+        return f"({position[0]:.1f},{position[1]:.1f})"
 
     def _lookahead(self, bus: "carla.Actor",
                    waypoint: "carla.Waypoint") -> list[str]:
@@ -844,9 +868,11 @@ class CarlaBackend(SimulationBackend):
         :param bus: The bus actor.
         :param stop_id: TransitGraph node ID of the stop to drive to.
         """
+        origin = bus.get_location()
+        self._issued_from = (origin.x, origin.y)
         route = plan_route(
             self._world.get_map(),
-            bus.get_location(),
+            origin,
             self._location_of(stop_id),
         )
         if route is None:

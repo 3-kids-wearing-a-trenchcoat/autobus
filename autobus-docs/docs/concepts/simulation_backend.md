@@ -173,9 +173,12 @@ because Town01 legs already run to minutes.
 
 Two things fall out of this that are easy to get wrong:
 
-- **Only junctions offering a choice count.** `set_route` consumes the list in
-  order, so one spurious entry throws every later turn onto the wrong
-  junction.
+- **Which junctions get an entry is not obvious, and getting it wrong is
+  silent.** `set_route` consumes the list in order, so one entry too many *or
+  too few* throws every later turn onto the wrong junction. The rule is
+  CARLA's, not a plausible stand-in for it — see
+  [Navigating in CARLA](carla_navigation.md), which is required reading before
+  touching `turns_along`.
 - **CARLA ships an equivalent** — `agents.navigation.GlobalRoutePlanner` — but
   the pip wheel is client bindings only and does not include it, so it would
   have to be copied into this repository either way. Ours was measured against
@@ -186,10 +189,11 @@ Two things fall out of this that are easy to get wrong:
 
 `set_destination` hands the traffic manager one turn list per leg and never
 refreshes it. That is enough on a simple town and not enough on a complex
-one, because the list is consumed **one entry per junction**: when it runs
-out, or slips out of step with the junctions the traffic manager actually
-counts, `ImportRoute` drops the route and the vehicle reverts to *random
-navigation*.
+one, because the list is consumed as the bus goes — an entry at a time,
+whenever it crosses into a stretch of road labelled with the manoeuvre being
+asked for ([the exact rule](carla_navigation.md#how-carla-consumes-the-turn-list)).
+When the list runs out or slips out of step, the route is dropped and the
+vehicle reverts to *random navigation*.
 
 Nothing notices, and that is the crux. `_track_stall` reacts only to a bus
 that has **stopped**, with red lights and queues exempted — so a bus driving

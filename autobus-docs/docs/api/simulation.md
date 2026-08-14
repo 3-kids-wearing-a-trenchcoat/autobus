@@ -24,6 +24,12 @@
 
 ::: src.simulation.carla_routing.plan_turns
 
+::: src.simulation.carla_stdout.install
+
+::: src.simulation.carla_stdout.drain
+
+::: src.simulation.carla_stdout.restore
+
 ::: src.simulation.AnimationRecorder.AnimationFrame
 
 ::: src.simulation.AnimationRecorder.AnimationRecorder

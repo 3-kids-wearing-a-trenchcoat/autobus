@@ -35,6 +35,7 @@ nav:
       - Bus Agent: concepts/bus_agent.md
       - Metrics: concepts/metrics.md
       - Simulation Backend: concepts/simulation_backend.md
+      - Navigating in CARLA: concepts/carla_navigation.md
       - Simulation Runner: concepts/simulation_runner.md
       - Experiment Helpers: concepts/experiment.md
   - API Reference:

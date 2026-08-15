@@ -112,6 +112,25 @@ MAP_LABEL_INK = (206, 212, 222)
 # and whatever is near the bus get named.
 MAP_LABEL_RANGE_M = 90.0
 
+# Tabs above the panel, one per view. Clicked, not cycled: two views is
+# already one too many to remember a keystroke for.
+TAB_H = 26
+TAB_W = 104
+TAB_GAP = 4
+TAB_FONT_PT = 15
+TAB_ON = (34, 40, 52)
+TAB_OFF = (16, 18, 24)
+TAB_INK_ON = (232, 236, 244)
+TAB_INK_OFF = (140, 148, 162)
+VIEW_MAP = "map"
+VIEW_GRAPH = "graph"
+VIEW_LABELS = ((VIEW_MAP, "town"), (VIEW_GRAPH, "by time"))
+
+# Schematic colours. Links are drawn thin and cool so the plan and the bus
+# still read on top of them.
+GRAPH_LINK = (86, 94, 110)
+GRAPH_STRANDED = (235, 80, 60)
+
 # --- Live-request table ---------------------------------------------------
 #
 # Drawn top-right, under its own panel. Columns are padded to a common width
@@ -190,6 +209,149 @@ def format_table(
     return [line(header)] + [line(row) for row in rows]
 
 
+@dataclass(frozen=True)
+class Schematic:
+    """
+    The stop graph laid out by travel cost rather than by geography.
+
+    The geographic map answers "where is that stop"; this answers "how far
+    away is it *really*", which on these towns is a different question. Two
+    stops a street apart can be a five-minute drive because the graph has no
+    lane-change edges, and on the geographic map that looks like nothing at
+    all.
+
+    :param nodes: ``(stop_id, x, y)`` with x and y in 0..1.
+    :param links: Index pairs into ``nodes``, the connections drawn.
+    :param stranded: Indices of stops that cannot reach, or be reached by,
+        the rest -- the graph pathology no picture of a town can show.
+    """
+
+    nodes: tuple[tuple[str, float, float], ...]
+    links: tuple[tuple[int, int], ...]
+    stranded: tuple[int, ...]
+
+
+def _spring_layout(
+    count: int,
+    ideal: dict[tuple[int, int], float],
+    start: list[tuple[float, float]],
+    rounds: int = 240,
+) -> list[tuple[float, float]]:
+    """
+    Nudge nodes until their distances resemble their travel costs.
+
+    A plain force-directed pass: linked nodes pull towards their ideal
+    separation, every pair pushes apart a little so nothing collapses into a
+    point. Deterministic, and started from the geographic positions so the
+    result stays recognisable rather than being a fresh scramble every run.
+    :param count: How many nodes.
+    :param ideal: Wanted separation per linked index pair, in 0..1 units.
+    :param start: Initial positions, in 0..1.
+    :param rounds: Iterations; 240 settles 15 nodes with room to spare.
+    :return: Settled positions.
+    """
+    points = list(start)
+    for step in range(rounds):
+        cooling = 1.0 - step / rounds
+        shift = [[0.0, 0.0] for _ in range(count)]
+        for (a, b), want in ideal.items():
+            ax, ay = points[a]
+            bx, by = points[b]
+            gap = math.hypot(bx - ax, by - ay) or 1e-6
+            pull = (gap - want) / gap * 0.5
+            shift[a][0] += (bx - ax) * pull
+            shift[a][1] += (by - ay) * pull
+            shift[b][0] -= (bx - ax) * pull
+            shift[b][1] -= (by - ay) * pull
+        for a in range(count):
+            for b in range(a + 1, count):
+                ax, ay = points[a]
+                bx, by = points[b]
+                gap = math.hypot(bx - ax, by - ay) or 1e-6
+                if gap >= 0.25:
+                    continue
+                push = (0.25 - gap) / gap * 0.25
+                shift[a][0] -= (bx - ax) * push
+                shift[a][1] -= (by - ay) * push
+                shift[b][0] += (bx - ax) * push
+                shift[b][1] += (by - ay) * push
+        for a in range(count):
+            points[a] = (points[a][0] + shift[a][0] * cooling,
+                         points[a][1] + shift[a][1] * cooling)
+    return _normalised(points)
+
+
+def _normalised(
+    points: Sequence[tuple[float, float]]
+) -> list[tuple[float, float]]:
+    """
+    Rescale positions into the unit square, keeping their proportions.
+
+    :param points: Positions in any units.
+    :return: The same arrangement, in 0..1.
+    """
+    if not points:
+        return []
+    xs = [x for x, _ in points]
+    ys = [y for _, y in points]
+    span = max(max(xs) - min(xs), max(ys) - min(ys)) or 1.0
+    return [((x - min(xs)) / span, (y - min(ys)) / span) for x, y in points]
+
+
+def schematic_from(
+    graph: object, stops: Sequence[tuple[str, float, float]],
+    neighbours: int = 3,
+) -> Schematic:
+    """
+    Lay the stops out by how long it takes to drive between them.
+
+    Duck-typed on ``best_path_cost`` so this module still imports no map
+    layer. Only the few cheapest connections per stop are kept: every pair
+    is reachable on these maps, and drawing all of them is a hairball that
+    says nothing.
+    :param graph: Anything with ``best_path_cost(origin, destination)``.
+    :param stops: ``(stop_id, x, y)`` as the geographic map holds them.
+    :param neighbours: Connections kept per stop.
+    :return: The laid-out schematic.
+    """
+    ids = [stop_id for stop_id, _, _ in stops]
+    costs: dict[tuple[int, int], float] = {}
+    reachable = {index: 0 for index in range(len(ids))}
+    for a, origin in enumerate(ids):
+        for b, destination in enumerate(ids):
+            if a == b:
+                continue
+            try:
+                cost = graph.best_path_cost(origin, destination)
+            except Exception:               # noqa: BLE001
+                cost = None
+            if cost is None or cost != cost or math.isinf(cost):
+                continue
+            reachable[a] += 1
+            costs[(a, b)] = cost
+
+    # Cheapest few out of each stop, as an undirected set.
+    links: set[tuple[int, int]] = set()
+    for a in range(len(ids)):
+        outward = sorted((cost, b) for (origin, b), cost in costs.items()
+                         if origin == a)
+        for _, b in outward[:neighbours]:
+            links.add((min(a, b), max(a, b)))
+
+    longest = max(costs.values(), default=1.0) or 1.0
+    ideal = {pair: 0.15 + 0.85 * (costs.get(pair, longest) / longest)
+             for pair in links}
+    start = _normalised([(x, y) for _, x, y in stops])
+    points = (_spring_layout(len(ids), ideal, start)
+              if len(ids) > 1 else [(0.5, 0.5)])
+
+    stranded = tuple(index for index, seen in reachable.items() if seen == 0)
+    return Schematic(
+        nodes=tuple((ids[index], points[index][0], points[index][1])
+                    for index in range(len(ids))),
+        links=tuple(sorted(links)), stranded=stranded)
+
+
 def minimap_from(provider: object) -> MiniMap:
     """
     Build the minimap's geometry from any map provider.
@@ -223,6 +385,8 @@ class CarlaViewer:
     :param fov: Horizontal field of view, in degrees.
     :param title: Window caption.
     :param minimap: Road graph to draw bottom-right. None draws no panel.
+    :param schematic: The same stops laid out by travel cost, shown under
+        the panel's second tab. None leaves that tab out.
     :raises RuntimeError: If pygame is not installed.
     """
 
@@ -234,6 +398,7 @@ class CarlaViewer:
         fov: float = 90.0,
         title: str = "autobus — CARLA",
         minimap: MiniMap | None = None,
+        schematic: "Schematic | None" = None,
     ) -> None:
         try:
             import pygame
@@ -273,6 +438,9 @@ class CarlaViewer:
                                                TABLE_FONT_PT)
         self._clock = pygame.time.Clock()
         self._minimap = minimap
+        self._schematic = schematic
+        self._view = VIEW_MAP
+        self._tab_font = pygame.font.SysFont("dejavusansmono", TAB_FONT_PT)
         self._map_rect = self._fit_minimap(minimap, self._size)
 
         blueprint = world.get_blueprint_library().find("sensor.camera.rgb")
@@ -398,6 +566,8 @@ class CarlaViewer:
                     and event.key == self._pygame.K_ESCAPE):
                 self._closed = True
                 return False
+            if event.type == self._pygame.MOUSEBUTTONDOWN:
+                self._click_tab(event.pos)
 
         self._relayout()
 
@@ -518,16 +688,59 @@ class CarlaViewer:
                 best, best_d2 = (x1, y1, x2, y2), gap
         return best
 
+    def _tab_rects(self) -> list[tuple[str, tuple[int, int, int, int]]]:
+        """
+        Return each view's tab and where it sits.
+
+        Above the panel rather than inside it, so a tab never covers a stop
+        the panel is trying to show.
+        :return: ``(view, (x, y, w, h))`` per available view.
+        """
+        if self._map_rect is None:
+            return []
+        _, _, _, (left, top) = self._map_rect
+        views = [(view, label) for view, label in VIEW_LABELS
+                 if view != VIEW_GRAPH or self._schematic is not None]
+        return [
+            (view, (left + index * (TAB_W + TAB_GAP), top - TAB_H,
+                    TAB_W, TAB_H))
+            for index, (view, _) in enumerate(views)
+        ]
+
+    def _click_tab(self, position: tuple[int, int]) -> bool:
+        """
+        Switch view if a tab was clicked.
+
+        :param position: Where the click landed, in window pixels.
+        :return: True if a tab took the click.
+        """
+        for view, (x, y, width, height) in self._tab_rects():
+            if (x <= position[0] <= x + width
+                    and y <= position[1] <= y + height):
+                self._view = view
+                return True
+        return False
+
+    def _draw_tabs(self) -> None:
+        """Draw the tab strip, the active one lit."""
+        labels = dict(VIEW_LABELS)
+        for view, (x, y, width, height) in self._tab_rects():
+            active = view == self._view
+            self._pygame.draw.rect(
+                self._screen, TAB_ON if active else TAB_OFF,
+                (x, y, width, height))
+            text = self._tab_font.render(
+                labels[view], True,
+                TAB_INK_ON if active else TAB_INK_OFF)
+            self._screen.blit(
+                text, (x + (width - text.get_width()) // 2, y + 5))
+
     def _draw_minimap(
         self, route: Sequence[str], bus: "carla.Location | None"
     ) -> None:
         """
-        Draw the road graph, the plan on it, and where the bus is.
+        Draw the panel: its tabs, and whichever view they select.
 
-        This is the graph the policy plans over rather than a picture of the
-        town, which is the point: a detour that looks inexplicable out of the
-        windscreen is usually plain here, because the road the bus wanted was
-        never an edge.
         :param route: Stops still to visit, next first.
         :param bus: Where the bus is, or None to leave the marker off.
         :return: None.
@@ -535,12 +748,90 @@ class CarlaViewer:
         if self._map_rect is None:
             return
         _, _, _, (left, top) = self._map_rect
-        pygame = self._pygame
 
-        panel = pygame.Surface(MAP_SIZE)
+        panel = self._pygame.Surface(MAP_SIZE)
         panel.set_alpha(MAP_SHADE_ALPHA)
         panel.fill(MAP_SHADE)
         self._screen.blit(panel, (left, top))
+        self._draw_tabs()
+
+        if self._view == VIEW_GRAPH and self._schematic is not None:
+            self._draw_schematic(route, bus)
+        else:
+            self._draw_town(route, bus)
+
+    def _schematic_at(self, x: float, y: float) -> tuple[int, int]:
+        """
+        Project a schematic's unit coordinates into panel pixels.
+
+        :param x: Position in 0..1.
+        :param y: Position in 0..1.
+        :return: Pixel coordinates inside the window.
+        """
+        _, _, _, (left, top) = self._map_rect
+        inner = MAP_SIZE[0] - MAP_PAD * 2
+        return (int(left + MAP_PAD + x * inner),
+                int(top + MAP_PAD + y * inner))
+
+    def _draw_schematic(
+        self, route: Sequence[str], bus: "carla.Location | None"
+    ) -> None:
+        """
+        Draw the stops laid out by travel cost, not by geography.
+
+        Distance here is drive time, so two stops that sit a street apart on
+        the town view and a long way apart on this one are exactly the
+        detour the campaign keeps measuring. Stops nothing can reach are
+        ringed, because that is a graph fault no map of a town can show.
+        :param route: Stops still to visit, next first.
+        :param bus: Where the bus is, used only to pick the nearest stop as
+            its position; the schematic has no geography to place it in.
+        :return: None.
+        """
+        pygame = self._pygame
+        nodes = self._schematic.nodes
+        placed = {stop_id: self._schematic_at(x, y)
+                  for stop_id, x, y in nodes}
+
+        for a, b in self._schematic.links:
+            pygame.draw.line(self._screen, GRAPH_LINK,
+                             self._schematic_at(nodes[a][1], nodes[a][2]),
+                             self._schematic_at(nodes[b][1], nodes[b][2]), 1)
+
+        chain = [placed[stop] for stop in route if stop in placed]
+        for start, end in zip(chain, chain[1:]):
+            pygame.draw.line(self._screen, MAP_STOP_PLANNED, start, end,
+                             MAP_PLAN_W)
+
+        planned = set(route)
+        next_stop = route[0] if route else None
+        for index, (stop_id, _, _) in enumerate(nodes):
+            at = placed[stop_id]
+            if stop_id == next_stop:
+                color, radius = MAP_STOP_NEXT, MAP_STOP_R + 2
+            elif stop_id in planned:
+                color, radius = MAP_STOP_PLANNED, MAP_STOP_R + 1
+            else:
+                color, radius = MAP_STOP, MAP_STOP_R
+            pygame.draw.circle(self._screen, color, at, radius)
+            if index in self._schematic.stranded:
+                pygame.draw.circle(self._screen, GRAPH_STRANDED, at,
+                                   radius + 4, 2)
+            label = self._map_font.render(stop_id, True, MAP_LABEL_INK)
+            self._screen.blit(
+                label, self._label_at(at, label.get_width(), radius))
+
+    def _draw_town(
+        self, route: Sequence[str], bus: "carla.Location | None"
+    ) -> None:
+        """
+        Draw the road graph as it lies on the ground, with the plan on it.
+
+        :param route: Stops still to visit, next first.
+        :param bus: Where the bus is, or None to leave the marker off.
+        :return: None.
+        """
+        pygame = self._pygame
 
         for x1, y1, x2, y2 in self._minimap.edges:
             pygame.draw.line(self._screen, MAP_ROAD, self._to_panel(x1, y1),

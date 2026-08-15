@@ -5,6 +5,8 @@ it calls "here", and what it builds from a provider. The pygame surface work
 is left to pygame.
 """
 
+import math
+
 import carla
 import pytest
 
@@ -13,10 +15,13 @@ from src.simulation.carla_viewer import (
     MAP_MARGIN,
     MAP_SIZE,
     TABLE_GAP,
+    VIEW_GRAPH,
+    VIEW_MAP,
     CarlaViewer,
     MiniMap,
     format_table,
     minimap_from,
+    schematic_from,
 )
 
 
@@ -421,4 +426,134 @@ def test_a_resized_window_moves_the_panels_with_it(headless) -> None:
 
     assert viewer._size == (640, 480)
     assert viewer._map_rect != was
+    viewer.close()
+
+
+# ---------------------------------------------------------------------------
+# The schematic, and the tabs that reach it
+# ---------------------------------------------------------------------------
+
+class _CostGraph:
+    """A stand-in for TransitGraph: costs by pair, nothing else."""
+
+    def __init__(self, costs: dict[tuple[str, str], float]) -> None:
+        self._costs = costs
+
+    def best_path_cost(self, origin: str, destination: str):
+        return self._costs.get((origin, destination))
+
+
+THREE = (("a", 0.0, 0.0), ("b", 10.0, 0.0), ("c", 0.0, 10.0))
+
+
+def _line_costs(far: float = 100.0) -> _CostGraph:
+    """a-b cheap, a-c dear, so the layout has something to say."""
+    return _CostGraph({
+        ("a", "b"): 10.0, ("b", "a"): 10.0,
+        ("a", "c"): far, ("c", "a"): far,
+        ("b", "c"): far, ("c", "b"): far,
+    })
+
+
+def test_the_schematic_keeps_every_stop() -> None:
+    built = schematic_from(_line_costs(), THREE)
+
+    assert [node[0] for node in built.nodes] == ["a", "b", "c"]
+
+
+def test_schematic_positions_are_inside_the_unit_square() -> None:
+    built = schematic_from(_line_costs(), THREE)
+
+    for _, x, y in built.nodes:
+        assert 0.0 <= x <= 1.0
+        assert 0.0 <= y <= 1.0
+
+
+def test_a_costly_pair_is_laid_out_further_apart() -> None:
+    """
+    The whole point of the view: distance is drive time, so a stop that is
+    a street away but a long drive lands far off.
+    """
+    built = schematic_from(_line_costs(far=400.0), THREE)
+    at = {stop: (x, y) for stop, x, y in built.nodes}
+
+    cheap = math.dist(at["a"], at["b"])
+    dear = math.dist(at["a"], at["c"])
+    assert dear > cheap
+
+
+def test_the_layout_is_deterministic() -> None:
+    """A view that rearranges itself between runs cannot be compared."""
+    assert schematic_from(_line_costs(), THREE).nodes == \
+        schematic_from(_line_costs(), THREE).nodes
+
+
+def test_a_stop_nothing_can_reach_is_flagged() -> None:
+    """Graph pathology no picture of a town can show."""
+    graph = _CostGraph({("a", "b"): 10.0, ("b", "a"): 10.0})
+
+    built = schematic_from(graph, THREE)
+
+    assert built.stranded == (2,)          # "c" reaches nothing
+
+
+def test_only_the_cheapest_links_are_drawn() -> None:
+    """Every pair is reachable; drawing all of them says nothing."""
+    built = schematic_from(_line_costs(), THREE, neighbours=1)
+
+    assert len(built.links) <= 3
+    assert all(a < b for a, b in built.links)
+
+
+def test_a_single_stop_does_not_divide_by_zero() -> None:
+    built = schematic_from(_CostGraph({}), (("only", 5.0, 5.0),))
+
+    assert built.nodes == (("only", 0.5, 0.5),)
+
+
+def test_the_tabs_sit_above_the_panel(headless) -> None:
+    viewer = CarlaViewer(_StubWorld(), follow=object(), size=(1280, 720),
+                         minimap=SQUARE,
+                         schematic=schematic_from(_line_costs(), THREE))
+    _, _, _, (left, top) = viewer._map_rect
+
+    tabs = viewer._tab_rects()
+
+    assert [view for view, _ in tabs] == [VIEW_MAP, VIEW_GRAPH]
+    for _, (x, y, _, height) in tabs:
+        assert y + height <= top
+        assert x >= left
+    viewer.close()
+
+
+def test_there_is_no_second_tab_without_a_schematic(headless) -> None:
+    """A tab that opens an empty view is worse than no tab."""
+    viewer = CarlaViewer(_StubWorld(), follow=object(), size=(1280, 720),
+                         minimap=SQUARE)
+
+    assert [view for view, _ in viewer._tab_rects()] == [VIEW_MAP]
+    viewer.close()
+
+
+def test_clicking_a_tab_switches_the_view(headless) -> None:
+    viewer = CarlaViewer(_StubWorld(), follow=object(), size=(1280, 720),
+                         minimap=SQUARE,
+                         schematic=schematic_from(_line_costs(), THREE))
+    assert viewer._view == VIEW_MAP
+    _, (x, y, width, height) = viewer._tab_rects()[1]
+
+    assert viewer._click_tab((x + width // 2, y + height // 2))
+
+    assert viewer._view == VIEW_GRAPH
+    viewer.close()
+
+
+def test_a_click_elsewhere_changes_nothing(headless) -> None:
+    viewer = CarlaViewer(_StubWorld(), follow=object(), size=(1280, 720),
+                         minimap=SQUARE,
+                         schematic=schematic_from(_line_costs(), THREE))
+
+    assert not viewer._click_tab((5, 5))
+
+    assert viewer._view == VIEW_MAP
     viewer.close()

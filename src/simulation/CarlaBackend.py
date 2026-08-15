@@ -275,6 +275,10 @@ class CarlaBackend(SimulationBackend):
         ``carla_viewer.minimap_from(provider)``. Passed in already flattened
         to coordinates, so this class still needs no map-layer import.
         Defaults to None, which leaves the panel off.
+    :param schematic: The same stops laid out by travel cost, from
+        ``carla_viewer.schematic_from(graph, minimap.stops)``, shown under
+        the panel's second tab. Defaults to None, which leaves that tab
+        out.
     :param tm_port: Port for the traffic manager. Defaults to None, which
         finds a free one and shuts it down again on ``close``. Name a port
         only to share an existing traffic manager, in which case it is yours
@@ -315,6 +319,7 @@ class CarlaBackend(SimulationBackend):
         viewer: bool = False,
         viewer_size: tuple[int, int] = (1280, 720),
         minimap: object | None = None,
+        schematic: object | None = None,
         tm_port: int | None = None,
         reload_world: bool = False,
     ) -> None:
@@ -349,6 +354,7 @@ class CarlaBackend(SimulationBackend):
         self._viewer_wanted = viewer
         self._viewer_size = viewer_size
         self._minimap = minimap
+        self._schematic = schematic
         self._viewer: object | None = None
         self._tm_port = tm_port
         self._reload_world = reload_world
@@ -746,7 +752,7 @@ class CarlaBackend(SimulationBackend):
         self._viewer = CarlaViewer(
             self._world, bus, size=self._viewer_size,
             title=f"autobus - {self._town} seed {self._seed}",
-            minimap=self._minimap)
+            minimap=self._minimap, schematic=self._schematic)
 
     def _pump_viewer(self) -> None:
         """

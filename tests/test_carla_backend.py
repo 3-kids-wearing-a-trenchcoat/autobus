@@ -14,7 +14,6 @@ import carla
 
 from src.simulation import carla_debug_text
 from src.simulation.CarlaBackend import (
-    DEBUG_HUD_REDRAW_S,
     DEBUG_LABEL_MAX_M,
     DEBUG_LABEL_MIN_M,
     DEBUG_LABEL_MAX_STOPS,
@@ -516,6 +515,7 @@ class _FakeDebug:
         self.colors: list[object] = []
         self.thicknesses: list[float] = []
         self.boxes: list[object] = []
+        self.lifetimes: list[float] = []
         self._explode = explode
 
     def draw_box(self, box, rotation, **kwargs) -> None:
@@ -530,6 +530,7 @@ class _FakeDebug:
         self.lines.append((begin, end))
         self.colors.append(kwargs.get("color"))
         self.thicknesses.append(kwargs.get("thickness"))
+        self.lifetimes.append(kwargs.get("life_time"))
 
     def draw_point(self, location, **kwargs) -> None:
         if self._explode:
@@ -901,7 +902,6 @@ def test_re_issuing_the_same_destination_does_not_restart_the_leg() -> None:
 def test_the_counters_are_drawn_in_front_of_the_camera() -> None:
     debug = _FakeDebug()
     backend = _drawing_backend(debug, fixed_delta_s=0.05)
-    backend._since_hud_draw_s = DEBUG_HUD_REDRAW_S
 
     backend._draw_hud(debug, _FakeSpectator())
 
@@ -915,7 +915,6 @@ def test_the_counters_say_the_time_the_leg_and_the_next_stop() -> None:
     backend = _drawing_backend(debug, fixed_delta_s=0.05)
     backend._destination = "n0002_n_s02"
     backend._stats["ticks"] = 1200                  # 60 s
-    backend._since_hud_draw_s = DEBUG_HUD_REDRAW_S
 
     backend._draw_hud(debug, _FakeSpectator())
 
@@ -924,25 +923,38 @@ def test_the_counters_say_the_time_the_leg_and_the_next_stop() -> None:
     assert len(debug.lines) == expected
 
 
-def test_the_counters_are_not_redrawn_every_tick() -> None:
-    """They follow the camera, so they run fast -- but not every tick."""
+def test_the_counters_are_redrawn_every_tick() -> None:
+    """
+    They follow the camera, so any cadence slower than the tick shows as
+    lag. Measured: redrawing every tick costs the same as four times a
+    second, so there is nothing to buy by waiting.
+    """
     debug = _FakeDebug()
     backend = _drawing_backend(debug, fixed_delta_s=0.05)
     spectator = _FakeSpectator()
 
-    for _ in range(int(DEBUG_HUD_REDRAW_S / 0.05) - 1):
-        backend._draw_hud(debug, spectator)
-    assert debug.lines == []
+    backend._draw_hud(debug, spectator)
+    after_one = len(debug.lines)
+    assert after_one > 0
 
     backend._draw_hud(debug, spectator)
-    assert debug.lines
+    assert len(debug.lines) == after_one * 2
+
+
+def test_the_counters_outlive_a_tick_but_not_much() -> None:
+    """Long enough not to flicker, short enough not to ghost."""
+    debug = _FakeDebug()
+    backend = _drawing_backend(debug, fixed_delta_s=0.05)
+
+    backend._draw_hud(debug, _FakeSpectator())
+
+    assert debug.lifetimes[0] == pytest.approx(0.05 * 2.0)
 
 
 def test_no_camera_means_no_counters() -> None:
     """There is nothing to pin them to, and no screen-space API to use."""
     debug = _FakeDebug()
     backend = _drawing_backend(debug, fixed_delta_s=0.05)
-    backend._since_hud_draw_s = DEBUG_HUD_REDRAW_S
 
     backend._draw_hud(debug, None)
 

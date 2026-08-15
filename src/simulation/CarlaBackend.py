@@ -72,12 +72,17 @@ CAMERA_PITCH_DEG = -14.0
 #
 # Only drawn under ``debug_draw``, and only visible on a server that renders.
 #
-# **Use `draw_line`, `draw_point` and `draw_string` only.** Measured against
-# CARLA 0.9.16 on 2026-08-15, drawing all five primitives in front of the
-# spectator and photographing the viewport: `draw_line`, `draw_point` and
-# `draw_string` all render, and the whole `draw_hud_*` family renders
-# **nothing at all** -- not in the viewport, not into a camera sensor. It is
-# tempting because it promises to draw through geometry; it does not draw.
+# **Use `draw_line`, `draw_point`, `draw_box` and `draw_string` only.**
+#
+# The `draw_hud_*` family is not a screen-space API, however it reads. Its
+# own stubs give it `Location` arguments "in the coordinate system (meters)"
+# exactly like the world calls: "HUD" names the *render layer*, not the
+# coordinate system, and there is no `draw_hud_string` at all. Nor does it
+# help with occlusion here -- measured 2026-08-15 on 0.9.16, drawing matched
+# pairs of `draw_line` and `draw_hud_line` in a single frame at 0.15, 0.5
+# and 2.0 thickness, every world line rendered and no HUD line did, at any
+# thickness. The shape types reach the server (`DebugShape::HUDLine` and
+# friends are in the RPC layer); it simply does not draw them.
 #
 # The cost of world-space lines is that a building hides them. That is worth
 # paying for shapes that exist.
@@ -138,14 +143,22 @@ DEBUG_LABEL_MAX_STOPS = 4
 
 # --- Camera-locked counters -----------------------------------------------
 #
-# There is no screen-space drawing in the CARLA API, so a corner-of-screen
-# HUD cannot exist. This is the next best thing: text placed a few metres in
-# front of the spectator and redrawn as it moves, which reads as fixed on
-# screen. It has to be redrawn far more often than the world overlay or it
-# smears behind a moving camera, and its lifetime has to be short for the
-# same reason -- an old copy left at an old position is a ghost.
-DEBUG_HUD_REDRAW_S = 0.25
-DEBUG_HUD_LIFETIME_S = 0.35
+# There is genuinely no screen-space drawing in CARLA's API. ``draw_hud_*``
+# is not it: those take world coordinates in metres, "HUD" naming the render
+# layer rather than the coordinate system, and there is no
+# ``draw_hud_string`` at all, so text could never go there. A real 2D HUD
+# needs a client-side viewer -- a pygame window over a camera sensor, the way
+# CARLA's own manual_control.py does it.
+#
+# So the counters are text placed a few metres in front of the spectator,
+# redrawn **every tick** so they never lag behind the camera. Measured: 300
+# ticks took 3.09 s with the overlay off, 3.14 s redrawing this four times a
+# second, and 3.14 s redrawing it every single tick. The cheap option and the
+# smooth option are the same option.
+#
+# The lifetime is in ticks for the same reason: an old copy surviving at an
+# old position is a ghost trailing a moving camera.
+DEBUG_HUD_LIFETIME_TICKS = 2.0
 DEBUG_HUD_AHEAD_M = 3.0                 # how far in front of the spectator
 DEBUG_HUD_LEFT_M = 1.55                 # and how far up and to the left
 DEBUG_HUD_UP_M = 0.78
@@ -337,7 +350,6 @@ class CarlaBackend(SimulationBackend):
         # line never outlives the plan it described.
         self._debug_route: list["carla.Location"] = []
         self._since_debug_draw_s = 0.0
-        self._since_hud_draw_s = 0.0
         # When the current leg began, for the overlay's per-leg counter.
         self._leg_started_s = 0.0
 
@@ -763,8 +775,8 @@ class CarlaBackend(SimulationBackend):
         try:
             debug = self._world.debug
             spectator = self._world.get_spectator()
-            # The counters follow the camera, so they run on their own much
-            # faster clock; the world overlay is nailed down and does not.
+            # The counters follow the camera, so they are redrawn every
+            # tick; the world overlay is nailed down and is not.
             self._draw_hud(debug, spectator)
 
             self._since_debug_draw_s += self._delta
@@ -927,11 +939,6 @@ class CarlaBackend(SimulationBackend):
         """
         if spectator is None:
             return
-        self._since_hud_draw_s += self._delta
-        if self._since_hud_draw_s < DEBUG_HUD_REDRAW_S:
-            return
-        self._since_hud_draw_s = 0.0
-
         transform = spectator.get_transform()
         forward = transform.get_forward_vector()
         right = transform.get_right_vector()
@@ -957,7 +964,7 @@ class CarlaBackend(SimulationBackend):
                    + up.z * (DEBUG_HUD_UP_M - drop)))
             carla_debug_text.draw_text(
                 debug, text, origin, right, up, DEBUG_HUD_HEIGHT_M,
-                DEBUG_HUD_COLOR, DEBUG_HUD_LIFETIME_S)
+                DEBUG_HUD_COLOR, self._delta * DEBUG_HUD_LIFETIME_TICKS)
 
     @staticmethod
     def _clock(seconds: float) -> str:

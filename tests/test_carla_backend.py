@@ -10,7 +10,16 @@ import pytest
 
 from src.algorithm.RequestPool import Request, RequestPool, RequestState
 from src.map.CarlaMapProvider import CarlaMapProvider
+import carla
+
 from src.simulation.CarlaBackend import (
+    DEBUG_MAX_SEGMENTS,
+    DEBUG_ROUTE_THICKNESS_M,
+    DEBUG_STOP_BEACON_M,
+    DEBUG_STOP_IDLE_COLOR,
+    DEBUG_STOP_WAITING_COLOR,
+    DEBUG_REDRAW_S,
+    DEBUG_ROUTE_STEP_M,
     DEFAULT_BUS_ID,
     FULL_SIZE_BUS_ID,
     MAX_SAFE_DELTA_S,
@@ -476,3 +485,322 @@ def test_one_blocker_among_many_is_enough() -> None:
 def test_queued_ticks_starts_at_zero() -> None:
     """The counter has to exist before anything can report on it."""
     assert _backend().stats()["queued_ticks"] == 0
+
+
+# ---------------------------------------------------------------------------
+# The debug overlay
+#
+# No server: carla.Location and carla.Transform are client-side value types,
+# so a route can be built by hand and the renderer stood in for.
+# ---------------------------------------------------------------------------
+
+class _FakeWaypoint:
+    """A waypoint that knows only where it is."""
+
+    def __init__(self, x: float, y: float, z: float = 0.0) -> None:
+        self.transform = carla.Transform(carla.Location(x=x, y=y, z=z))
+
+
+class _FakeDebug:
+    """Records what would have been drawn."""
+
+    def __init__(self, explode: bool = False) -> None:
+        self.lines: list[tuple[object, object]] = []
+        self.points: list[object] = []
+        self.strings: list[str] = []
+        self.colors: list[object] = []
+        self.thicknesses: list[float] = []
+        self._explode = explode
+
+    def draw_line(self, begin, end, **kwargs) -> None:
+        if self._explode:
+            raise RuntimeError("renderer gone")
+        self.lines.append((begin, end))
+        self.colors.append(kwargs.get("color"))
+        self.thicknesses.append(kwargs.get("thickness"))
+
+    def draw_point(self, location, **kwargs) -> None:
+        if self._explode:
+            raise RuntimeError("renderer gone")
+        self.points.append(location)
+
+    def draw_string(self, location, text, **kwargs) -> None:
+        if self._explode:
+            raise RuntimeError("renderer gone")
+        self.strings.append(text)
+
+
+class _DebugWorld:
+    """A world that offers nothing but a renderer and the bus."""
+
+    def __init__(self, debug: _FakeDebug, bus: object = None) -> None:
+        self.debug = debug
+        self._bus = bus
+
+    def get_actor(self, actor_id: int) -> object:
+        return self._bus
+
+
+class _LocatedBus:
+    """A bus actor that only knows where it stands."""
+
+    def __init__(self, x: float, y: float) -> None:
+        self._location = carla.Location(x=x, y=y, z=0.0)
+
+    def get_location(self) -> "carla.Location":
+        return self._location
+
+
+def _straight_route(metres: float, step: float = 2.0) -> list[_FakeWaypoint]:
+    """Build a straight route sampled the way plan_route samples one."""
+    count = int(metres / step) + 1
+    return [_FakeWaypoint(x=i * step, y=0.0) for i in range(count)]
+
+
+def _drawing_backend(debug: _FakeDebug, **overrides: object) -> CarlaBackend:
+    """Build a backend wired to a stand-in renderer."""
+    backend = _backend(debug_draw=True, **overrides)
+    backend._world = _DebugWorld(debug, _LocatedBus(50.0, 60.0))
+    backend._bus_id = 1
+    return backend
+
+
+def test_debug_draw_defaults_off() -> None:
+    """A campaign must not pay for an overlay nobody is watching."""
+    assert _backend()._debug_draw is False
+
+
+def test_the_route_is_thinned_before_it_is_drawn() -> None:
+    """
+    plan_route steps every 2 m. Drawing one segment each would be hundreds
+    of calls per redraw, so the overlay samples every DEBUG_ROUTE_STEP_M.
+    """
+    backend = _drawing_backend(_FakeDebug())
+
+    backend._remember_debug_route(_straight_route(100.0))
+
+    # 100 m at 10 m spacing, plus the endpoint.
+    assert len(backend._debug_route) == 11
+    spacing = backend._debug_route[1].distance(backend._debug_route[0])
+    assert spacing == pytest.approx(DEBUG_ROUTE_STEP_M)
+
+
+def test_the_drawn_route_reaches_the_destination() -> None:
+    """A line that stops at the last whole sample misses the stop."""
+    backend = _drawing_backend(_FakeDebug())
+    route = _straight_route(95.0)
+
+    backend._remember_debug_route(route)
+
+    final = route[-1].transform.location
+    assert backend._debug_route[-1].x == pytest.approx(final.x)
+
+
+def test_an_unroutable_leg_clears_the_overlay() -> None:
+    """A stale line must not outlive the plan it described."""
+    backend = _drawing_backend(_FakeDebug())
+    backend._remember_debug_route(_straight_route(100.0))
+
+    backend._remember_debug_route(None)
+
+    assert backend._debug_route == []
+
+
+def test_the_route_is_not_redrawn_every_tick() -> None:
+    debug = _FakeDebug()
+    backend = _drawing_backend(debug, fixed_delta_s=0.05)
+    backend._remember_debug_route(_straight_route(100.0))
+
+    ticks = int(DEBUG_REDRAW_S / 0.05)
+    for _ in range(ticks - 1):
+        backend._draw_debug()
+    assert debug.lines == []
+
+    backend._draw_debug()
+    assert len(debug.lines) == 10           # 11 points, 10 segments
+
+
+def test_nothing_is_drawn_when_the_flag_is_off() -> None:
+    debug = _FakeDebug()
+    backend = _backend(debug_draw=False)
+    backend._world = _DebugWorld(debug, _LocatedBus(0.0, 0.0))
+    backend._bus_id = 1
+
+    backend._remember_debug_route(_straight_route(100.0))
+    for _ in range(int(DEBUG_REDRAW_S / 0.05) + 1):
+        backend._draw_debug()
+
+    assert backend._debug_route == []
+    assert debug.lines == []
+
+
+def test_a_dropped_route_leaves_a_marker_where_it_happened() -> None:
+    debug = _FakeDebug()
+    backend = _drawing_backend(debug)
+    backend._stats["ticks"] = 4000          # 200 s at the default delta
+
+    backend._mark_route_drop(1)
+
+    assert len(debug.points) == 1
+    assert debug.points[0].x == pytest.approx(50.0)
+    assert debug.strings == ["drop t=200s"]
+
+
+def test_several_drops_in_one_tick_say_so() -> None:
+    debug = _FakeDebug()
+    backend = _drawing_backend(debug)
+
+    backend._mark_route_drop(3)
+
+    assert debug.strings == ["drop t=0s x3"]
+
+
+def test_a_failing_renderer_never_costs_the_run() -> None:
+    """Same rule as a failing tag: a diagnostic must not abort a trial."""
+    backend = _drawing_backend(_FakeDebug(explode=True))
+    backend._remember_debug_route(_straight_route(100.0))
+
+    for _ in range(int(DEBUG_REDRAW_S / 0.05) + 1):
+        backend._draw_debug()
+    backend._mark_route_drop(1)
+
+
+def test_a_pathological_route_cannot_stall_the_tick() -> None:
+    backend = _drawing_backend(_FakeDebug())
+
+    backend._remember_debug_route(_straight_route(100000.0))
+
+    assert len(backend._debug_route) <= DEBUG_MAX_SEGMENTS + 1
+
+
+# ---------------------------------------------------------------------------
+# Stop beacons
+# ---------------------------------------------------------------------------
+
+def _demand_pool(
+    waiting: tuple[str, ...] = (), aboard: tuple[str, ...] = ()
+) -> RequestPool:
+    """
+    Build a pool of passengers waiting at, and riding towards, given stops.
+
+    :param waiting: Pickup stop for each PENDING request.
+    :param aboard: Dropoff stop for each ON_BUS request.
+    :return: The populated pool.
+    """
+    pool = RequestPool()
+    for index, pickup in enumerate(waiting):
+        pool.add(Request(
+            id=f"w{index}", pickup_stop_id=pickup,
+            dropoff_stop_id="n0002_n_s02", created_at=0.0,
+        ))
+    for index, dropoff in enumerate(aboard):
+        pool.add(Request(
+            id=f"b{index}", pickup_stop_id="n0001_n_s01",
+            dropoff_stop_id=dropoff, created_at=0.0,
+            state=RequestState.ON_BUS,
+        ))
+    return pool
+
+
+def test_stop_demand_counts_both_directions() -> None:
+    backend = _drawing_backend(_FakeDebug())
+
+    backend._note_stop_demand(_demand_pool(
+        waiting=("n0001_n_s01", "n0001_n_s01", "n0002_n_s02"),
+        aboard=("n0002_n_s02",)))
+
+    assert backend._stop_demand["n0001_n_s01"] == (2, 0)
+    assert backend._stop_demand["n0002_n_s02"] == (1, 1)
+
+
+def test_every_stop_gets_a_count_even_with_no_demand() -> None:
+    """An idle stop is still drawn, so it needs a row of its own."""
+    backend = _drawing_backend(_FakeDebug())
+
+    backend._note_stop_demand(_demand_pool())
+
+    assert backend._stop_demand == {
+        "n0001_n_s01": (0, 0), "n0002_n_s02": (0, 0)}
+
+
+def test_demand_for_an_unknown_stop_is_ignored() -> None:
+    """A pool may outlive a stop table; it must not crash the overlay."""
+    backend = _drawing_backend(_FakeDebug())
+
+    backend._note_stop_demand(_demand_pool(waiting=("nowhere",)))
+
+    assert "nowhere" not in backend._stop_demand
+
+
+def test_demand_is_not_counted_when_the_flag_is_off() -> None:
+    backend = _backend(debug_draw=False)
+
+    backend._note_stop_demand(_demand_pool(waiting=("n0001_n_s01",)))
+
+    assert backend._stop_demand == {}
+
+
+def test_each_stop_gets_a_beacon_and_three_label_lines() -> None:
+    debug = _FakeDebug()
+    backend = _drawing_backend(debug)
+    backend._note_stop_demand(_demand_pool(
+        waiting=("n0001_n_s01",), aboard=("n0002_n_s02",)))
+
+    backend._draw_stops(debug)
+
+    assert len(debug.lines) == 2                    # one beacon per stop
+    assert debug.strings == [
+        "n0001_n_s01", "waiting 1", "alighting 0",
+        "n0002_n_s02", "waiting 0", "alighting 1",
+    ]
+
+
+def test_the_beacon_stands_up_from_the_stop() -> None:
+    """A marker on the road is invisible from a chase camera."""
+    debug = _FakeDebug()
+    backend = _drawing_backend(debug)
+    backend._note_stop_demand(_demand_pool())
+
+    backend._draw_stops(debug)
+
+    foot, head = debug.lines[0]
+    assert head.z - foot.z == pytest.approx(DEBUG_STOP_BEACON_M)
+    assert (foot.x, foot.y) == pytest.approx((10.0, 20.0))
+
+
+def test_waiting_outranks_alighting_in_the_colour() -> None:
+    """
+    Both at once is common. Waiting wins because a passenger not yet picked
+    up is the one whose promise can still be broken.
+    """
+    debug = _FakeDebug()
+    backend = _drawing_backend(debug)
+    backend._note_stop_demand(_demand_pool(
+        waiting=("n0001_n_s01",), aboard=("n0001_n_s01",)))
+
+    backend._draw_stops(debug)
+
+    assert backend._stop_demand["n0001_n_s01"] == (1, 1)
+    assert debug.colors[0] == DEBUG_STOP_WAITING_COLOR
+
+
+def test_an_idle_stop_is_drawn_dim() -> None:
+    debug = _FakeDebug()
+    backend = _drawing_backend(debug)
+    backend._note_stop_demand(_demand_pool())
+
+    backend._draw_stops(debug)
+
+    assert debug.colors[0] == DEBUG_STOP_IDLE_COLOR
+
+
+def test_the_route_is_drawn_wide_enough_to_follow() -> None:
+    """0.15 was the CARLA default and reads as a hairline from behind."""
+    debug = _FakeDebug()
+    backend = _drawing_backend(debug)
+    backend._remember_debug_route(_straight_route(100.0))
+
+    backend._draw_route(debug)
+
+    assert debug.thicknesses[0] == pytest.approx(DEBUG_ROUTE_THICKNESS_M)
+    assert debug.thicknesses[0] > 0.15

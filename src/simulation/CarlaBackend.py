@@ -67,6 +67,66 @@ CAMERA_BEHIND_M = 9.0
 CAMERA_ABOVE_M = 4.5
 CAMERA_PITCH_DEG = -14.0
 
+# --- Debug overlay --------------------------------------------------------
+#
+# Only drawn under ``debug_draw``, and only visible on a server that renders.
+#
+# **Use `draw_line`, `draw_point` and `draw_string` only.** Measured against
+# CARLA 0.9.16 on 2026-08-15, drawing all five primitives in front of the
+# spectator and photographing the viewport: `draw_line`, `draw_point` and
+# `draw_string` all render, and the whole `draw_hud_*` family renders
+# **nothing at all** -- not in the viewport, not into a camera sensor. It is
+# tempting because it promises to draw through geometry; it does not draw.
+#
+# The cost of world-space lines is that a building hides them. That is worth
+# paying for shapes that exist.
+#
+# The route is *re-drawn on a timer* rather than drawn once and cleared,
+# because ``clear_debug_shape`` takes no arguments and wipes every shape in
+# the world -- including the drop markers, whose whole value is that they
+# accumulate. Giving the route a finite lifetime lets it expire on its own
+# instead, leaving the markers alone.
+DEBUG_REDRAW_S = 2.0
+# Comfortably more than twice the redraw period, so consecutive drawings
+# overlap and the line never blinks between them.
+DEBUG_ROUTE_LIFETIME_S = 5.0
+# One segment per this many metres. ``plan_route`` steps every 2 m, so a
+# 900 m leg is ~450 waypoints and a line each would be 450 calls per redraw.
+DEBUG_ROUTE_STEP_M = 10.0
+# Ceiling on segments, so a pathological route cannot stall the tick.
+DEBUG_MAX_SEGMENTS = 250
+# Lift shapes off the road surface, or they z-fight with it.
+DEBUG_ROUTE_HEIGHT_M = 0.5
+DEBUG_MARK_HEIGHT_M = 1.5
+# Wide enough to follow from the chase camera. 0.15 was the CARLA default
+# and reads as a hairline from behind the bus.
+DEBUG_ROUTE_THICKNESS_M = 0.30
+
+# --- Stop beacons ---------------------------------------------------------
+#
+# A stop is marked by a tall vertical bar, not a point on the ground: from a
+# chase camera at street level a ground marker is a few pixels, while a bar
+# this tall is visible down the length of a street.
+DEBUG_STOP_BEACON_M = 6.0
+DEBUG_STOP_THICKNESS_M = 0.20
+# Where the label starts, and how far apart its lines sit. ``draw_string``
+# takes no font size -- CARLA renders it small and fixed -- so legibility has
+# to come from placement: high enough to clear the beacon, spaced enough not
+# to overlap at distance.
+DEBUG_LABEL_BASE_M = 6.6
+DEBUG_LABEL_LINE_M = 1.3
+# A stop nobody wants is drawn dim, so the ones in play stand out. Amber for
+# passengers waiting to be collected, blue for passengers due to alight.
+DEBUG_STOP_IDLE_COLOR = carla.Color(r=90, g=95, b=105)
+DEBUG_STOP_WAITING_COLOR = carla.Color(r=235, g=160, b=40)
+DEBUG_STOP_ALIGHTING_COLOR = carla.Color(r=60, g=150, b=235)
+# CARLA reads 0.0 as "permanent". The markers are meant to pile up: by the
+# end of a run the junctions that keep dropping routes are painted onto the
+# map, which is how Town03's problem became a junction ID and not a count.
+DEBUG_MARK_LIFETIME_S = 0.0
+DEBUG_ROUTE_COLOR = carla.Color(r=40, g=180, b=120)
+DEBUG_DROP_COLOR = carla.Color(r=235, g=60, b=40)
+
 
 def _port_is_free(port: int) -> bool:
     """
@@ -129,6 +189,12 @@ class CarlaBackend(SimulationBackend):
         the bus on every tick, so a rendering server shows a chase view.
         Pointless with ``no_rendering=True``, where there is nothing to look
         at. Defaults to False.
+    :param debug_draw: Draw the bus's plan into the world: the route it was
+        told to drive, as a line that shows through buildings, and a
+        permanent marker wherever the traffic manager threw that route away.
+        For watching one run, not for measuring: it costs a handful of calls
+        a second and, like ``follow_camera``, shows nothing at all under
+        ``no_rendering=True``. Defaults to False.
     :param tm_port: Port for the traffic manager. Defaults to None, which
         finds a free one and shuts it down again on ``close``. Name a port
         only to share an existing traffic manager, in which case it is yours
@@ -165,6 +231,7 @@ class CarlaBackend(SimulationBackend):
         repath_after_s: float = 10.0,
         replan_every_s: float | None = None,
         follow_camera: bool = False,
+        debug_draw: bool = False,
         tm_port: int | None = None,
         reload_world: bool = False,
     ) -> None:
@@ -195,6 +262,7 @@ class CarlaBackend(SimulationBackend):
         self._repath_after_s = repath_after_s
         self._replan_every_s = replan_every_s
         self._follow_camera = follow_camera
+        self._debug_draw = debug_draw
         self._tm_port = tm_port
         self._reload_world = reload_world
         self._owns_traffic_manager = False
@@ -222,6 +290,19 @@ class CarlaBackend(SimulationBackend):
         self._issued_turns: list[str] = []
         self._issued_at_s = 0.0
         self._issued_from: tuple[float, float] | None = None
+
+        # The current leg's route, thinned to what the overlay draws, and
+        # the clock that decides when to draw it again. Empty whenever there
+        # is no route to show — including after an unroutable leg, so a stale
+        # line never outlives the plan it described.
+        self._debug_route: list["carla.Location"] = []
+        self._since_debug_draw_s = 0.0
+
+        # Per stop: how many wait there to be collected, and how many riding
+        # now are due to alight there. Refreshed from the pool in
+        # ``sync_passengers`` rather than recomputed while drawing, because
+        # the pool is only handed over on that call.
+        self._stop_demand: dict[str, tuple[int, int]] = {}
 
         # Request ID to walker actor ID, and to the stop it waits at.
         self._walkers: dict[str, int] = {}
@@ -499,6 +580,7 @@ class CarlaBackend(SimulationBackend):
             request.id: request.pickup_stop_id
             for request in pool.get_pending()
         }
+        self._note_stop_demand(pool)
 
         gone = [rid for rid in self._walkers if rid not in waiting]
         if gone:
@@ -548,6 +630,179 @@ class CarlaBackend(SimulationBackend):
         """Tag and count whatever the traffic manager has printed."""
         for name, hits in carla_stdout.drain(self._context).items():
             self._stats[name] = self._stats.get(name, 0) + hits
+            if name == "route_drops" and self._debug_draw:
+                self._mark_route_drop(hits)
+
+    # ------------------------------------------------------------------
+    # Debug overlay
+    # ------------------------------------------------------------------
+    #
+    # Every call here is wrapped, for the reason ``carla_stdout._describe``
+    # is: a diagnostic that can abort a trial is worse than no diagnostic,
+    # and these touch live actors and the renderer.
+
+    def _remember_debug_route(
+        self, route: "list[carla.Waypoint] | None"
+    ) -> None:
+        """
+        Cache the leg's route as the polyline the overlay will draw.
+
+        Thinned to one point per ``DEBUG_ROUTE_STEP_M`` rather than kept
+        whole: the route steps every 2 m, and redrawing hundreds of segments
+        every couple of seconds costs far more than the picture is worth.
+        :param route: Waypoints from the bus to its destination, or None
+            when the leg could not be routed at all — which empties the
+            cache, so no stale line survives the plan it described.
+        :return: None.
+        """
+        if not self._debug_draw:
+            return
+        if not route:
+            self._debug_route = []
+            return
+
+        def raised(location: "carla.Location") -> "carla.Location":
+            """Lift a point clear of the road surface it would z-fight."""
+            return carla.Location(x=location.x, y=location.y,
+                                  z=location.z + DEBUG_ROUTE_HEIGHT_M)
+
+        points: list[carla.Location] = []
+        for waypoint in route:
+            here = waypoint.transform.location
+            if (not points
+                    or here.distance(points[-1]) >= DEBUG_ROUTE_STEP_M):
+                points.append(raised(here))
+        # The true end, so the line reaches the stop rather than stopping at
+        # whichever sample happened to fall last.
+        final = raised(route[-1].transform.location)
+        if not points or final.distance(points[-1]) > 0.5:
+            points.append(final)
+        self._debug_route = points[:DEBUG_MAX_SEGMENTS + 1]
+
+    def _note_stop_demand(self, pool: RequestPool) -> None:
+        """
+        Record what each stop is owed, for the overlay to label it with.
+
+        Counted here rather than while drawing because ``sync_passengers`` is
+        the only place the pool is handed over, and because two passes over a
+        few dozen requests is cheaper than reaching for them every redraw.
+        :param pool: The shared request pool.
+        :return: None.
+        """
+        if not self._debug_draw:
+            return
+        demand = {stop_id: [0, 0] for stop_id in self._stop_positions}
+        for request in pool.get_pending():
+            if request.pickup_stop_id in demand:
+                demand[request.pickup_stop_id][0] += 1
+        for request in pool.get_on_bus():
+            if request.dropoff_stop_id in demand:
+                demand[request.dropoff_stop_id][1] += 1
+        self._stop_demand = {
+            stop_id: (counts[0], counts[1])
+            for stop_id, counts in demand.items()
+        }
+
+    def _draw_debug(self) -> None:
+        """
+        Redraw the route and the stop beacons, on a timer.
+
+        Everything is world-space: see the note by the constants for why the
+        ``draw_hud_*`` family cannot be used however well it would suit this.
+        :return: None.
+        """
+        if not self._debug_draw or self._world is None:
+            return
+        self._since_debug_draw_s += self._delta
+        if self._since_debug_draw_s < DEBUG_REDRAW_S:
+            return
+        self._since_debug_draw_s = 0.0
+        try:
+            debug = self._world.debug
+            self._draw_route(debug)
+            self._draw_stops(debug)
+        except Exception:                       # noqa: BLE001
+            pass
+
+    def _draw_route(self, debug: object) -> None:
+        """
+        Draw the cached route polyline.
+        :param debug: The world's debug helper.
+        :return: None.
+        """
+        for start, end in zip(self._debug_route, self._debug_route[1:]):
+            debug.draw_line(start, end,
+                                thickness=DEBUG_ROUTE_THICKNESS_M,
+                                color=DEBUG_ROUTE_COLOR,
+                                life_time=DEBUG_ROUTE_LIFETIME_S)
+
+    def _draw_stops(self, debug: object) -> None:
+        """
+        Draw a beacon and a label over every stop.
+
+        Colour carries the state so the picture reads without the text:
+        amber where passengers are waiting to be collected, blue where
+        riders are due to alight, dim where the stop is idle. Waiting wins
+        when both are true, because a passenger who has not been picked up
+        yet is the one whose promise can still be broken.
+        :param debug: The world's debug helper.
+        :return: None.
+        """
+        for stop_id, (waiting, alighting) in self._stop_demand.items():
+            if waiting:
+                color = DEBUG_STOP_WAITING_COLOR
+            elif alighting:
+                color = DEBUG_STOP_ALIGHTING_COLOR
+            else:
+                color = DEBUG_STOP_IDLE_COLOR
+
+            base = self._location_of(stop_id)
+            debug.draw_line(
+                carla.Location(x=base.x, y=base.y, z=base.z),
+                carla.Location(x=base.x, y=base.y,
+                               z=base.z + DEBUG_STOP_BEACON_M),
+                thickness=DEBUG_STOP_THICKNESS_M, color=color,
+                life_time=DEBUG_ROUTE_LIFETIME_S)
+
+            # Top line first, so the stop's name sits highest and the counts
+            # read down towards the beacon.
+            lines = [stop_id, f"waiting {waiting}", f"alighting {alighting}"]
+            for offset, text in enumerate(lines):
+                height = (DEBUG_LABEL_BASE_M
+                          + (len(lines) - 1 - offset) * DEBUG_LABEL_LINE_M)
+                debug.draw_string(
+                    carla.Location(x=base.x, y=base.y, z=base.z + height),
+                    text, draw_shadow=True, color=color,
+                    life_time=DEBUG_ROUTE_LIFETIME_S)
+
+    def _mark_route_drop(self, hits: int) -> None:
+        """
+        Leave a permanent marker where the traffic manager lost its route.
+
+        The point is the pile-up. A run's markers are its dropped routes laid
+        out on the map, so a junction that keeps doing it is visible as a
+        cluster rather than inferred from a counter.
+        :param hits: How many messages arrived in this drain, so a tick that
+            produced several says so rather than looking like one.
+        :return: None.
+        """
+        bus = self._bus()
+        if bus is None or self._world is None:
+            return
+        try:
+            here = bus.get_location()
+            at = carla.Location(x=here.x, y=here.y,
+                                z=here.z + DEBUG_MARK_HEIGHT_M)
+            now = self._stats["ticks"] * self._delta
+            debug = self._world.debug
+            debug.draw_point(at, size=0.3, color=DEBUG_DROP_COLOR,
+                             life_time=DEBUG_MARK_LIFETIME_S)
+            debug.draw_string(
+                at, f"drop t={now:.0f}s" + (f" x{hits}" if hits > 1 else ""),
+                draw_shadow=True, color=DEBUG_DROP_COLOR,
+                life_time=DEBUG_MARK_LIFETIME_S)
+        except Exception:                       # noqa: BLE001
+            pass
 
     def _context(self) -> str:
         """
@@ -688,6 +943,7 @@ class CarlaBackend(SimulationBackend):
 
         if self._follow_camera:
             self._point_camera_at(bus)
+        self._draw_debug()
 
         here = bus.get_location()
         if self._last_location is not None:
@@ -875,6 +1131,7 @@ class CarlaBackend(SimulationBackend):
             origin,
             self._location_of(stop_id),
         )
+        self._remember_debug_route(route)
         if route is None:
             # Nothing sensible to say, so fall back to the old behaviour of
             # simply aiming at the stop. It is poor, but an instruction the

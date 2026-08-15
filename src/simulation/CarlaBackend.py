@@ -17,6 +17,7 @@ nothing above the backend imports this.
 
 import math
 import random
+import re
 import socket
 
 from collections.abc import Sequence
@@ -165,6 +166,17 @@ DEBUG_HUD_LIFETIME_TICKS = 2.0
 # least reliable part of it -- everything past the next few will be re-planned
 # before the bus gets there -- and a longer line runs off the panel.
 HUD_ROUTE_STOPS = 4
+
+# The live-request table. Columns are the passenger's whole story: where they
+# are going from and to, how long they stood there, how long they have been
+# riding, and which of the two they are doing now. Fulfilled and cancelled
+# requests are not listed at all -- the table is about work outstanding, and
+# a finished job never becomes interesting again.
+REQUEST_COLUMNS = ("FROM", "TO", "WAIT", "RIDE", "STATE")
+# Enough to see a backlog forming without burying the view. Demand runs to 30
+# requests against a capacity of 20, so this does overflow, and the count of
+# what is hidden is worth more than the rows themselves would be.
+HUD_MAX_REQUEST_ROWS = 12
 DEBUG_HUD_AHEAD_M = 3.0                 # how far in front of the spectator
 DEBUG_HUD_LEFT_M = 1.55                 # and how far up and to the left
 DEBUG_HUD_UP_M = 0.78
@@ -377,6 +389,11 @@ class CarlaBackend(SimulationBackend):
         # What the agent means to do after this leg. Display only: nothing
         # here steers, and the backend never learns what produced it.
         self._planned_route: list[str] = []
+        # Live requests, as display rows. Rebuilt from the pool each sync,
+        # and only when something is going to show them.
+        self._request_rows: list[tuple[str, ...]] = []
+        self._request_hidden = 0
+        self._short_stops: dict[str, str] | None = None
         self._since_debug_draw_s = 0.0
         # When the current leg began, for the overlay's per-leg counter.
         self._leg_started_s = 0.0
@@ -684,6 +701,7 @@ class CarlaBackend(SimulationBackend):
             for request in pool.get_pending()
         }
         self._note_stop_demand(pool)
+        self._note_requests(pool)
 
         gone = [rid for rid in self._walkers if rid not in waiting]
         if gone:
@@ -749,7 +767,8 @@ class CarlaBackend(SimulationBackend):
         try:
             alive = self._viewer.update(
                 self.hud_lines(), route=self._planned_route,
-                bus=bus.get_location() if bus is not None else None)
+                bus=bus.get_location() if bus is not None else None,
+                table=self.request_table(), hidden=self._request_hidden)
             if not alive:
                 self._viewer.close()
                 self._viewer = None
@@ -1065,6 +1084,86 @@ class CarlaBackend(SimulationBackend):
                 debug, text, origin, right, up, DEBUG_HUD_HEIGHT_M,
                 DEBUG_HUD_COLOR, self._delta * DEBUG_HUD_LIFETIME_TICKS)
 
+    def _shorten(self, stop_id: str) -> str:
+        """
+        Give a stop a short name for the table, if one is unambiguous.
+
+        Stop IDs run to ``n_s15_n_s13``, and two of those per row leaves no
+        width for anything else. The ``sNN`` inside is what anyone reads
+        anyway — but only if it still tells the stops apart, so the short
+        form is abandoned wholesale the moment any two would collide.
+        :param stop_id: The full TransitGraph node ID.
+        :return: The short name, or the full ID when shortening is unsafe.
+        """
+        if self._short_stops is None:
+            candidates = {}
+            for full in self._stop_positions:
+                match = re.search(r"s\d+", full)
+                candidates[full] = match.group(0) if match else full
+            unique = len(set(candidates.values())) == len(candidates)
+            self._short_stops = candidates if unique else {}
+        return self._short_stops.get(stop_id, stop_id)
+
+    def _note_requests(self, pool: RequestPool) -> None:
+        """
+        Snapshot the requests still in play, as rows for the viewer's table.
+
+        Waiting requests come first, longest wait at the top: that passenger
+        is the closest to giving up, which is the one thing on this table
+        that is about to change. Riders follow, longest ride first.
+
+        ``WAIT`` keeps meaning "time spent waiting at the stop", so it stops
+        counting at the moment of boarding rather than tracking the clock
+        forever; ``RIDE`` starts there. Read together they are the two halves
+        of the KPI the campaign reports.
+        :param pool: The shared request pool, read-only from here.
+        :return: None.
+        """
+        if not self._viewer_wanted:
+            return
+        now = self._stats["ticks"] * self._delta
+
+        waiting = sorted(
+            ((now - request.created_at, request)
+             for request in pool.get_pending()),
+            key=lambda pair: pair[0], reverse=True)
+        riding = sorted(
+            ((now - (request.boarded_at if request.boarded_at is not None
+                     else now), request)
+             for request in pool.get_on_bus()),
+            key=lambda pair: pair[0], reverse=True)
+
+        rows: list[tuple[str, ...]] = []
+        for waited, request in waiting:
+            rows.append((
+                self._shorten(request.pickup_stop_id),
+                self._shorten(request.dropoff_stop_id),
+                self._clock(waited), "-", "WAITING"))
+        for ridden, request in riding:
+            waited = ((request.boarded_at - request.created_at)
+                      if request.boarded_at is not None else 0.0)
+            rows.append((
+                self._shorten(request.pickup_stop_id),
+                self._shorten(request.dropoff_stop_id),
+                self._clock(waited), self._clock(ridden), "ON BUS"))
+
+        self._request_hidden = max(0, len(rows) - HUD_MAX_REQUEST_ROWS)
+        self._request_rows = rows[:HUD_MAX_REQUEST_ROWS]
+
+    def request_table(self) -> tuple[tuple[str, ...], list[tuple[str, ...]]]:
+        """
+        Return the live-request table, for whatever is drawing it.
+
+        :return: ``(header, rows)``. Rows are already trimmed to what will
+            fit; ``hidden_requests`` says how many were left off.
+        """
+        return REQUEST_COLUMNS, list(self._request_rows)
+
+    @property
+    def hidden_requests(self) -> int:
+        """How many live requests did not fit in the table."""
+        return self._request_hidden
+
     def hud_lines(self) -> list[str]:
         """
         Build the counters, for whichever surface is showing them.
@@ -1087,7 +1186,10 @@ class CarlaBackend(SimulationBackend):
         if self._planned_route:
             shown = self._planned_route[:HUD_ROUTE_STOPS]
             more = len(self._planned_route) - len(shown)
-            lines.append("PLAN " + " > ".join(shown)
+            # Short names here too: at full length four stop IDs run clear
+            # across the window and under the request table.
+            lines.append("PLAN " + " > ".join(self._shorten(stop)
+                                              for stop in shown)
                          + (f" (+{more})" if more else ""))
         drops = int(self._stats["route_drops"])
         unroutable = int(self._stats["unroutable_legs"])

@@ -15,6 +15,8 @@ import carla
 from src.simulation import carla_debug_text
 from src.simulation.CarlaBackend import (
     DEBUG_LABEL_MAX_M,
+    HUD_MAX_REQUEST_ROWS,
+    REQUEST_COLUMNS,
     DEBUG_LABEL_MIN_M,
     DEBUG_LABEL_MAX_STOPS,
     DEBUG_MAX_SEGMENTS,
@@ -993,15 +995,18 @@ class _FakeViewer:
     def __init__(self, alive: int = 99, explode: bool = False) -> None:
         self.seen: list[list[str]] = []
         self.routes: list[list[str]] = []
+        self.tables: list[object] = []
         self.closed = False
         self._alive = alive
         self._explode = explode
 
-    def update(self, lines, route=(), bus=None) -> bool:
+    def update(self, lines, route=(), bus=None, table=None,
+               hidden=0) -> bool:
         if self._explode:
             raise RuntimeError("display gone")
         self.seen.append(list(lines))
         self.routes.append(list(route))
+        self.tables.append(table)
         return len(self.seen) < self._alive
 
     def close(self) -> None:
@@ -1122,3 +1127,153 @@ def test_a_closed_viewer_hands_the_labels_back_to_the_spectator() -> None:
     backend._pump_viewer()
 
     assert backend._overlay_eye(spectator) is spectator
+
+
+# ---------------------------------------------------------------------------
+# The live-request table
+# ---------------------------------------------------------------------------
+
+def _pool_with(*requests: Request) -> RequestPool:
+    """Build a pool holding exactly these requests."""
+    pool = RequestPool()
+    for request in requests:
+        pool.add(request)
+    return pool
+
+
+def _waiting(request_id: str, pickup: str, dropoff: str,
+             created_at: float) -> Request:
+    """A passenger still at the stop."""
+    return Request(id=request_id, pickup_stop_id=pickup,
+                   dropoff_stop_id=dropoff, created_at=created_at)
+
+
+def _aboard(request_id: str, pickup: str, dropoff: str, created_at: float,
+            boarded_at: float) -> Request:
+    """A passenger already riding."""
+    return Request(id=request_id, pickup_stop_id=pickup,
+                   dropoff_stop_id=dropoff, created_at=created_at,
+                   state=RequestState.ON_BUS, boarded_at=boarded_at)
+
+
+def _table_backend(ticks: int = 0) -> CarlaBackend:
+    """A backend that will build the table, with its clock set."""
+    backend = _backend(viewer=True, fixed_delta_s=0.05)
+    backend._stats["ticks"] = ticks
+    return backend
+
+
+def test_the_table_is_not_built_without_something_to_show_it() -> None:
+    """It costs two passes over the pool; a campaign should not pay them."""
+    backend = _backend(viewer=False)
+
+    backend._note_requests(_pool_with(
+        _waiting("r1", "n0001_n_s01", "n0002_n_s02", 0.0)))
+
+    assert backend.request_table()[1] == []
+
+
+def test_a_waiting_passenger_shows_where_and_how_long() -> None:
+    backend = _table_backend(ticks=1200)          # 60 s
+
+    backend._note_requests(_pool_with(
+        _waiting("r1", "n0001_n_s01", "n0002_n_s02", 15.0)))
+
+    header, rows = backend.request_table()
+    assert header == REQUEST_COLUMNS
+    assert rows == [("s01", "s02", "0:45", "-", "WAITING")]
+
+
+def test_a_rider_shows_the_wait_it_finished_and_the_ride_so_far() -> None:
+    """
+    WAIT keeps meaning time spent at the stop, so it stops at boarding --
+    the two columns are the two halves of the KPI the campaign reports.
+    """
+    backend = _table_backend(ticks=2400)          # 120 s
+
+    backend._note_requests(_pool_with(
+        _aboard("r1", "n0001_n_s01", "n0002_n_s02", 10.0, 40.0)))
+
+    assert backend.request_table()[1] == [
+        ("s01", "s02", "0:30", "1:20", "ON BUS")]
+
+
+def test_finished_and_abandoned_requests_are_not_listed() -> None:
+    """The table is about work outstanding."""
+    backend = _table_backend(ticks=2000)
+    pool = _pool_with(
+        _waiting("r1", "n0001_n_s01", "n0002_n_s02", 0.0),
+        _waiting("r2", "n0002_n_s02", "n0001_n_s01", 0.0),
+        _waiting("r3", "n0001_n_s01", "n0002_n_s02", 0.0))
+    pool.update_state("r2", RequestState.ON_BUS)
+    pool.update_state("r2", RequestState.FULFILLED)
+    pool.cancel("r3")
+
+    backend._note_requests(pool)
+
+    assert len(backend.request_table()[1]) == 1
+
+
+def test_the_longest_wait_is_at_the_top() -> None:
+    """That passenger is the closest to giving up, which is the news."""
+    backend = _table_backend(ticks=4000)          # 200 s
+    backend._note_requests(_pool_with(
+        _waiting("new", "n0001_n_s01", "n0002_n_s02", 150.0),
+        _waiting("old", "n0002_n_s02", "n0001_n_s01", 10.0)))
+
+    rows = backend.request_table()[1]
+
+    assert rows[0][2] == "3:10"                   # the older wait
+    assert rows[1][2] == "0:50"
+
+
+def test_waiting_passengers_come_before_riders() -> None:
+    backend = _table_backend(ticks=4000)
+
+    backend._note_requests(_pool_with(
+        _aboard("r1", "n0001_n_s01", "n0002_n_s02", 0.0, 10.0),
+        _waiting("r2", "n0002_n_s02", "n0001_n_s01", 100.0)))
+
+    states = [row[4] for row in backend.request_table()[1]]
+    assert states == ["WAITING", "ON BUS"]
+
+
+def test_a_long_table_is_trimmed_and_says_so() -> None:
+    backend = _table_backend(ticks=2000)
+    many = [_waiting(f"r{n}", "n0001_n_s01", "n0002_n_s02", float(n))
+            for n in range(HUD_MAX_REQUEST_ROWS + 5)]
+
+    backend._note_requests(_pool_with(*many))
+
+    assert len(backend.request_table()[1]) == HUD_MAX_REQUEST_ROWS
+    assert backend.hidden_requests == 5
+
+
+def test_stop_names_are_shortened_when_that_stays_unambiguous() -> None:
+    backend = _table_backend()
+    assert backend._shorten("n0001_n_s01") == "s01"
+
+
+def test_colliding_short_names_fall_back_to_the_full_id() -> None:
+    """A short name that names two stops is worse than a long one."""
+    backend = _backend(viewer=True, stop_positions={
+        "a_s01_x": (0.0, 0.0, 0.0), "b_s01_y": (1.0, 1.0, 0.0)},
+        position="a_s01_x")
+
+    assert backend._shorten("a_s01_x") == "a_s01_x"
+
+
+def test_a_stop_with_no_number_keeps_its_name() -> None:
+    backend = _backend(viewer=True, stop_positions={
+        "depot": (0.0, 0.0, 0.0), "yard": (1.0, 1.0, 0.0)},
+        position="depot")
+
+    assert backend._shorten("depot") == "depot"
+
+
+def test_the_plan_line_uses_the_short_stop_names() -> None:
+    """At full length four stop IDs run under the request table."""
+    backend = _backend(viewer=True)
+    backend.set_planned_route(["n0002_n_s02", "n0001_n_s01"])
+
+    assert "PLAN s02 > s01" in backend.hud_lines()

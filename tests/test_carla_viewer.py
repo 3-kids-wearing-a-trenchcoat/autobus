@@ -11,8 +11,10 @@ import pytest
 from src.simulation.carla_viewer import (
     MAP_MARGIN,
     MAP_SIZE,
+    TABLE_GAP,
     CarlaViewer,
     MiniMap,
+    format_table,
     minimap_from,
 )
 
@@ -211,3 +213,45 @@ def test_a_name_stays_inside_the_panel_vertically() -> None:
 
     assert high[1] >= top
     assert low[1] <= top + MAP_SIZE[1]
+
+
+# ---------------------------------------------------------------------------
+# Laying out the request table
+# ---------------------------------------------------------------------------
+
+def test_columns_are_padded_to_a_common_width() -> None:
+    lines = format_table(("FROM", "TO"), [("s1", "s22"), ("s333", "s4")])
+
+    # "FROM" and "s333" are the widest first cells, so the second column
+    # starts at 4 + the gap on every line.
+    start = 4 + len(TABLE_GAP)
+    assert [line[start:] for line in lines] == ["TO", "s22", "s4"]
+
+
+def test_a_long_cell_widens_its_column_rather_than_breaking_the_row() -> None:
+    lines = format_table(("FROM", "TO"),
+                         [("a_very_long_stop_id", "s2"), ("s1", "s3")])
+
+    start = len("a_very_long_stop_id") + len(TABLE_GAP)
+    assert [line[start:] for line in lines] == ["TO", "s2", "s3"]
+
+
+def test_the_header_comes_first() -> None:
+    lines = format_table(("FROM", "TO"), [("s1", "s2")])
+    assert lines[0].startswith("FROM")
+    assert len(lines) == 2
+
+
+def test_no_header_means_no_table() -> None:
+    assert format_table((), [("s1", "s2")]) == []
+
+
+def test_a_header_with_no_rows_is_still_a_header() -> None:
+    """The viewer decides whether an empty table is worth drawing."""
+    assert format_table(("FROM", "TO"), []) == ["FROM  TO"]
+
+
+def test_rows_longer_than_the_header_are_clipped() -> None:
+    """A stray column would push every later row out of alignment."""
+    lines = format_table(("FROM",), [("s1", "extra")])
+    assert lines == ["FROM", "s1"]

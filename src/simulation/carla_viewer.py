@@ -89,6 +89,21 @@ MAP_LABEL_INK = (206, 212, 222)
 # and whatever is near the bus get named.
 MAP_LABEL_RANGE_M = 90.0
 
+# --- Live-request table ---------------------------------------------------
+#
+# Drawn top-right, under its own panel. Columns are padded to a common width
+# and rendered as plain lines, which only works because the font is
+# monospaced -- with a proportional font this would need per-column blits.
+TABLE_MARGIN = 18
+TABLE_PAD = 12
+TABLE_FONT_PT = 18
+TABLE_LINE_H = 21
+TABLE_GAP = "  "
+TABLE_INK = (222, 226, 232)
+TABLE_HEAD_INK = (150, 200, 245)
+TABLE_SHADE = (10, 12, 16)
+TABLE_SHADE_ALPHA = 170
+
 
 def _to_surface(image: "carla.Image", pygame) -> "pygame.Surface":
     """
@@ -120,6 +135,36 @@ class MiniMap:
 
     edges: tuple[tuple[float, float, float, float], ...]
     stops: tuple[tuple[str, float, float], ...]
+
+
+def format_table(
+    header: Sequence[str], rows: Sequence[Sequence[str]]
+) -> list[str]:
+    """
+    Pad a table into monospaced lines, one per row.
+
+    Column widths come from the widest cell in each column, header included,
+    so a long stop name widens its column instead of pushing the row out of
+    alignment.
+    :param header: Column titles.
+    :param rows: Row cells, each the same length as the header.
+    :return: The header line followed by one line per row; empty for no
+        header.
+    """
+    if not header:
+        return []
+    widths = [len(title) for title in header]
+    for row in rows:
+        for index, cell in enumerate(row[:len(widths)]):
+            widths[index] = max(widths[index], len(cell))
+
+    def line(cells: Sequence[str]) -> str:
+        """Pad one row's cells to the column widths."""
+        padded = [str(cell).ljust(widths[index])
+                  for index, cell in enumerate(cells[:len(widths)])]
+        return TABLE_GAP.join(padded).rstrip()
+
+    return [line(header)] + [line(row) for row in rows]
 
 
 def minimap_from(provider: object) -> MiniMap:
@@ -188,6 +233,8 @@ class CarlaViewer:
         pygame.display.set_caption(title)
         self._font = pygame.font.SysFont("dejavusansmono", HUD_FONT_PT)
         self._map_font = pygame.font.SysFont("dejavusansmono", MAP_FONT_PT)
+        self._table_font = pygame.font.SysFont("dejavusansmono",
+                                               TABLE_FONT_PT)
         self._clock = pygame.time.Clock()
         self._minimap = minimap
         self._map_rect = self._fit_minimap(minimap, size)
@@ -264,6 +311,8 @@ class CarlaViewer:
         lines: Sequence[str],
         route: Sequence[str] = (),
         bus: "carla.Location | None" = None,
+        table: tuple[Sequence[str], Sequence[Sequence[str]]] | None = None,
+        hidden: int = 0,
     ) -> bool:
         """
         Pump the window once and draw the HUD over the latest frame.
@@ -277,6 +326,10 @@ class CarlaViewer:
             minimap to pick out.
         :param bus: Where the bus is, for the minimap to mark. None leaves
             the marker off rather than the panel.
+        :param table: ``(header, rows)`` for the live-request table, drawn
+            top-right. None draws no panel.
+        :param hidden: How many rows were trimmed before being handed over,
+            reported under the table so a backlog is not silently cropped.
         :return: False once the window has been closed, True otherwise.
         """
         if self._closed:
@@ -299,6 +352,7 @@ class CarlaViewer:
         if self._latest is not None:
             self._screen.blit(_to_surface(self._latest, self._pygame), (0, 0))
         self._draw_hud(lines)
+        self._draw_table(table, hidden)
         self._draw_minimap(route, bus)
         self._pygame.display.flip()
         self._clock.tick()
@@ -330,6 +384,50 @@ class CarlaViewer:
         for index, surface in enumerate(rendered):
             self._screen.blit(surface,
                               (HUD_MARGIN, HUD_MARGIN + index * HUD_LINE_H))
+
+    def _draw_table(
+        self,
+        table: "tuple[Sequence[str], Sequence[Sequence[str]]] | None",
+        hidden: int,
+    ) -> None:
+        """
+        Draw the live-request table, top-right, under its own panel.
+
+        Nothing is drawn for an empty table rather than an empty box: early
+        in a run there are no requests, and a permanent empty frame is just
+        something else to look past.
+        :param table: ``(header, rows)``, or None.
+        :param hidden: Rows trimmed before this was handed over.
+        :return: None.
+        """
+        if table is None:
+            return
+        header, rows = table
+        if not rows:
+            return
+
+        text = format_table(header, rows)
+        if hidden:
+            text.append(f"... {hidden} more")
+        rendered = [
+            self._table_font.render(
+                line, True,
+                TABLE_HEAD_INK if index == 0 else TABLE_INK)
+            for index, line in enumerate(text)
+        ]
+        width = max(surface.get_width() for surface in rendered)
+        height = TABLE_LINE_H * len(rendered)
+        left = self._size[0] - width - TABLE_MARGIN - TABLE_PAD
+
+        panel = self._pygame.Surface((width + TABLE_PAD * 2,
+                                      height + TABLE_PAD * 2))
+        panel.set_alpha(TABLE_SHADE_ALPHA)
+        panel.fill(TABLE_SHADE)
+        self._screen.blit(panel, (left - TABLE_PAD, TABLE_MARGIN - TABLE_PAD))
+
+        for index, surface in enumerate(rendered):
+            self._screen.blit(
+                surface, (left, TABLE_MARGIN + index * TABLE_LINE_H))
 
     def _nearest_edge(
         self, bus: "carla.Location"

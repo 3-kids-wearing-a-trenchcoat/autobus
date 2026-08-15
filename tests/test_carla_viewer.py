@@ -8,6 +8,7 @@ is left to pygame.
 import carla
 import pytest
 
+from src.simulation import carla_viewer
 from src.simulation.carla_viewer import (
     MAP_MARGIN,
     MAP_SIZE,
@@ -255,3 +256,138 @@ def test_rows_longer_than_the_header_are_clipped() -> None:
     """A stray column would push every later row out of alignment."""
     lines = format_table(("FROM",), [("s1", "extra")])
     assert lines == ["FROM", "s1"]
+
+
+# ---------------------------------------------------------------------------
+# Opening and closing the window
+#
+# Real pygame against SDL's dummy driver, so there is a display to take down
+# without anything appearing on screen. CARLA is stubbed: none of this is
+# about the camera, only about what is left behind.
+# ---------------------------------------------------------------------------
+
+class _StubCamera:
+    def __init__(self) -> None:
+        self.stopped = False
+        self.destroyed = False
+
+    def listen(self, callback) -> None:
+        pass
+
+    def stop(self) -> None:
+        self.stopped = True
+
+    def destroy(self) -> None:
+        self.destroyed = True
+
+
+class _StubBlueprint:
+    def set_attribute(self, *args) -> None:
+        pass
+
+
+class _StubWorld:
+    def __init__(self) -> None:
+        self.cameras: list[_StubCamera] = []
+
+    def get_blueprint_library(self):
+        class _Library:
+            def find(self, name):
+                return _StubBlueprint()
+        return _Library()
+
+    def spawn_actor(self, *args, **kwargs) -> _StubCamera:
+        camera = _StubCamera()
+        self.cameras.append(camera)
+        return camera
+
+
+@pytest.fixture
+def headless(monkeypatch: pytest.MonkeyPatch):
+    """Give SDL a driver that needs no screen, and start from no viewer."""
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    monkeypatch.setattr(carla_viewer, "_ACTIVE", None)
+    yield
+    if carla_viewer._ACTIVE is not None:
+        carla_viewer._ACTIVE.close()
+
+
+def _opened(world: _StubWorld) -> CarlaViewer:
+    """Open a viewer over a stubbed world."""
+    return CarlaViewer(world, follow=object(), size=(320, 200))
+
+
+def test_closing_takes_the_camera_down_with_the_window(headless) -> None:
+    """A leaked sensor keeps rendering for a trial that has finished."""
+    world = _StubWorld()
+
+    _opened(world).close()
+
+    assert world.cameras[0].stopped
+    assert world.cameras[0].destroyed
+
+
+def test_closing_leaves_the_rest_of_pygame_alone(headless) -> None:
+    """
+    ``pygame.quit()`` would take font and every other module with it, which
+    is not this object's to take away — a later trial in the same process
+    would find them gone.
+    """
+    import pygame
+
+    _opened(_StubWorld()).close()
+
+    assert not pygame.display.get_init()
+    assert pygame.font.get_init()
+
+
+def test_a_second_window_is_refused_rather_than_fought_over(
+    headless,
+) -> None:
+    """
+    SDL gives a process one window: a second ``set_mode`` resizes the first.
+    Two viewers would draw into the same surface, which looks like flicker
+    rather than an error.
+    """
+    world = _StubWorld()
+    first = _opened(world)
+
+    with pytest.raises(RuntimeError, match="already open"):
+        _opened(world)
+
+    first.close()
+
+
+def test_a_later_trial_can_open_its_own_window(headless) -> None:
+    """Refusing two at once must not refuse one after another."""
+    world = _StubWorld()
+    _opened(world).close()
+
+    second = _opened(world)
+
+    assert not second.closed
+    second.close()
+
+
+def test_closing_twice_is_harmless(headless) -> None:
+    """Teardown runs from a finally, and may run after the user closed it."""
+    viewer = _opened(_StubWorld())
+    viewer.close()
+    viewer.close()
+
+
+def test_the_safety_net_closes_a_viewer_nobody_closed(headless) -> None:
+    """
+    A run that dies part-way must not leave a window behind. Registered with
+    atexit for the same reason ``carla_stdout.restore`` is.
+    """
+    viewer = _opened(_StubWorld())
+
+    carla_viewer.close_active()
+
+    assert viewer.closed
+    assert carla_viewer._ACTIVE is None
+
+
+def test_the_safety_net_is_harmless_with_no_viewer(headless) -> None:
+    carla_viewer.close_active()

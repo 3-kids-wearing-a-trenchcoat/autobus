@@ -21,6 +21,7 @@ launched ``-RenderOffScreen``, which is usually faster than watching its own
 viewport.
 """
 
+import atexit
 import math
 import warnings
 from collections.abc import Sequence
@@ -36,6 +37,28 @@ import carla
 # notebook. Narrow on purpose: every other warning still gets through.
 warnings.filterwarnings(
     "ignore", message=".*avx2.*", category=RuntimeWarning)
+
+# SDL gives a process one window: calling ``set_mode`` again resizes the one
+# that exists rather than opening a second. Two viewers at once would
+# therefore draw into the same surface and fight over it, which looks like a
+# flickering window rather than an error. Held so that can be refused.
+_ACTIVE: "CarlaViewer | None" = None
+
+
+def close_active() -> None:
+    """
+    Shut whatever viewer is open, if any.
+
+    Registered with ``atexit`` for the reason ``carla_stdout.restore`` is: a
+    run that dies part-way must not leave a window behind. Closing one
+    normally deregisters nothing -- this simply finds nothing to do.
+    :return: None.
+    """
+    if _ACTIVE is not None:
+        _ACTIVE.close()
+
+
+atexit.register(close_active)
 
 # Chase camera placement, relative to the bus.
 CAMERA_BEHIND_M = 8.0
@@ -220,6 +243,14 @@ class CarlaViewer:
                 "pygame, or drop viewer=True"
             ) from error
 
+        global _ACTIVE
+        if _ACTIVE is not None and not _ACTIVE.closed:
+            raise RuntimeError(
+                "a viewer window is already open, and SDL gives a process "
+                "only one: close the first, or run the second trial in its "
+                "own process"
+            )
+
         self._pygame = pygame
         self._world = world
         self._size = size
@@ -254,6 +285,7 @@ class CarlaViewer:
         # Only ever keeps the newest frame: the simulation outruns the
         # display, and showing a backlog would show the past.
         self._camera.listen(self._receive)
+        _ACTIVE = self
 
     @property
     def closed(self) -> bool:
@@ -563,6 +595,7 @@ class CarlaViewer:
         closed, because a trial's teardown should not have to know either.
         :return: None.
         """
+        global _ACTIVE
         if self._camera is not None:
             try:
                 self._camera.stop()
@@ -572,6 +605,11 @@ class CarlaViewer:
                 # is worth failing a trial's teardown over.
                 pass
             self._camera = None
-        if not self._closed:
-            self._closed = True
-        self._pygame.quit()
+        self._closed = True
+        if _ACTIVE is self:
+            _ACTIVE = None
+        # Only the display: ``pygame.quit()`` also tears down font and every
+        # other module, which is not this object's to take away -- a later
+        # trial in the same process, or anything else using pygame, would
+        # find them gone.
+        self._pygame.display.quit()

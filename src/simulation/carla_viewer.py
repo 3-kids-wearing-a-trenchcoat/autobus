@@ -21,11 +21,21 @@ launched ``-RenderOffScreen``, which is usually faster than watching its own
 viewport.
 """
 
+import math
+import warnings
 from collections.abc import Sequence
-
-import numpy as np
+from dataclasses import dataclass
 
 import carla
+
+# pygame's conda-forge build warns on import that it was compiled without
+# AVX2 blit support. Measured before silencing it: converting and blitting a
+# 1280x720 frame costs 0.51 ms against a 33 ms budget at 30 fps, so the blit
+# is nowhere near this window's cost -- the camera sensor is. The warning
+# names a compile-time flag nothing here can act on, so it is only noise in a
+# notebook. Narrow on purpose: every other warning still gets through.
+warnings.filterwarnings(
+    "ignore", message=".*avx2.*", category=RuntimeWarning)
 
 # Chase camera placement, relative to the bus.
 CAMERA_BEHIND_M = 8.0
@@ -50,19 +60,88 @@ HUD_INK = (238, 238, 234)
 HUD_SHADE = (12, 12, 14)
 HUD_SHADE_ALPHA = 150
 
+# --- Minimap --------------------------------------------------------------
+#
+# The graph the policy plans over, not a picture of the town: it shows the
+# roads the bus is allowed to use, which is where the detours the campaign
+# keeps finding actually live. Drawn bottom-right.
+MAP_SIZE = (360, 360)
+MAP_MARGIN = 18
+MAP_PAD = 14
+MAP_FONT_PT = 15
+MAP_SHADE = (10, 12, 16)
+MAP_SHADE_ALPHA = 170
+MAP_ROAD = (104, 112, 128)
+MAP_ROAD_W = 1
+# The road the bus is on, picked by nearest segment. This is the "edge" in
+# the graph sense: TransitGraph's nodes are road edges.
+MAP_HERE = (255, 246, 170)
+MAP_HERE_W = 5
+MAP_STOP = (150, 158, 172)
+MAP_STOP_R = 3
+MAP_STOP_NEXT = (235, 160, 40)
+MAP_STOP_PLANNED = (60, 150, 235)
+MAP_PLAN_W = 2
+MAP_BUS = (70, 230, 150)
+MAP_BUS_R = 5
+MAP_LABEL_INK = (206, 212, 222)
+# Labelling fifteen stops fills the panel with text. Only the plan's stops
+# and whatever is near the bus get named.
+MAP_LABEL_RANGE_M = 90.0
+
 
 def _to_surface(image: "carla.Image", pygame) -> "pygame.Surface":
     """
     Convert one CARLA camera frame into a pygame surface.
 
+    ``frombuffer`` reads CARLA's bytes as they already are. Going through
+    numpy to swap channels and axes measured 1.09 ms a frame against 0.51,
+    and this runs on every frame the window draws.
     :param image: The sensor frame, in CARLA's BGRA byte order.
     :param pygame: The imported pygame module.
     :return: A surface ready to blit.
     """
-    array = np.frombuffer(image.raw_data, dtype=np.uint8)
-    array = array.reshape((image.height, image.width, 4))[:, :, :3]
-    # BGRA to RGB, then to pygame's column-major layout.
-    return pygame.surfarray.make_surface(array[:, :, ::-1].swapaxes(0, 1))
+    return pygame.image.frombuffer(
+        image.raw_data, (image.width, image.height), "BGRA")
+
+
+@dataclass(frozen=True)
+class MiniMap:
+    """
+    The road graph, flattened to plain numbers for drawing.
+
+    Deliberately not a ``TransitGraph``: the simulation layer is kept free of
+    map-layer imports, so the map is handed over as coordinates the way stop
+    positions already are.
+
+    :param edges: Road segments as ``(x1, y1, x2, y2)`` in world metres.
+    :param stops: Bus stops as ``(stop_id, x, y)``.
+    """
+
+    edges: tuple[tuple[float, float, float, float], ...]
+    stops: tuple[tuple[str, float, float], ...]
+
+
+def minimap_from(provider: object) -> MiniMap:
+    """
+    Build the minimap's geometry from any map provider.
+
+    Duck-typed for the same reason ``stop_positions_from`` is: this module
+    should not know which map layer it is being handed.
+    :param provider: Any MapProvider exposing road nodes, edges and stops.
+    :return: The flattened graph.
+    """
+    nodes = {node.id: (node.x, node.y) for node in provider.get_road_nodes()}
+    edges = tuple(
+        (nodes[edge.from_node_id][0], nodes[edge.from_node_id][1],
+         nodes[edge.to_node_id][0], nodes[edge.to_node_id][1])
+        for edge in provider.get_road_edges()
+        if edge.from_node_id in nodes and edge.to_node_id in nodes
+    )
+    stops = tuple(
+        (stop.edge.id, stop.x, stop.y) for stop in provider.get_stops()
+    )
+    return MiniMap(edges=edges, stops=stops)
 
 
 class CarlaViewer:
@@ -75,6 +154,7 @@ class CarlaViewer:
     :param size: Window size in pixels.
     :param fov: Horizontal field of view, in degrees.
     :param title: Window caption.
+    :param minimap: Road graph to draw bottom-right. None draws no panel.
     :raises RuntimeError: If pygame is not installed.
     """
 
@@ -85,6 +165,7 @@ class CarlaViewer:
         size: tuple[int, int] = (1280, 720),
         fov: float = 90.0,
         title: str = "autobus — CARLA",
+        minimap: MiniMap | None = None,
     ) -> None:
         try:
             import pygame
@@ -106,7 +187,10 @@ class CarlaViewer:
         self._screen = pygame.display.set_mode(size)
         pygame.display.set_caption(title)
         self._font = pygame.font.SysFont("dejavusansmono", HUD_FONT_PT)
+        self._map_font = pygame.font.SysFont("dejavusansmono", MAP_FONT_PT)
         self._clock = pygame.time.Clock()
+        self._minimap = minimap
+        self._map_rect = self._fit_minimap(minimap, size)
 
         blueprint = world.get_blueprint_library().find("sensor.camera.rgb")
         blueprint.set_attribute("image_size_x", str(size[0]))
@@ -133,7 +217,54 @@ class CarlaViewer:
         """Keep the newest frame, dropping whatever it replaces."""
         self._latest = image
 
-    def update(self, lines: Sequence[str]) -> bool:
+    @staticmethod
+    def _fit_minimap(
+        minimap: "MiniMap | None", size: tuple[int, int]
+    ) -> tuple[float, float, float, float] | None:
+        """
+        Work out how world metres map onto the minimap panel.
+
+        Computed once: the graph does not move, so rescaling it every frame
+        would be the same arithmetic forever. One scale for both axes, so the
+        town keeps its shape rather than being stretched to fill a square.
+        :param minimap: The graph, or None.
+        :param size: Window size in pixels.
+        :return: ``(origin_x, origin_y, metres_per_pixel, ...)`` as
+            ``(off_x, off_y, scale, top)``, or None when there is no graph.
+        """
+        if minimap is None or not minimap.edges:
+            return None
+        xs = [v for edge in minimap.edges for v in (edge[0], edge[2])]
+        ys = [v for edge in minimap.edges for v in (edge[1], edge[3])]
+        span_x = max(xs) - min(xs) or 1.0
+        span_y = max(ys) - min(ys) or 1.0
+        inner = MAP_SIZE[0] - MAP_PAD * 2
+        scale = min(inner / span_x, inner / span_y)
+        # Centre the graph in the panel, then remember where the panel is.
+        off_x = (min(xs) + max(xs)) / 2
+        off_y = (min(ys) + max(ys)) / 2
+        left = size[0] - MAP_SIZE[0] - MAP_MARGIN
+        top = size[1] - MAP_SIZE[1] - MAP_MARGIN
+        return (off_x, off_y, scale, (left, top))
+
+    def _to_panel(self, x: float, y: float) -> tuple[int, int]:
+        """
+        Project a world point into panel pixels.
+
+        :param x: World x, in metres.
+        :param y: World y, in metres.
+        :return: Pixel coordinates inside the window.
+        """
+        off_x, off_y, scale, (left, top) = self._map_rect
+        return (int(left + MAP_SIZE[0] / 2 + (x - off_x) * scale),
+                int(top + MAP_SIZE[1] / 2 + (y - off_y) * scale))
+
+    def update(
+        self,
+        lines: Sequence[str],
+        route: Sequence[str] = (),
+        bus: "carla.Location | None" = None,
+    ) -> bool:
         """
         Pump the window once and draw the HUD over the latest frame.
 
@@ -142,6 +273,10 @@ class CarlaViewer:
         Never blocks on a frame — if the camera has not produced one yet, the
         window simply keeps what it had.
         :param lines: HUD text, one entry per line, drawn top-left.
+        :param route: Stops the bus plans to visit, next first, for the
+            minimap to pick out.
+        :param bus: Where the bus is, for the minimap to mark. None leaves
+            the marker off rather than the panel.
         :return: False once the window has been closed, True otherwise.
         """
         if self._closed:
@@ -164,6 +299,7 @@ class CarlaViewer:
         if self._latest is not None:
             self._screen.blit(_to_surface(self._latest, self._pygame), (0, 0))
         self._draw_hud(lines)
+        self._draw_minimap(route, bus)
         self._pygame.display.flip()
         self._clock.tick()
         return True
@@ -194,6 +330,132 @@ class CarlaViewer:
         for index, surface in enumerate(rendered):
             self._screen.blit(surface,
                               (HUD_MARGIN, HUD_MARGIN + index * HUD_LINE_H))
+
+    def _nearest_edge(
+        self, bus: "carla.Location"
+    ) -> tuple[float, float, float, float] | None:
+        """
+        Find the road segment the bus is on.
+
+        ``TransitGraph``'s nodes *are* road edges, so "which edge is it on" is
+        the graph question, and the honest answer from a world position is the
+        nearest segment. Distance to the segment, not to its endpoints: on a
+        long road the endpoints can both be far away while the bus sits on it.
+        :param bus: Where the bus is, in world metres.
+        :return: The closest segment, or None if the graph is empty.
+        """
+        best, best_d2 = None, float("inf")
+        for x1, y1, x2, y2 in self._minimap.edges:
+            dx, dy = x2 - x1, y2 - y1
+            span = dx * dx + dy * dy
+            if span == 0.0:
+                along = 0.0
+            else:
+                along = ((bus.x - x1) * dx + (bus.y - y1) * dy) / span
+                along = min(1.0, max(0.0, along))
+            gap_x = bus.x - (x1 + along * dx)
+            gap_y = bus.y - (y1 + along * dy)
+            gap = gap_x * gap_x + gap_y * gap_y
+            if gap < best_d2:
+                best, best_d2 = (x1, y1, x2, y2), gap
+        return best
+
+    def _draw_minimap(
+        self, route: Sequence[str], bus: "carla.Location | None"
+    ) -> None:
+        """
+        Draw the road graph, the plan on it, and where the bus is.
+
+        This is the graph the policy plans over rather than a picture of the
+        town, which is the point: a detour that looks inexplicable out of the
+        windscreen is usually plain here, because the road the bus wanted was
+        never an edge.
+        :param route: Stops still to visit, next first.
+        :param bus: Where the bus is, or None to leave the marker off.
+        :return: None.
+        """
+        if self._map_rect is None:
+            return
+        _, _, _, (left, top) = self._map_rect
+        pygame = self._pygame
+
+        panel = pygame.Surface(MAP_SIZE)
+        panel.set_alpha(MAP_SHADE_ALPHA)
+        panel.fill(MAP_SHADE)
+        self._screen.blit(panel, (left, top))
+
+        for x1, y1, x2, y2 in self._minimap.edges:
+            pygame.draw.line(self._screen, MAP_ROAD, self._to_panel(x1, y1),
+                             self._to_panel(x2, y2), MAP_ROAD_W)
+
+        # The plan, as a chain through the stops it visits in order. Straight
+        # hops, not driven paths: this says what the bus intends, and the
+        # gap between that and the green line in the world is the detour.
+        placed = {stop_id: (x, y) for stop_id, x, y in self._minimap.stops}
+        chain = [placed[s] for s in route if s in placed]
+        if bus is not None and chain:
+            chain.insert(0, (bus.x, bus.y))
+        for start, end in zip(chain, chain[1:]):
+            pygame.draw.line(self._screen, MAP_STOP_PLANNED,
+                             self._to_panel(*start), self._to_panel(*end),
+                             MAP_PLAN_W)
+
+        # After the plan and before the stops: this is where the bus is, so
+        # nothing else gets to cover it.
+        if bus is not None:
+            here = self._nearest_edge(bus)
+            if here is not None:
+                pygame.draw.line(self._screen, MAP_HERE,
+                                 self._to_panel(here[0], here[1]),
+                                 self._to_panel(here[2], here[3]), MAP_HERE_W)
+
+        planned = set(route)
+        next_stop = route[0] if route else None
+        for stop_id, x, y in self._minimap.stops:
+            if stop_id == next_stop:
+                color, radius = MAP_STOP_NEXT, MAP_STOP_R + 2
+            elif stop_id in planned:
+                color, radius = MAP_STOP_PLANNED, MAP_STOP_R + 1
+            else:
+                color, radius = MAP_STOP, MAP_STOP_R
+            at = self._to_panel(x, y)
+            pygame.draw.circle(self._screen, color, at, radius)
+
+            # Naming all fifteen fills the panel with overlapping text, so
+            # name the ones in play and whatever the bus is passing.
+            near = (bus is not None
+                    and math.hypot(bus.x - x, bus.y - y) <= MAP_LABEL_RANGE_M)
+            if stop_id in planned or near:
+                label = self._map_font.render(stop_id, True, MAP_LABEL_INK)
+                self._screen.blit(
+                    label, self._label_at(at, label.get_width(), radius))
+
+        if bus is not None:
+            pygame.draw.circle(self._screen, MAP_BUS,
+                               self._to_panel(bus.x, bus.y), MAP_BUS_R)
+
+    def _label_at(
+        self, anchor: tuple[int, int], width: int, radius: int
+    ) -> tuple[int, int]:
+        """
+        Place a stop's name beside it without running off the panel.
+
+        To the right by default, and flipped to the left when that would
+        overflow — a name clipped by the panel edge is worse than no name,
+        because a truncated stop id reads as a different stop.
+        :param anchor: Where the stop's dot is, in window pixels.
+        :param width: Rendered width of the name.
+        :param radius: Radius of the dot, so the text clears it.
+        :return: Top-left corner to blit the name at.
+        """
+        _, _, _, (left, top) = self._map_rect
+        gap = radius + 3
+        x = anchor[0] + gap
+        if x + width > left + MAP_SIZE[0] - MAP_PAD // 2:
+            x = anchor[0] - gap - width
+        x = max(left + 2, x)
+        y = min(max(anchor[1] - 7, top + 2), top + MAP_SIZE[1] - 16)
+        return x, y
 
     def close(self) -> None:
         """

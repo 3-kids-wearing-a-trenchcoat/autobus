@@ -1,5 +1,7 @@
 """Abstract simulation backend: the seam between the project and a world."""
 
+from collections.abc import Sequence
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
@@ -120,6 +122,21 @@ class SimulationBackend(ABC):
 
         Called from a ``finally`` block, so it runs even when a trial fails
         part-way. Leaked actors are the classic cross-trial contaminant.
+        """
+
+    def set_planned_route(self, stop_ids: Sequence[str]) -> None:
+        """
+        Tell the world what the bus intends to do after the current leg.
+
+        Steering never needs this — ``set_destination`` is the whole of the
+        instruction — so it is a no-op by default and no backend has to care.
+        It exists for worlds that *show* things: a viewer can put the plan on
+        screen, which is the only way to watch re-planning happen.
+
+        Deliberately a list of opaque IDs rather than anything richer, so
+        that nothing below the algorithm layer learns what a policy or a
+        route object is.
+        :param stop_ids: Stops still to visit, next first. May be empty.
         """
 
     def sync_passengers(self, pool: RequestPool) -> None:

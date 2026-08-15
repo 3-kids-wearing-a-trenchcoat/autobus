@@ -181,6 +181,9 @@ class SimulationRunner:
                 if next_stop is None:
                     break
             self._backend.set_destination(next_stop)
+            # After set_destination, so the plan and the leg it starts with
+            # are always handed over in the same state.
+            self._backend.set_planned_route(self._agent.planned_route())
             result = self._backend.advance(remaining)
             remaining -= result.consumed
             if result.arrived_at is None:

@@ -79,6 +79,16 @@ class BusAgent:
         """
         return self._route[0] if self._route else None
 
+    def planned_route(self) -> list[str]:
+        """
+        Return the stops the bus currently intends to visit, in order.
+
+        A copy, because this is for looking at: a caller that could mutate
+        the plan by holding it would be re-planning by accident.
+        :return: TransitGraph node IDs, next stop first; empty when idle.
+        """
+        return list(self._route)
+
     def replan_if_idle(self, sim_time: float) -> None:
         """
         Give a parked bus a chance to notice work that arrived while it sat.

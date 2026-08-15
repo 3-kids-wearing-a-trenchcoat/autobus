@@ -992,14 +992,16 @@ class _FakeViewer:
 
     def __init__(self, alive: int = 99, explode: bool = False) -> None:
         self.seen: list[list[str]] = []
+        self.routes: list[list[str]] = []
         self.closed = False
         self._alive = alive
         self._explode = explode
 
-    def update(self, lines) -> bool:
+    def update(self, lines, route=(), bus=None) -> bool:
         if self._explode:
             raise RuntimeError("display gone")
         self.seen.append(list(lines))
+        self.routes.append(list(route))
         return len(self.seen) < self._alive
 
     def close(self) -> None:
@@ -1055,6 +1057,16 @@ def test_the_viewer_is_given_the_counters_every_tick() -> None:
 
     assert len(backend._viewer.seen) == 2
     assert backend._viewer.seen[0][0].startswith("SIM")
+
+
+def test_the_viewer_is_given_the_plan_for_its_minimap() -> None:
+    backend = _backend(viewer=True)
+    backend._viewer = _FakeViewer()
+    backend.set_planned_route(["n0002_n_s02", "n0001_n_s01"])
+
+    backend._pump_viewer()
+
+    assert backend._viewer.routes[0] == ["n0002_n_s02", "n0001_n_s01"]
 
 
 def test_closing_the_window_drops_it_for_the_rest_of_the_run() -> None:

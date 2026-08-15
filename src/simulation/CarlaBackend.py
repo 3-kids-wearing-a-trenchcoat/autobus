@@ -19,6 +19,8 @@ import math
 import random
 import socket
 
+from collections.abc import Sequence
+
 from src.algorithm.RequestPool import RequestPool
 from src.simulation import carla_debug_text, carla_stdout
 from src.simulation.carla_routing import plan_route, turns_along
@@ -159,6 +161,10 @@ DEBUG_LABEL_MAX_STOPS = 4
 # The lifetime is in ticks for the same reason: an old copy surviving at an
 # old position is a ghost trailing a moving camera.
 DEBUG_HUD_LIFETIME_TICKS = 2.0
+# How many stops of the plan the route line shows. The tail of a plan is the
+# least reliable part of it -- everything past the next few will be re-planned
+# before the bus gets there -- and a longer line runs off the panel.
+HUD_ROUTE_STOPS = 4
 DEBUG_HUD_AHEAD_M = 3.0                 # how far in front of the spectator
 DEBUG_HUD_LEFT_M = 1.55                 # and how far up and to the left
 DEBUG_HUD_UP_M = 0.78
@@ -256,6 +262,10 @@ class CarlaBackend(SimulationBackend):
         with this open the server can run ``-RenderOffScreen``. Defaults to
         False.
     :param viewer_size: Window size in pixels, when ``viewer`` is on.
+    :param minimap: Road graph for the viewer's minimap, from
+        ``carla_viewer.minimap_from(provider)``. Passed in already flattened
+        to coordinates, so this class still needs no map-layer import.
+        Defaults to None, which leaves the panel off.
     :param tm_port: Port for the traffic manager. Defaults to None, which
         finds a free one and shuts it down again on ``close``. Name a port
         only to share an existing traffic manager, in which case it is yours
@@ -295,6 +305,7 @@ class CarlaBackend(SimulationBackend):
         debug_draw: bool = False,
         viewer: bool = False,
         viewer_size: tuple[int, int] = (1280, 720),
+        minimap: object | None = None,
         tm_port: int | None = None,
         reload_world: bool = False,
     ) -> None:
@@ -328,6 +339,7 @@ class CarlaBackend(SimulationBackend):
         self._debug_draw = debug_draw
         self._viewer_wanted = viewer
         self._viewer_size = viewer_size
+        self._minimap = minimap
         self._viewer: object | None = None
         self._tm_port = tm_port
         self._reload_world = reload_world
@@ -362,6 +374,9 @@ class CarlaBackend(SimulationBackend):
         # is no route to show — including after an unroutable leg, so a stale
         # line never outlives the plan it described.
         self._debug_route: list["carla.Location"] = []
+        # What the agent means to do after this leg. Display only: nothing
+        # here steers, and the backend never learns what produced it.
+        self._planned_route: list[str] = []
         self._since_debug_draw_s = 0.0
         # When the current leg began, for the overlay's per-leg counter.
         self._leg_started_s = 0.0
@@ -636,6 +651,17 @@ class CarlaBackend(SimulationBackend):
         """Return the last stop the bus reached."""
         return self._position
 
+    def set_planned_route(self, stop_ids: "Sequence[str]") -> None:
+        """
+        Record the plan, for the overlay and the viewer to show.
+
+        Never steers: ``set_destination`` remains the whole instruction, and
+        a plan arriving here changes nothing the bus does.
+        :param stop_ids: Stops still to visit, next first.
+        :return: None.
+        """
+        self._planned_route = list(stop_ids)
+
     def sync_passengers(self, pool: RequestPool) -> None:
         """
         Mirror waiting passengers onto walker actors.
@@ -704,7 +730,8 @@ class CarlaBackend(SimulationBackend):
 
         self._viewer = CarlaViewer(
             self._world, bus, size=self._viewer_size,
-            title=f"autobus - {self._town} seed {self._seed}")
+            title=f"autobus - {self._town} seed {self._seed}",
+            minimap=self._minimap)
 
     def _pump_viewer(self) -> None:
         """
@@ -718,8 +745,12 @@ class CarlaBackend(SimulationBackend):
         """
         if self._viewer is None:
             return
+        bus = self._bus()
         try:
-            if not self._viewer.update(self.hud_lines()):
+            alive = self._viewer.update(
+                self.hud_lines(), route=self._planned_route,
+                bus=bus.get_location() if bus is not None else None)
+            if not alive:
                 self._viewer.close()
                 self._viewer = None
         except Exception:                       # noqa: BLE001
@@ -1053,6 +1084,11 @@ class CarlaBackend(SimulationBackend):
         ]
         if self._stop_demand:
             lines.append(f"WAIT {waiting}   ABOARD {aboard}")
+        if self._planned_route:
+            shown = self._planned_route[:HUD_ROUTE_STOPS]
+            more = len(self._planned_route) - len(shown)
+            lines.append("PLAN " + " > ".join(shown)
+                         + (f" (+{more})" if more else ""))
         drops = int(self._stats["route_drops"])
         unroutable = int(self._stats["unroutable_legs"])
         if drops or unroutable:

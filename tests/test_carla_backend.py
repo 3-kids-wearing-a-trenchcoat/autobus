@@ -12,7 +12,12 @@ from src.algorithm.RequestPool import Request, RequestPool, RequestState
 from src.map.CarlaMapProvider import CarlaMapProvider
 import carla
 
+from src.simulation import carla_debug_text
 from src.simulation.CarlaBackend import (
+    DEBUG_HUD_REDRAW_S,
+    DEBUG_LABEL_MAX_M,
+    DEBUG_LABEL_MIN_M,
+    DEBUG_LABEL_MAX_STOPS,
     DEBUG_MAX_SEGMENTS,
     DEBUG_ROUTE_THICKNESS_M,
     DEBUG_STOP_BEACON_M,
@@ -510,7 +515,14 @@ class _FakeDebug:
         self.strings: list[str] = []
         self.colors: list[object] = []
         self.thicknesses: list[float] = []
+        self.boxes: list[object] = []
         self._explode = explode
+
+    def draw_box(self, box, rotation, **kwargs) -> None:
+        if self._explode:
+            raise RuntimeError("renderer gone")
+        self.boxes.append(box)
+        self.colors.append(kwargs.get("color"))
 
     def draw_line(self, begin, end, **kwargs) -> None:
         if self._explode:
@@ -530,15 +542,30 @@ class _FakeDebug:
         self.strings.append(text)
 
 
-class _DebugWorld:
-    """A world that offers nothing but a renderer and the bus."""
+class _FakeSpectator:
+    """A camera parked at the origin, looking up the +x axis."""
 
-    def __init__(self, debug: _FakeDebug, bus: object = None) -> None:
+    def get_transform(self) -> "carla.Transform":
+        return carla.Transform(carla.Location(x=0.0, y=0.0, z=2.0),
+                               carla.Rotation())
+
+
+class _DebugWorld:
+    """A world that offers nothing but a renderer, a camera and the bus."""
+
+    def __init__(self, debug: _FakeDebug, bus: object = None,
+                 spectator: object = None) -> None:
         self.debug = debug
         self._bus = bus
+        # None stands for "no camera", which switches the counters off --
+        # they are the only part of the overlay that needs one.
+        self.spectator = spectator
 
     def get_actor(self, actor_id: int) -> object:
         return self._bus
+
+    def get_spectator(self) -> "_FakeSpectator":
+        return self.spectator
 
 
 class _LocatedBus:
@@ -607,6 +634,7 @@ def test_an_unroutable_leg_clears_the_overlay() -> None:
 
 
 def test_the_route_is_not_redrawn_every_tick() -> None:
+    """No camera here, so only the route is under test, not the counters."""
     debug = _FakeDebug()
     backend = _drawing_backend(debug, fixed_delta_s=0.05)
     backend._remember_debug_route(_straight_route(100.0))
@@ -740,19 +768,43 @@ def test_demand_is_not_counted_when_the_flag_is_off() -> None:
     assert backend._stop_demand == {}
 
 
-def test_each_stop_gets_a_beacon_and_three_label_lines() -> None:
+def test_every_stop_gets_a_box_and_a_beacon() -> None:
     debug = _FakeDebug()
     backend = _drawing_backend(debug)
     backend._note_stop_demand(_demand_pool(
         waiting=("n0001_n_s01",), aboard=("n0002_n_s02",)))
 
-    backend._draw_stops(debug)
+    backend._draw_stops(debug, _FakeSpectator())
 
-    assert len(debug.lines) == 2                    # one beacon per stop
-    assert debug.strings == [
+    assert len(debug.boxes) == 2                    # one box per stop
+    beacons = 2
+    strokes = sum(carla_debug_text.stroke_count(text) for text in (
         "n0001_n_s01", "waiting 1", "alighting 0",
-        "n0002_n_s02", "waiting 0", "alighting 1",
-    ]
+        "n0002_n_s02", "waiting 0", "alighting 1"))
+    # Beacons plus the lettering; nothing goes through draw_string any more,
+    # which has no font size and is unreadable on a 4K display.
+    assert len(debug.lines) == beacons + strokes
+    assert debug.strings == []
+
+
+def test_only_the_nearest_stops_are_lettered() -> None:
+    """
+    Stroke text costs a call per stroke. Fifteen stops of it would cost more
+    than the whole rest of the overlay, and the far ones are illegible.
+    """
+    debug = _FakeDebug()
+    far = {f"s{i}": (float(i) * 40.0, 0.0, 0.0) for i in range(12)}
+    backend = _backend(debug_draw=True, stop_positions=far, position="s0")
+    backend._world = _DebugWorld(debug, _LocatedBus(0.0, 0.0))
+    backend._bus_id = 1
+    backend._note_stop_demand(RequestPool())
+
+    backend._draw_stops(debug, _FakeSpectator())
+
+    assert len(debug.boxes) == 12                   # every stop is boxed
+    lettered = backend._labelled_stops(carla.Location(x=0.0, y=0.0, z=2.0))
+    assert len(lettered) == DEBUG_LABEL_MAX_STOPS
+    assert lettered[0] == "s0"                      # nearest first
 
 
 def test_the_beacon_stands_up_from_the_stop() -> None:
@@ -761,7 +813,7 @@ def test_the_beacon_stands_up_from_the_stop() -> None:
     backend = _drawing_backend(debug)
     backend._note_stop_demand(_demand_pool())
 
-    backend._draw_stops(debug)
+    backend._draw_stops(debug, _FakeSpectator())
 
     foot, head = debug.lines[0]
     assert head.z - foot.z == pytest.approx(DEBUG_STOP_BEACON_M)
@@ -778,7 +830,7 @@ def test_waiting_outranks_alighting_in_the_colour() -> None:
     backend._note_stop_demand(_demand_pool(
         waiting=("n0001_n_s01",), aboard=("n0001_n_s01",)))
 
-    backend._draw_stops(debug)
+    backend._draw_stops(debug, _FakeSpectator())
 
     assert backend._stop_demand["n0001_n_s01"] == (1, 1)
     assert debug.colors[0] == DEBUG_STOP_WAITING_COLOR
@@ -789,7 +841,7 @@ def test_an_idle_stop_is_drawn_dim() -> None:
     backend = _drawing_backend(debug)
     backend._note_stop_demand(_demand_pool())
 
-    backend._draw_stops(debug)
+    backend._draw_stops(debug, _FakeSpectator())
 
     assert debug.colors[0] == DEBUG_STOP_IDLE_COLOR
 
@@ -804,3 +856,109 @@ def test_the_route_is_drawn_wide_enough_to_follow() -> None:
 
     assert debug.thicknesses[0] == pytest.approx(DEBUG_ROUTE_THICKNESS_M)
     assert debug.thicknesses[0] > 0.15
+
+
+# ---------------------------------------------------------------------------
+# The camera-locked counters
+# ---------------------------------------------------------------------------
+
+def test_the_clock_reads_minutes_under_an_hour() -> None:
+    assert CarlaBackend._clock(0) == "0:00"
+    assert CarlaBackend._clock(9.7) == "0:09"
+    assert CarlaBackend._clock(605) == "10:05"
+
+
+def test_the_clock_grows_an_hours_field_when_it_needs_one() -> None:
+    assert CarlaBackend._clock(3600) == "1:00:00"
+    assert CarlaBackend._clock(7385) == "2:03:05"
+
+
+def test_a_negative_duration_reads_as_zero() -> None:
+    """A leg counter must never show a negative before its first leg."""
+    assert CarlaBackend._clock(-5) == "0:00"
+
+
+def test_the_leg_clock_restarts_when_a_destination_is_given() -> None:
+    backend = _backend(debug_draw=True, fixed_delta_s=0.05)
+    backend._stats["ticks"] = 2000                  # 100 s in
+
+    backend.set_destination("n0002_n_s02")
+
+    assert backend._leg_started_s == pytest.approx(100.0)
+
+
+def test_re_issuing_the_same_destination_does_not_restart_the_leg() -> None:
+    """The runner re-issues every pass; the counter must not reset with it."""
+    backend = _backend(debug_draw=True, fixed_delta_s=0.05)
+    backend.set_destination("n0002_n_s02")
+    backend._stats["ticks"] = 4000
+
+    backend.set_destination("n0002_n_s02")
+
+    assert backend._leg_started_s == pytest.approx(0.0)
+
+
+def test_the_counters_are_drawn_in_front_of_the_camera() -> None:
+    debug = _FakeDebug()
+    backend = _drawing_backend(debug, fixed_delta_s=0.05)
+    backend._since_hud_draw_s = DEBUG_HUD_REDRAW_S
+
+    backend._draw_hud(debug, _FakeSpectator())
+
+    assert debug.lines, "nothing drawn"
+    # The camera looks up +x from the origin, so the text must sit ahead.
+    assert all(point.x > 0 for pair in debug.lines for point in pair)
+
+
+def test_the_counters_say_the_time_the_leg_and_the_next_stop() -> None:
+    debug = _FakeDebug()
+    backend = _drawing_backend(debug, fixed_delta_s=0.05)
+    backend._destination = "n0002_n_s02"
+    backend._stats["ticks"] = 1200                  # 60 s
+    backend._since_hud_draw_s = DEBUG_HUD_REDRAW_S
+
+    backend._draw_hud(debug, _FakeSpectator())
+
+    expected = sum(carla_debug_text.stroke_count(text) for text in (
+        "SIM 1:00", "LEG 1:00", "NEXT n0002_n_s02"))
+    assert len(debug.lines) == expected
+
+
+def test_the_counters_are_not_redrawn_every_tick() -> None:
+    """They follow the camera, so they run fast -- but not every tick."""
+    debug = _FakeDebug()
+    backend = _drawing_backend(debug, fixed_delta_s=0.05)
+    spectator = _FakeSpectator()
+
+    for _ in range(int(DEBUG_HUD_REDRAW_S / 0.05) - 1):
+        backend._draw_hud(debug, spectator)
+    assert debug.lines == []
+
+    backend._draw_hud(debug, spectator)
+    assert debug.lines
+
+
+def test_no_camera_means_no_counters() -> None:
+    """There is nothing to pin them to, and no screen-space API to use."""
+    debug = _FakeDebug()
+    backend = _drawing_backend(debug, fixed_delta_s=0.05)
+    backend._since_hud_draw_s = DEBUG_HUD_REDRAW_S
+
+    backend._draw_hud(debug, None)
+
+    assert debug.lines == []
+
+
+def test_a_label_holds_its_apparent_size_with_distance() -> None:
+    """
+    A fixed world height is unreadable across town and fills the screen at
+    the stop the bus is parked at, which is where the chase camera lives.
+    """
+    near = CarlaBackend._label_height(20.0)
+    far = CarlaBackend._label_height(60.0)
+    assert far == pytest.approx(near * 3.0)
+
+
+def test_label_height_is_clamped_at_both_ends() -> None:
+    assert CarlaBackend._label_height(0.0) == DEBUG_LABEL_MIN_M
+    assert CarlaBackend._label_height(10000.0) == DEBUG_LABEL_MAX_M

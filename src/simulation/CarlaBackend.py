@@ -15,11 +15,12 @@ manager can navigate to.
 nothing above the backend imports this.
 """
 
+import math
 import random
 import socket
 
 from src.algorithm.RequestPool import RequestPool
-from src.simulation import carla_stdout
+from src.simulation import carla_debug_text, carla_stdout
 from src.simulation.carla_routing import plan_route, turns_along
 from src.simulation.SimulationBackend import AdvanceResult, SimulationBackend
 
@@ -98,34 +99,73 @@ DEBUG_MAX_SEGMENTS = 250
 # Lift shapes off the road surface, or they z-fight with it.
 DEBUG_ROUTE_HEIGHT_M = 0.5
 DEBUG_MARK_HEIGHT_M = 1.5
-# Wide enough to follow from the chase camera. 0.15 was the CARLA default
-# and reads as a hairline from behind the bus.
-DEBUG_ROUTE_THICKNESS_M = 0.30
+# The debug material is emissive and blooms with both width and brightness.
+# 0.15 was a hairline and 0.6 flared over the whole frame; 0.20 against a
+# muted green is followable without glare, which is what a line you look
+# past all run wants to be.
+DEBUG_ROUTE_THICKNESS_M = 0.20
 
 # --- Stop beacons ---------------------------------------------------------
 #
-# A stop is marked by a tall vertical bar, not a point on the ground: from a
-# chase camera at street level a ground marker is a few pixels, while a bar
-# this tall is visible down the length of a street.
+# A stop is marked by a box around it and a bar standing out of it: the box
+# says where the stop is, and the bar carries it above the parked cars and
+# street furniture so it can be picked out from down the road.
 DEBUG_STOP_BEACON_M = 6.0
 DEBUG_STOP_THICKNESS_M = 0.20
-# Where the label starts, and how far apart its lines sit. ``draw_string``
-# takes no font size -- CARLA renders it small and fixed -- so legibility has
-# to come from placement: high enough to clear the beacon, spaced enough not
-# to overlap at distance.
+DEBUG_STOP_BOX_M = 2.6                  # half-extent of the cube, per axis
+DEBUG_STOP_BOX_THICKNESS_M = 0.12
+
+# Labels are stroke-drawn by ``carla_debug_text``, not ``draw_string``, so
+# they have a real size. See that module: CARLA's own text has no size
+# parameter at all and is a few pixels tall on a 4K display.
+#
+# The cost is a draw call per stroke, so only the nearest few stops are
+# labelled. Boxes and beacons are one call each and are drawn for every stop.
+# Labels are sized *by distance*, so they hold a roughly constant size on
+# screen. A fixed world height cannot work at both ends: 0.85 m reads well
+# from across the street and fills the entire frame when the bus is standing
+# at the stop, which is exactly when the chase camera is closest to it.
+# Cap height per metre of distance -- 0.035 is the 0.85 m that looked right
+# at 24 m, generalised.
+DEBUG_LABEL_ANGULAR = 0.035
+DEBUG_LABEL_MIN_M = 0.30
+DEBUG_LABEL_MAX_M = 2.50
+# Line spacing follows the size, or the block spreads apart as it shrinks.
+DEBUG_LABEL_LINE_RATIO = 1.55
 DEBUG_LABEL_BASE_M = 6.6
-DEBUG_LABEL_LINE_M = 1.3
+DEBUG_LABEL_RANGE_M = 150.0
+DEBUG_LABEL_MAX_STOPS = 4
+
+# --- Camera-locked counters -----------------------------------------------
+#
+# There is no screen-space drawing in the CARLA API, so a corner-of-screen
+# HUD cannot exist. This is the next best thing: text placed a few metres in
+# front of the spectator and redrawn as it moves, which reads as fixed on
+# screen. It has to be redrawn far more often than the world overlay or it
+# smears behind a moving camera, and its lifetime has to be short for the
+# same reason -- an old copy left at an old position is a ghost.
+DEBUG_HUD_REDRAW_S = 0.25
+DEBUG_HUD_LIFETIME_S = 0.35
+DEBUG_HUD_AHEAD_M = 3.0                 # how far in front of the spectator
+DEBUG_HUD_LEFT_M = 1.55                 # and how far up and to the left
+DEBUG_HUD_UP_M = 0.78
+DEBUG_HUD_HEIGHT_M = 0.085
+DEBUG_HUD_LINE_M = 0.135
+
 # A stop nobody wants is drawn dim, so the ones in play stand out. Amber for
 # passengers waiting to be collected, blue for passengers due to alight.
-DEBUG_STOP_IDLE_COLOR = carla.Color(r=90, g=95, b=105)
-DEBUG_STOP_WAITING_COLOR = carla.Color(r=235, g=160, b=40)
-DEBUG_STOP_ALIGHTING_COLOR = carla.Color(r=60, g=150, b=235)
+DEBUG_STOP_IDLE_COLOR = carla.Color(r=70, g=75, b=85)
+DEBUG_STOP_WAITING_COLOR = carla.Color(r=190, g=125, b=30)
+DEBUG_STOP_ALIGHTING_COLOR = carla.Color(r=45, g=115, b=190)
 # CARLA reads 0.0 as "permanent". The markers are meant to pile up: by the
 # end of a run the junctions that keep dropping routes are painted onto the
 # map, which is how Town03's problem became a junction ID and not a count.
 DEBUG_MARK_LIFETIME_S = 0.0
-DEBUG_ROUTE_COLOR = carla.Color(r=40, g=180, b=120)
+# Muted rather than saturated: this line is on screen the whole run, and a
+# bright one flares across everything behind it.
+DEBUG_ROUTE_COLOR = carla.Color(r=25, g=115, b=75)
 DEBUG_DROP_COLOR = carla.Color(r=235, g=60, b=40)
+DEBUG_HUD_COLOR = carla.Color(r=185, g=190, b=195)
 
 
 def _port_is_free(port: int) -> bool:
@@ -297,6 +337,9 @@ class CarlaBackend(SimulationBackend):
         # line never outlives the plan it described.
         self._debug_route: list["carla.Location"] = []
         self._since_debug_draw_s = 0.0
+        self._since_hud_draw_s = 0.0
+        # When the current leg began, for the overlay's per-leg counter.
+        self._leg_started_s = 0.0
 
         # Per stop: how many wait there to be collected, and how many riding
         # now are due to alight there. Refreshed from the pool in
@@ -514,6 +557,10 @@ class CarlaBackend(SimulationBackend):
         self._destination = stop_id
         self._leg_armed = True
         self._since_replan_s = 0.0
+        # Restarted here rather than on arrival, because the leg the overlay
+        # counts is the one the bus is driving, and a bus that dwells at a
+        # stop has not started the next leg until it is given one.
+        self._leg_started_s = self._stats["ticks"] * self._delta
         self._stats["legs_started"] += 1
 
         bus = self._bus()
@@ -713,14 +760,19 @@ class CarlaBackend(SimulationBackend):
         """
         if not self._debug_draw or self._world is None:
             return
-        self._since_debug_draw_s += self._delta
-        if self._since_debug_draw_s < DEBUG_REDRAW_S:
-            return
-        self._since_debug_draw_s = 0.0
         try:
             debug = self._world.debug
+            spectator = self._world.get_spectator()
+            # The counters follow the camera, so they run on their own much
+            # faster clock; the world overlay is nailed down and does not.
+            self._draw_hud(debug, spectator)
+
+            self._since_debug_draw_s += self._delta
+            if self._since_debug_draw_s < DEBUG_REDRAW_S:
+                return
+            self._since_debug_draw_s = 0.0
             self._draw_route(debug)
-            self._draw_stops(debug)
+            self._draw_stops(debug, spectator)
         except Exception:                       # noqa: BLE001
             pass
 
@@ -736,27 +788,69 @@ class CarlaBackend(SimulationBackend):
                                 color=DEBUG_ROUTE_COLOR,
                                 life_time=DEBUG_ROUTE_LIFETIME_S)
 
-    def _draw_stops(self, debug: object) -> None:
+    def _stop_color(self, waiting: int, alighting: int) -> "carla.Color":
         """
-        Draw a beacon and a label over every stop.
+        Pick the colour that says what a stop is owed.
 
-        Colour carries the state so the picture reads without the text:
-        amber where passengers are waiting to be collected, blue where
-        riders are due to alight, dim where the stop is idle. Waiting wins
-        when both are true, because a passenger who has not been picked up
-        yet is the one whose promise can still be broken.
+        Waiting wins when both are true, because a passenger who has not
+        been picked up yet is the one whose promise can still be broken.
+        :param waiting: Passengers waiting there to be collected.
+        :param alighting: Passengers aboard due to alight there.
+        :return: The colour to draw that stop in.
+        """
+        if waiting:
+            return DEBUG_STOP_WAITING_COLOR
+        if alighting:
+            return DEBUG_STOP_ALIGHTING_COLOR
+        return DEBUG_STOP_IDLE_COLOR
+
+    def _labelled_stops(self, eye: "carla.Location") -> list[str]:
+        """
+        Choose which stops are close enough to be worth lettering.
+
+        Stroke-drawn text costs a call per stroke, so labelling fifteen
+        stops every redraw would cost more than the rest of the overlay put
+        together — and the far ones are unreadable anyway.
+        :param eye: Where the camera is.
+        :return: Stop IDs to label, nearest first.
+        """
+        near = [
+            (self._location_of(stop_id).distance(eye), stop_id)
+            for stop_id in self._stop_demand
+        ]
+        near = [(d, s) for d, s in near if d <= DEBUG_LABEL_RANGE_M]
+        near.sort()
+        return [stop_id for _, stop_id in near[:DEBUG_LABEL_MAX_STOPS]]
+
+    def _draw_stops(self, debug: object, spectator: object) -> None:
+        """
+        Draw a box, a beacon and a label over the stops.
+
+        Every stop gets the box and the beacon, which are a call each.
+        Only the nearest few get lettering; see ``_labelled_stops``.
         :param debug: The world's debug helper.
+        :param spectator: The spectator actor, whose axes turn the labels to
+            face it. None leaves labels unturned rather than undrawn.
         :return: None.
         """
-        for stop_id, (waiting, alighting) in self._stop_demand.items():
-            if waiting:
-                color = DEBUG_STOP_WAITING_COLOR
-            elif alighting:
-                color = DEBUG_STOP_ALIGHTING_COLOR
-            else:
-                color = DEBUG_STOP_IDLE_COLOR
+        eye = (spectator.get_transform().location if spectator is not None
+               else None)
+        wanted = self._labelled_stops(eye) if eye is not None else []
+        right, up = self._billboard_axes(spectator)
 
+        for stop_id, (waiting, alighting) in self._stop_demand.items():
+            color = self._stop_color(waiting, alighting)
             base = self._location_of(stop_id)
+
+            debug.draw_box(
+                carla.BoundingBox(
+                    carla.Location(x=base.x, y=base.y,
+                                   z=base.z + DEBUG_STOP_BOX_M),
+                    carla.Vector3D(x=DEBUG_STOP_BOX_M, y=DEBUG_STOP_BOX_M,
+                                   z=DEBUG_STOP_BOX_M)),
+                carla.Rotation(), thickness=DEBUG_STOP_BOX_THICKNESS_M,
+                color=color, life_time=DEBUG_ROUTE_LIFETIME_S)
+
             debug.draw_line(
                 carla.Location(x=base.x, y=base.y, z=base.z),
                 carla.Location(x=base.x, y=base.y,
@@ -764,16 +858,121 @@ class CarlaBackend(SimulationBackend):
                 thickness=DEBUG_STOP_THICKNESS_M, color=color,
                 life_time=DEBUG_ROUTE_LIFETIME_S)
 
-            # Top line first, so the stop's name sits highest and the counts
-            # read down towards the beacon.
+            if stop_id not in wanted:
+                continue
+            height = self._label_height(base.distance(eye))
+            spacing = height * DEBUG_LABEL_LINE_RATIO
+            # Top line first, so the name sits highest and the counts read
+            # down towards the beacon.
             lines = [stop_id, f"waiting {waiting}", f"alighting {alighting}"]
             for offset, text in enumerate(lines):
-                height = (DEBUG_LABEL_BASE_M
-                          + (len(lines) - 1 - offset) * DEBUG_LABEL_LINE_M)
-                debug.draw_string(
-                    carla.Location(x=base.x, y=base.y, z=base.z + height),
-                    text, draw_shadow=True, color=color,
-                    life_time=DEBUG_ROUTE_LIFETIME_S)
+                lift = (DEBUG_LABEL_BASE_M
+                        + (len(lines) - 1 - offset) * spacing)
+                half = carla_debug_text.text_width(text, height) / 2
+                start = carla.Location(x=base.x - right.x * half,
+                                       y=base.y - right.y * half,
+                                       z=base.z + lift)
+                carla_debug_text.draw_text(
+                    debug, text, start, right, up, height, color,
+                    DEBUG_ROUTE_LIFETIME_S)
+
+    @staticmethod
+    def _label_height(distance: float) -> float:
+        """
+        Size a stop's label so it looks the same from anywhere.
+
+        Text drawn at a fixed world height is either unreadable across the
+        town or fills the screen at the stop the bus is standing at, and the
+        chase camera spends its time at exactly that distance. Scaling with
+        distance holds the apparent size instead, clamped so a stop far away
+        does not become a billboard and one underfoot does not vanish.
+        :param distance: Metres from the camera to the stop.
+        :return: Cap height in metres.
+        """
+        wanted = distance * DEBUG_LABEL_ANGULAR
+        return min(DEBUG_LABEL_MAX_M, max(DEBUG_LABEL_MIN_M, wanted))
+
+    @staticmethod
+    def _billboard_axes(spectator: object) -> tuple[object, object]:
+        """
+        Return the axes that turn flat text to face the camera.
+
+        Text is drawn upright rather than tilted with the camera's pitch: a
+        label that rolls with a chase camera is harder to read than one that
+        always stands up.
+        :param spectator: The spectator actor, or None for world axes.
+        :return: ``(right, up)`` unit vectors.
+        """
+        up = carla.Vector3D(x=0.0, y=0.0, z=1.0)
+        if spectator is None:
+            return carla.Vector3D(x=1.0, y=0.0, z=0.0), up
+        forward = spectator.get_transform().get_forward_vector()
+        flat = math.hypot(forward.x, forward.y) or 1.0
+        # Perpendicular to the camera's heading, in the ground plane.
+        return carla.Vector3D(x=-forward.y / flat, y=forward.x / flat,
+                              z=0.0), up
+
+    def _draw_hud(self, debug: object, spectator: object) -> None:
+        """
+        Draw the counters that follow the camera.
+
+        CARLA has no screen-space drawing, so this is text pinned a few
+        metres in front of the spectator and redrawn as it moves. It reads
+        as a corner-of-screen HUD as long as the redraw keeps up, which is
+        why it runs on its own much faster clock.
+        :param debug: The world's debug helper.
+        :param spectator: The spectator actor. None means no camera to pin
+            anything to, so nothing is drawn.
+        :return: None.
+        """
+        if spectator is None:
+            return
+        self._since_hud_draw_s += self._delta
+        if self._since_hud_draw_s < DEBUG_HUD_REDRAW_S:
+            return
+        self._since_hud_draw_s = 0.0
+
+        transform = spectator.get_transform()
+        forward = transform.get_forward_vector()
+        right = transform.get_right_vector()
+        up = transform.get_up_vector()
+        now = self._stats["ticks"] * self._delta
+
+        lines = [
+            f"SIM {self._clock(now)}",
+            f"LEG {self._clock(now - self._leg_started_s)}",
+            f"NEXT {self._destination or '-'}",
+        ]
+        for index, text in enumerate(lines):
+            drop = index * DEBUG_HUD_LINE_M
+            origin = carla.Location(
+                x=(transform.location.x + forward.x * DEBUG_HUD_AHEAD_M
+                   - right.x * DEBUG_HUD_LEFT_M
+                   + up.x * (DEBUG_HUD_UP_M - drop)),
+                y=(transform.location.y + forward.y * DEBUG_HUD_AHEAD_M
+                   - right.y * DEBUG_HUD_LEFT_M
+                   + up.y * (DEBUG_HUD_UP_M - drop)),
+                z=(transform.location.z + forward.z * DEBUG_HUD_AHEAD_M
+                   - right.z * DEBUG_HUD_LEFT_M
+                   + up.z * (DEBUG_HUD_UP_M - drop)))
+            carla_debug_text.draw_text(
+                debug, text, origin, right, up, DEBUG_HUD_HEIGHT_M,
+                DEBUG_HUD_COLOR, DEBUG_HUD_LIFETIME_S)
+
+    @staticmethod
+    def _clock(seconds: float) -> str:
+        """
+        Format a duration for the overlay.
+
+        :param seconds: Duration in simulated seconds; negatives read as 0.
+        :return: ``M:SS`` under an hour, ``H:MM:SS`` above it.
+        """
+        whole = max(0, int(seconds))
+        hours, rest = divmod(whole, 3600)
+        minutes, secs = divmod(rest, 60)
+        if hours:
+            return f"{hours}:{minutes:02d}:{secs:02d}"
+        return f"{minutes}:{secs:02d}"
 
     def _mark_route_drop(self, hits: int) -> None:
         """

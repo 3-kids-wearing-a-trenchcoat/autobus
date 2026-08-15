@@ -36,6 +36,7 @@ nav:
       - Metrics: concepts/metrics.md
       - Simulation Backend: concepts/simulation_backend.md
       - Navigating in CARLA: concepts/carla_navigation.md
+      - Watching a Run: concepts/watching_a_run.md
       - Simulation Runner: concepts/simulation_runner.md
       - Experiment Helpers: concepts/experiment.md
   - API Reference:

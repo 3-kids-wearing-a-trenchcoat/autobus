@@ -179,6 +179,11 @@ Two rules for the period, both measured:
 
 ## Diagnosing a town that misbehaves
 
+Everything below is about reading the log after the fact. To watch it happen
+instead — the route drawn on the road, a marker where each drop fired, and
+the plan and request table on a HUD — see
+[Watching a Run](watching_a_run.md).
+
 CARLA's complaints go to **file descriptor 1 from C++**, never through
 `sys.stdout`, and are block-buffered into clumps of about forty. Both problems
 are handled by `src/simulation/carla_stdout.py`, which captures the descriptor,

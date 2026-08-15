@@ -1,0 +1,174 @@
+# Watching a run
+
+A campaign answers *did it work*. This answers *what is it doing*, which is
+a different question and needs a different tool: `notebooks/carla-single-run.ipynb`,
+one parametrised trial with everything on screen and nothing written to disk.
+
+Reach for it when a number is strange and you want to see the bus earn it.
+
+## The shape of it
+
+```
+run_trial(provider, policy, backend_factory=…)   ← ordinary trial, not recorded
+        │
+        └── CarlaBackend(debug_draw=…, viewer=…)
+                 ├── world overlay      → drawn into CARLA, by DebugHelper
+                 └── CarlaViewer        → its own pygame window, with a 2D HUD
+```
+
+The backend is the only thing that knows what the bus is doing, so it is
+where both displays are fed from. Neither can change a result: they read
+state that already exists, and a display that fails is dropped rather than
+allowed to take the trial with it.
+
+## Two surfaces, and why there are two
+
+| | drawn by | shows |
+|---|---|---|
+| **World overlay** (`debug_draw=True`) | CARLA's `DebugHelper` | the route line, a box round every stop with its name, a permanent marker wherever a route was discarded |
+| **Viewer window** (`viewer=True`) | pygame, over a camera sensor | counters, the plan, the live-request table, the minimap |
+
+The split is forced, not chosen. **CARLA has no screen-space drawing.**
+Everything `DebugHelper` offers is positioned in world metres, so a corner
+of the screen is not a place you can draw. Anything that wants to be *on
+the screen* rather than *in the town* needs a client-side window, which is
+what `CarlaViewer` is — the same approach CARLA's own `manual_control.py`
+takes.
+
+So the world gets what is inherently about a place (where a stop is, which
+road the bus was told to drive, where it lost the route), and the window
+gets what is about the run (clocks, plans, tables).
+
+### Working with `DebugHelper`
+
+Read [Navigating in CARLA](carla_navigation.md) for the steering itself.
+For drawing, three things are worth knowing before you spend an afternoon
+on them, all measured against 0.9.16:
+
+* **Use `draw_line`, `draw_point`, `draw_box` and `draw_string` only.** The
+  `draw_hud_*` family is not a screen-space API — its arguments are
+  `Location`s in metres exactly like the others, "HUD" naming the render
+  layer — and on this version it renders nothing at all.
+* **`draw_string` takes no font size.** It is a few pixels tall on a large
+  display and no parameter changes that. `carla_debug_text` therefore draws
+  text as line strokes, which have a real height and can be turned to face
+  the camera. Stop labels are sized by distance so their apparent size holds
+  roughly constant.
+* **Shape lifetimes decay in simulated time**, so shapes from an earlier run
+  survive into the next until the world has ticked past them. This looks
+  exactly like a change not taking effect.
+
+## The viewer window
+
+`CarlaViewer` attaches an RGB camera behind the bus, renders it into a
+pygame window, and draws over it in 2D:
+
+* **counters**, top-left — simulated time, time on the current leg, the stop
+  being driven to, waiting and aboard totals, and the plan;
+* **the live-request table**, top-right — one row per request still in play:
+  pickup, dropoff, time spent waiting, time spent riding, and which of the
+  two it is doing. Longest wait first, since that passenger is the closest
+  to giving up. Fulfilled and cancelled requests drop off it;
+* **the minimap**, bottom-right, with two tabs (below).
+
+It is a viewer and nothing else. It never advances the world, never touches
+the bus, and closing the window only stops the drawing — the trial carries
+on and the backend stops paying for a window nobody has.
+
+### Two things it cannot do
+
+**One window per process.** SDL gives a process a single window: a second
+`set_mode` resizes the first rather than opening another. A second viewer is
+refused outright, because two of them would draw into one surface and fight.
+Sequential viewers, one per trial, are fine.
+
+**It costs about 30% of tick rate** — that is the camera sensor rendering
+and shipping frames, not the drawing. Never leave it on for anything you are
+timing. `render_size` decouples the camera's resolution from the window's,
+so a large window need not cost a large render.
+
+Because the camera renders server-side, the server must render — but it no
+longer has to render *for you*. Run it `-RenderOffScreen`
+(`compose_backup.yml`) and the server stops drawing a viewport nobody is
+watching.
+
+## The minimap's two tabs
+
+Both show the same stops. They disagree about what "far" means, and that
+disagreement is the point.
+
+**`town`** places stops where they are, over the road graph. It answers
+*where is that stop*, and shows the plan as a chain through the stops with
+the bus on the road edge it is currently on.
+
+**`by time`** places stops by how long it takes to drive between them, laid
+out by a force-directed pass. Separation on screen is drive time. A stop one
+street away that costs five minutes to reach sits far off here and adjacent
+on the other tab, and *that gap is the detour factor* — the thing the
+campaign keeps measuring and no picture of a town can show. Stops nothing
+can reach are ringed.
+
+The layout is deterministic and started from the geographic positions, so it
+stays recognisable and two runs can be compared.
+
+## Wiring your own
+
+The notebook does this, and it is the whole contract:
+
+```python
+provider  = CarlaMapProvider("Town03")
+minimap   = minimap_from(provider)          # plain coordinates
+
+def build(graph, start_stop_id):            # the trial hands over the graph
+    return CarlaBackend(
+        stop_positions=stop_positions_from(provider),
+        position=start_stop_id, town="Town03",
+        no_rendering=False,                 # required: no render, no camera
+        debug_draw=True,
+        viewer=True, viewer_size=(1280, 720), render_size=None,
+        minimap=minimap,
+        schematic=schematic_from(graph, minimap.stops),
+    )
+
+run_trial(policy_factory=…, provider=provider, backend_factory=build, …)
+```
+
+Note what is *not* passed: no `TransitGraph`, no `MapProvider`, no policy.
+`src/simulation` imports no map layer, so both displays are handed plain
+numbers — `minimap_from` and `schematic_from` do that flattening, and are
+duck-typed on the provider and the graph rather than importing them.
+
+`schematic_from` needs travel costs, which only the `TransitGraph` has, and
+the trial hands that to the backend factory. That is why it is built there
+rather than beside the provider.
+
+## Where the plan comes from
+
+The bus's plan crosses the same seam:
+
+```
+BusAgent.planned_route()   → SimulationRunner → SimulationBackend.set_planned_route()
+```
+
+`set_planned_route` is an optional no-op on the backend contract: steering
+never needs it, so no backend has to care, and `MockBackend` ignores it. It
+carries a list of opaque stop IDs, so nothing below the algorithm layer
+learns what a policy or a route object is.
+
+Watching that list reshuffle is watching the policy re-plan, which no table
+of results shows.
+
+## Reading it against what you saw
+
+1. **§2 of the notebook says lost** — `unroutable_legs > 0`, or driven
+   distance more than 3× planned. The bus had no route at all and everything
+   downstream is noise; what you watched was CARLA's traffic manager.
+2. **Clean, but drops are listed.** It was on route and lost it at specific
+   junctions. Every drop marker carries its timestamp, and the same
+   timestamp appears in the drop table and in the leg table's `drops`
+   column — one event, three views.
+3. **No drops, but legs run long.** The route was kept and simply cost more
+   than the estimate. Check the `by time` tab: a leg that is expensive there
+   is expensive in the graph, not in the driving.
+4. **Everything looks right and coverage is still bad.** Then it is the
+   scenario, not the bus.

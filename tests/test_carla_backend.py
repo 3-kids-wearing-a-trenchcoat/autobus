@@ -20,8 +20,8 @@ from src.simulation.CarlaBackend import (
     DEBUG_LABEL_MIN_M,
     DEBUG_LABEL_MAX_STOPS,
     DEBUG_MAX_SEGMENTS,
+    DEBUG_STOP_BOX_M,
     DEBUG_ROUTE_THICKNESS_M,
-    DEBUG_STOP_BEACON_M,
     DEBUG_STOP_IDLE_COLOR,
     DEBUG_STOP_WAITING_COLOR,
     DEBUG_REDRAW_S,
@@ -774,7 +774,11 @@ def test_demand_is_not_counted_when_the_flag_is_off() -> None:
     assert backend._stop_demand == {}
 
 
-def test_every_stop_gets_a_box_and_a_beacon() -> None:
+def test_a_stop_is_a_box_and_its_name_and_nothing_else() -> None:
+    """
+    The counts that used to hang over a stop are on the request table now,
+    where they read per passenger and cover no road.
+    """
     debug = _FakeDebug()
     backend = _drawing_backend(debug)
     backend._note_stop_demand(_demand_pool(
@@ -783,13 +787,10 @@ def test_every_stop_gets_a_box_and_a_beacon() -> None:
     backend._draw_stops(debug, _FakeSpectator())
 
     assert len(debug.boxes) == 2                    # one box per stop
-    beacons = 2
-    strokes = sum(carla_debug_text.stroke_count(text) for text in (
-        "n0001_n_s01", "waiting 1", "alighting 0",
-        "n0002_n_s02", "waiting 0", "alighting 1"))
-    # Beacons plus the lettering; nothing goes through draw_string any more,
-    # which has no font size and is unreadable on a 4K display.
-    assert len(debug.lines) == beacons + strokes
+    # Only the names are lettered -- no beacon, no counts.
+    strokes = sum(carla_debug_text.stroke_count(text)
+                  for text in ("n0001_n_s01", "n0002_n_s02"))
+    assert len(debug.lines) == strokes
     assert debug.strings == []
 
 
@@ -813,17 +814,16 @@ def test_only_the_nearest_stops_are_lettered() -> None:
     assert lettered[0] == "s0"                      # nearest first
 
 
-def test_the_beacon_stands_up_from_the_stop() -> None:
-    """A marker on the road is invisible from a chase camera."""
+def test_the_name_floats_clear_above_the_box() -> None:
+    """Overlapping its own box would make the name harder to read, not less."""
     debug = _FakeDebug()
     backend = _drawing_backend(debug)
-    backend._note_stop_demand(_demand_pool())
+    backend._note_stop_demand(_demand_pool(waiting=("n0001_n_s01",)))
 
     backend._draw_stops(debug, _FakeSpectator())
 
-    foot, head = debug.lines[0]
-    assert head.z - foot.z == pytest.approx(DEBUG_STOP_BEACON_M)
-    assert (foot.x, foot.y) == pytest.approx((10.0, 20.0))
+    lowest = min(point.z for pair in debug.lines for point in pair)
+    assert lowest >= DEBUG_STOP_BOX_M * 2
 
 
 def test_waiting_outranks_alighting_in_the_colour() -> None:
@@ -839,6 +839,8 @@ def test_waiting_outranks_alighting_in_the_colour() -> None:
     backend._draw_stops(debug, _FakeSpectator())
 
     assert backend._stop_demand["n0001_n_s01"] == (1, 1)
+    # Colour still carries the demand, which the table cannot show at a
+    # glance; it is the box's colour now rather than a beacon's.
     assert debug.colors[0] == DEBUG_STOP_WAITING_COLOR
 
 

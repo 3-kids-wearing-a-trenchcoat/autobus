@@ -115,11 +115,10 @@ DEBUG_ROUTE_THICKNESS_M = 0.20
 
 # --- Stop beacons ---------------------------------------------------------
 #
-# A stop is marked by a box around it and a bar standing out of it: the box
-# says where the stop is, and the bar carries it above the parked cars and
-# street furniture so it can be picked out from down the road.
-DEBUG_STOP_BEACON_M = 6.0
-DEBUG_STOP_THICKNESS_M = 0.20
+# A stop is a box with its name over it, and nothing else. Everything the
+# world used to spell out here -- who is waiting, who is due off -- is on the
+# viewer's request table now, where it reads per passenger and covers no
+# road. The box says where; the name says which.
 DEBUG_STOP_BOX_M = 2.6                  # half-extent of the cube, per axis
 DEBUG_STOP_BOX_THICKNESS_M = 0.12
 
@@ -138,9 +137,7 @@ DEBUG_STOP_BOX_THICKNESS_M = 0.12
 DEBUG_LABEL_ANGULAR = 0.035
 DEBUG_LABEL_MIN_M = 0.30
 DEBUG_LABEL_MAX_M = 2.50
-# Line spacing follows the size, or the block spreads apart as it shrinks.
-DEBUG_LABEL_LINE_RATIO = 1.55
-DEBUG_LABEL_BASE_M = 6.6
+DEBUG_LABEL_BASE_M = 6.0
 DEBUG_LABEL_RANGE_M = 150.0
 DEBUG_LABEL_MAX_STOPS = 4
 
@@ -961,10 +958,13 @@ class CarlaBackend(SimulationBackend):
 
     def _draw_stops(self, debug: object, eye: object) -> None:
         """
-        Draw a box, a beacon and a label over the stops.
+        Draw a box round every stop, and its name over the nearest few.
 
-        Every stop gets the box and the beacon, which are a call each.
-        Only the nearest few get lettering; see ``_labelled_stops``.
+        The counts that used to hang here -- who is waiting, who is due off
+        -- now live in the viewer's request table, which says the same thing
+        per passenger rather than per stop and does not obscure the road.
+        What is left is what the world is uniquely good for: *where* a stop
+        is, and which one it is.
         :param debug: The world's debug helper.
         :param eye: The actor the labels are composed for -- see
             ``_overlay_eye``. None leaves them unturned rather than undrawn.
@@ -975,6 +975,9 @@ class CarlaBackend(SimulationBackend):
         right, up = self._billboard_axes(eye)
 
         for stop_id, (waiting, alighting) in self._stop_demand.items():
+            # Colour still carries the demand, which the table cannot: it
+            # says at a glance which stops are in play without reading a
+            # word, and costs nothing since the box is drawn anyway.
             color = self._stop_color(waiting, alighting)
             base = self._location_of(stop_id)
 
@@ -987,30 +990,16 @@ class CarlaBackend(SimulationBackend):
                 carla.Rotation(), thickness=DEBUG_STOP_BOX_THICKNESS_M,
                 color=color, life_time=DEBUG_ROUTE_LIFETIME_S)
 
-            debug.draw_line(
-                carla.Location(x=base.x, y=base.y, z=base.z),
-                carla.Location(x=base.x, y=base.y,
-                               z=base.z + DEBUG_STOP_BEACON_M),
-                thickness=DEBUG_STOP_THICKNESS_M, color=color,
-                life_time=DEBUG_ROUTE_LIFETIME_S)
-
             if stop_id not in wanted:
                 continue
             height = self._label_height(base.distance(here))
-            spacing = height * DEBUG_LABEL_LINE_RATIO
-            # Top line first, so the name sits highest and the counts read
-            # down towards the beacon.
-            lines = [stop_id, f"waiting {waiting}", f"alighting {alighting}"]
-            for offset, text in enumerate(lines):
-                lift = (DEBUG_LABEL_BASE_M
-                        + (len(lines) - 1 - offset) * spacing)
-                half = carla_debug_text.text_width(text, height) / 2
-                start = carla.Location(x=base.x - right.x * half,
-                                       y=base.y - right.y * half,
-                                       z=base.z + lift)
-                carla_debug_text.draw_text(
-                    debug, text, start, right, up, height, color,
-                    DEBUG_ROUTE_LIFETIME_S)
+            half = carla_debug_text.text_width(stop_id, height) / 2
+            start = carla.Location(x=base.x - right.x * half,
+                                   y=base.y - right.y * half,
+                                   z=base.z + DEBUG_LABEL_BASE_M)
+            carla_debug_text.draw_text(
+                debug, stop_id, start, right, up, height, color,
+                DEBUG_ROUTE_LIFETIME_S)
 
     @staticmethod
     def _label_height(distance: float) -> float:

@@ -30,6 +30,10 @@
 
 ::: src.simulation.carla_stdout.restore
 
+::: src.simulation.carla_stdout.add_listener
+
+::: src.simulation.carla_stdout.remove_listener
+
 ::: src.simulation.AnimationRecorder.AnimationFrame
 
 ::: src.simulation.AnimationRecorder.AnimationRecorder

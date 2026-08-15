@@ -25,6 +25,13 @@ each line arrives as it is written.
 Nothing is dropped: lines matching no known message are passed through
 untouched, so this stays a tap rather than a filter.
 
+**Reading the messages from code.** ``drain`` reports how many arrived but
+not what they said, because its caller counts them and the text is only ever
+meant for a human. A diagnostic that wants the text — a notebook picking
+apart one bad run — registers a callback with ``add_listener``. Listeners see
+attributed messages only; pass-through output is not this module's to
+describe.
+
 **This module hijacks a process-wide resource.** ``install`` is idempotent
 and ``restore`` is registered with ``atexit``, because a trial that dies
 part-way must not leave the process without a stdout.
@@ -61,6 +68,12 @@ _read_fd: int | None = None
 
 # A read can land mid-line; the tail waits here for its newline.
 _residual = b""
+
+# Called with every message this module attributes. Module-level because the
+# capture it observes is process-wide: a consumer registers once and sees
+# every trial the process goes on to run.
+Listener = Callable[[str, str], None]
+_listeners: list[Listener] = []
 
 
 def install() -> None:
@@ -113,6 +126,37 @@ def restore() -> None:
     _saved_fd = _read_fd = None
 
 
+def add_listener(listener: Listener) -> None:
+    """
+    Ask to be shown every message this module attributes.
+
+    The listener receives the counter name the line was recognised as and
+    the tagged line exactly as it reached stdout, so it sees what a reader
+    sees. Only known messages are passed on — pass-through output carries no
+    context and is not this module's to describe.
+
+    Registering the same listener twice does nothing, so a notebook cell
+    that registers one stays safe to re-run.
+    :param listener: Called as ``listener(counter_name, tagged_line)``.
+    :return: None.
+    """
+    if listener not in _listeners:
+        _listeners.append(listener)
+
+
+def remove_listener(listener: Listener) -> None:
+    """
+    Stop showing attributed messages to a listener.
+
+    :param listener: A previously registered listener. One that was never
+        registered is ignored rather than raising, so teardown never has to
+        know whether setup got that far.
+    :return: None.
+    """
+    if listener in _listeners:
+        _listeners.remove(listener)
+
+
 def drain(tag_for: Callable[[], str]) -> dict[str, int]:
     """
     Pass on whatever has been printed, labelling the messages we know.
@@ -143,7 +187,9 @@ def drain(tag_for: Callable[[], str]) -> dict[str, int]:
         hits[name] = hits.get(name, 0) + 1
         if tag is None:
             tag = _describe(tag_for)
-        _emit(f"[{tag}] {line}")
+        tagged = f"[{tag}] {line}"
+        _emit(tagged)
+        _notify(name, tagged)
     return hits
 
 
@@ -188,6 +234,28 @@ def _describe(tag_for: Callable[[], str]) -> str:
         return tag_for()
     except Exception as error:              # noqa: BLE001
         return f"context unavailable: {error!r}"
+
+
+def _notify(name: str, tagged: str) -> None:
+    """
+    Show one attributed message to every registered listener.
+
+    Failures are swallowed for the reason ``_describe`` swallows them: a
+    diagnostic that can abort a trial is worse than no diagnostic. The
+    complaint goes straight to the descriptor rather than through ``_emit``,
+    which keeps a broken listener from being handed its own error message.
+    Called only from ``drain``, so listeners never see the residual line
+    ``restore`` flushes on the way out.
+    :param name: Counter name the message was recognised as.
+    :param tagged: The line as emitted, tag included.
+    :return: None.
+    """
+    for listener in list(_listeners):
+        try:
+            listener(name, tagged)
+        except Exception as error:          # noqa: BLE001
+            os.write(_saved_fd, f"carla_stdout listener {listener!r} raised "
+                                f"{error!r}\n".encode("utf-8", "replace"))
 
 
 def _emit(text: str) -> None:

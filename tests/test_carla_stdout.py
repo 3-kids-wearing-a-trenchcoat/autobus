@@ -177,3 +177,99 @@ def test_installing_twice_is_harmless() -> None:
 
         assert carla_stdout.drain(lambda: "TAG") == {"route_drops": 1}
         assert terminal.read() == f"[TAG] {MESSAGE}\n"
+
+
+@contextmanager
+def listening() -> Iterator[list[tuple[str, str]]]:
+    """
+    Register a recording listener, and take it away again afterwards.
+
+    Removal is in a ``finally`` because the listener list is module state:
+    one left behind would be fed by every later test in the session.
+    :return: The list the listener appends to.
+    """
+    seen: list[tuple[str, str]] = []
+
+    def listener(name: str, line: str) -> None:
+        """Record one attributed message."""
+        seen.append((name, line))
+
+    carla_stdout.add_listener(listener)
+    try:
+        yield seen
+    finally:
+        carla_stdout.remove_listener(listener)
+
+
+def test_a_listener_is_shown_the_tagged_message() -> None:
+    with capturing(), listening() as seen:
+        _write(MESSAGE + "\n")
+
+        carla_stdout.drain(lambda: "Town05 seed=3 lane=-2")
+
+        # The counter name, and the line exactly as a reader would see it.
+        assert seen == [("route_drops",
+                         f"[Town05 seed=3 lane=-2] {MESSAGE}")]
+
+
+def test_a_listener_is_not_shown_pass_through_output() -> None:
+    """Unattributed lines carry no context, so they are not a listener's."""
+    with capturing(), listening() as seen:
+        _write("something else entirely\n")
+
+        carla_stdout.drain(lambda: "TAG")
+
+        assert seen == []
+
+
+def test_registering_the_same_listener_twice_shows_it_once() -> None:
+    """A notebook cell that registers a listener stays safe to re-run."""
+    with capturing(), listening() as seen:
+        carla_stdout.add_listener(carla_stdout._listeners[0])
+        _write(MESSAGE + "\n")
+
+        carla_stdout.drain(lambda: "TAG")
+
+        assert len(seen) == 1
+
+
+def test_a_failing_listener_never_costs_the_message() -> None:
+    """Same rule as a failing tag: a diagnostic must not abort a trial."""
+    def explode(name: str, line: str) -> None:
+        """Fail the way a half-written notebook listener would."""
+        raise RuntimeError("bad listener")
+
+    carla_stdout.add_listener(explode)
+    try:
+        with capturing() as terminal, listening() as seen:
+            _write(MESSAGE + "\n")
+
+            hits = carla_stdout.drain(lambda: "TAG")
+
+            assert hits == {"route_drops": 1}
+            # The healthy listener is still served, and the message still
+            # reaches the terminal with the complaint beside it.
+            assert len(seen) == 1
+            output = terminal.read()
+            assert MESSAGE in output
+            assert "bad listener" in output
+    finally:
+        carla_stdout.remove_listener(explode)
+
+
+def test_a_removed_listener_hears_nothing_more() -> None:
+    with capturing(), listening() as seen:
+        _write(MESSAGE + "\n")
+        carla_stdout.drain(lambda: "TAG")
+        assert len(seen) == 1
+
+        carla_stdout.remove_listener(carla_stdout._listeners[0])
+        _write(MESSAGE + "\n")
+        carla_stdout.drain(lambda: "TAG")
+
+        assert len(seen) == 1
+
+
+def test_removing_a_listener_that_was_never_added_is_harmless() -> None:
+    """Teardown never has to know whether setup got that far."""
+    carla_stdout.remove_listener(lambda name, line: None)

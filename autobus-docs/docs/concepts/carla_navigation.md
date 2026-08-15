@@ -186,6 +186,13 @@ disables the buffering, and tags every message with the bus's town, seed, leg,
 road, lane and position. `CarlaBackend.stats()` carries the total as
 `route_drops`.
 
+To read the messages **from code** rather than off the terminal — a notebook
+picking one bad run apart — register a callback with
+`carla_stdout.add_listener`. It is handed the counter name and the tagged
+line for every message the module attributes, and never the unrelated
+pass-through output; `remove_listener` takes it off again. `drain` reports
+only counts, because its caller on the tick path has no use for the text.
+
 When adding or debugging a town:
 
 1. **`route_drops` should be 0 or near it.** A leg that drops routes is a leg

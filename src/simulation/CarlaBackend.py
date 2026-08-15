@@ -271,6 +271,9 @@ class CarlaBackend(SimulationBackend):
         with this open the server can run ``-RenderOffScreen``. Defaults to
         False.
     :param viewer_size: Window size in pixels, when ``viewer`` is on.
+    :param render_size: Resolution the viewer's camera renders at,
+        before the frame is scaled to the window. None matches the
+        window; lower buys back tick rate, higher buys sharpness.
     :param minimap: Road graph for the viewer's minimap, from
         ``carla_viewer.minimap_from(provider)``. Passed in already flattened
         to coordinates, so this class still needs no map-layer import.
@@ -318,6 +321,7 @@ class CarlaBackend(SimulationBackend):
         debug_draw: bool = False,
         viewer: bool = False,
         viewer_size: tuple[int, int] = (1280, 720),
+        render_size: tuple[int, int] | None = None,
         minimap: object | None = None,
         schematic: object | None = None,
         tm_port: int | None = None,
@@ -353,6 +357,7 @@ class CarlaBackend(SimulationBackend):
         self._debug_draw = debug_draw
         self._viewer_wanted = viewer
         self._viewer_size = viewer_size
+        self._render_size = render_size
         self._minimap = minimap
         self._schematic = schematic
         self._viewer: object | None = None
@@ -751,6 +756,7 @@ class CarlaBackend(SimulationBackend):
 
         self._viewer = CarlaViewer(
             self._world, bus, size=self._viewer_size,
+            render_size=self._render_size,
             title=f"autobus - {self._town} seed {self._seed}",
             minimap=self._minimap, schematic=self._schematic)
 

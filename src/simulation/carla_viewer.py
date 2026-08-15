@@ -131,6 +131,13 @@ VIEW_LABELS = ((VIEW_MAP, "town"), (VIEW_GRAPH, "by time"))
 GRAPH_LINK = (86, 94, 110)
 GRAPH_STRANDED = (235, 80, 60)
 
+# Layout forces. REPULSION is inverse-square over every pair; ATTRACTION
+# pulls a linked pair towards its cost-derived separation; MAX_STEP caps how
+# far a node may move in one round, which is what keeps it from folding.
+REPULSION = 0.004
+ATTRACTION = 0.35
+MAX_STEP = 0.04
+
 # --- Live-request table ---------------------------------------------------
 #
 # Drawn top-right, under its own panel. Columns are padded to a common width
@@ -235,49 +242,63 @@ def _spring_layout(
     count: int,
     ideal: dict[tuple[int, int], float],
     start: list[tuple[float, float]],
-    rounds: int = 240,
+    rounds: int = 300,
 ) -> list[tuple[float, float]]:
     """
     Nudge nodes until their distances resemble their travel costs.
 
-    A plain force-directed pass: linked nodes pull towards their ideal
-    separation, every pair pushes apart a little so nothing collapses into a
-    point. Deterministic, and started from the geographic positions so the
-    result stays recognisable rather than being a fresh scramble every run.
+    Force-directed, with the two details that stop it collapsing. Every node
+    moves at most ``MAX_STEP`` per round, cooling to nothing, because a node
+    summing six unclamped pulls overshoots them all and the arrangement
+    folds onto one axis -- measured on Town03, a healthy 0.91 x 1.00 spread
+    settled to 1.00 x 0.04, a horizontal line. And repulsion runs over every
+    pair at every distance rather than only the close ones, so the pairs
+    with no link between them still hold the picture open.
+
+    Deterministic, and started from the geographic positions, so the result
+    stays recognisable rather than being a fresh scramble every run.
     :param count: How many nodes.
     :param ideal: Wanted separation per linked index pair, in 0..1 units.
     :param start: Initial positions, in 0..1.
-    :param rounds: Iterations; 240 settles 15 nodes with room to spare.
+    :param rounds: Iterations.
     :return: Settled positions.
     """
     points = list(start)
     for step in range(rounds):
         cooling = 1.0 - step / rounds
+        limit = MAX_STEP * cooling
         shift = [[0.0, 0.0] for _ in range(count)]
-        for (a, b), want in ideal.items():
-            ax, ay = points[a]
-            bx, by = points[b]
-            gap = math.hypot(bx - ax, by - ay) or 1e-6
-            pull = (gap - want) / gap * 0.5
-            shift[a][0] += (bx - ax) * pull
-            shift[a][1] += (by - ay) * pull
-            shift[b][0] -= (bx - ax) * pull
-            shift[b][1] -= (by - ay) * pull
+
         for a in range(count):
             for b in range(a + 1, count):
                 ax, ay = points[a]
                 bx, by = points[b]
-                gap = math.hypot(bx - ax, by - ay) or 1e-6
-                if gap >= 0.25:
-                    continue
-                push = (0.25 - gap) / gap * 0.25
-                shift[a][0] -= (bx - ax) * push
-                shift[a][1] -= (by - ay) * push
-                shift[b][0] += (bx - ax) * push
-                shift[b][1] += (by - ay) * push
+                dx, dy = bx - ax, by - ay
+                gap = math.hypot(dx, dy) or 1e-6
+                push = REPULSION / (gap * gap)
+                shift[a][0] -= dx / gap * push
+                shift[a][1] -= dy / gap * push
+                shift[b][0] += dx / gap * push
+                shift[b][1] += dy / gap * push
+
+        for (a, b), want in ideal.items():
+            ax, ay = points[a]
+            bx, by = points[b]
+            dx, dy = bx - ax, by - ay
+            gap = math.hypot(dx, dy) or 1e-6
+            pull = (gap - want) * ATTRACTION
+            shift[a][0] += dx / gap * pull
+            shift[a][1] += dy / gap * pull
+            shift[b][0] -= dx / gap * pull
+            shift[b][1] -= dy / gap * pull
+
         for a in range(count):
-            points[a] = (points[a][0] + shift[a][0] * cooling,
-                         points[a][1] + shift[a][1] * cooling)
+            length = math.hypot(shift[a][0], shift[a][1])
+            if length > limit:
+                shift[a][0] *= limit / length
+                shift[a][1] *= limit / length
+            points[a] = (points[a][0] + shift[a][0],
+                         points[a][1] + shift[a][1])
     return _normalised(points)
 
 
@@ -294,8 +315,18 @@ def _normalised(
         return []
     xs = [x for x, _ in points]
     ys = [y for _, y in points]
+    # One span for both axes, so the arrangement keeps its proportions --
+    # and each axis centred within it, so a layout that really is flatter
+    # one way sits in the middle of the panel instead of against an edge.
     span = max(max(xs) - min(xs), max(ys) - min(ys)) or 1.0
-    return [((x - min(xs)) / span, (y - min(ys)) / span) for x, y in points]
+    left = (min(xs) + max(xs)) / 2 - span / 2
+    top = (min(ys) + max(ys)) / 2 - span / 2
+
+    def unit(value: float, origin: float) -> float:
+        """Place one coordinate, clamped against rounding dust."""
+        return min(1.0, max(0.0, (value - origin) / span))
+
+    return [(unit(x, left), unit(y, top)) for x, y in points]
 
 
 def schematic_from(
@@ -382,6 +413,11 @@ class CarlaViewer:
     :param follow: Actor the camera rides behind. The camera is attached, so
         it needs no per-tick repositioning and cannot drift.
     :param size: Window size in pixels.
+    :param render_size: Resolution the camera renders at, before the frame
+        is scaled to the window. None matches the window, which is what you
+        want unless the two should differ: render below the window to buy
+        back tick rate on a large display, or above it for a sharper
+        picture than the window costs to show.
     :param fov: Horizontal field of view, in degrees.
     :param title: Window caption.
     :param minimap: Road graph to draw bottom-right. None draws no panel.
@@ -395,6 +431,7 @@ class CarlaViewer:
         world: "carla.World",
         follow: "carla.Actor",
         size: tuple[int, int] = (1280, 720),
+        render_size: tuple[int, int] | None = None,
         fov: float = 90.0,
         title: str = "autobus — CARLA",
         minimap: MiniMap | None = None,
@@ -444,10 +481,12 @@ class CarlaViewer:
         self._map_rect = self._fit_minimap(minimap, self._size)
 
         blueprint = world.get_blueprint_library().find("sensor.camera.rgb")
-        # Sized to the surface rather than the request, so the frame fills
-        # the window exactly instead of being cropped or leaving a border.
-        blueprint.set_attribute("image_size_x", str(self._size[0]))
-        blueprint.set_attribute("image_size_y", str(self._size[1]))
+        # The camera's own resolution, which need not be the window's: the
+        # frame is scaled on the way in. Defaults to the surface, so the
+        # picture fills the window exactly with no scaling at all.
+        self._render_size = render_size or self._size
+        blueprint.set_attribute("image_size_x", str(self._render_size[0]))
+        blueprint.set_attribute("image_size_y", str(self._render_size[1]))
         blueprint.set_attribute("fov", str(fov))
         blueprint.set_attribute("sensor_tick", str(SENSOR_TICK_S))
         self._camera = world.spawn_actor(
@@ -577,7 +616,12 @@ class CarlaViewer:
         self._last_drawn_ms = now_ms
 
         if self._latest is not None:
-            self._screen.blit(_to_surface(self._latest, self._pygame), (0, 0))
+            frame = _to_surface(self._latest, self._pygame)
+            if frame.get_size() != self._size:
+                # smoothscale rather than scale: this is a photograph, and
+                # nearest-neighbour on a downscaled one crawls with aliasing.
+                frame = self._pygame.transform.smoothscale(frame, self._size)
+            self._screen.blit(frame, (0, 0))
         self._draw_hud(lines)
         self._draw_table(table, hidden)
         self._draw_minimap(route, bus)

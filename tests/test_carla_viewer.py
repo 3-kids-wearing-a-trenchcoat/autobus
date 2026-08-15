@@ -557,3 +557,25 @@ def test_a_click_elsewhere_changes_nothing(headless) -> None:
 
     assert viewer._view == VIEW_MAP
     viewer.close()
+
+
+def test_the_layout_fills_both_axes() -> None:
+    """
+    Unclamped forces fold the arrangement onto one axis: measured on Town03,
+    a 0.91 x 1.00 spread settled to 1.00 x 0.04 and drew as a line across
+    the top of the panel.
+    """
+    # A 3x4 grid whose costs are its real distances, so the arrangement it
+    # should recover is genuinely two-dimensional.
+    grid = {f"s{n}": (n % 4, n // 4) for n in range(12)}
+    stops = tuple((stop, float(col) * 30.0, float(row) * 30.0)
+                  for stop, (col, row) in grid.items())
+    costs = {(a, b): 60.0 * math.dist(grid[a], grid[b])
+             for a in grid for b in grid if a != b}
+
+    built = schematic_from(_CostGraph(costs), stops)
+
+    xs = [x for _, x, _ in built.nodes]
+    ys = [y for _, _, y in built.nodes]
+    assert max(xs) - min(xs) > 0.5
+    assert max(ys) - min(ys) > 0.5

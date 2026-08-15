@@ -391,3 +391,34 @@ def test_the_safety_net_closes_a_viewer_nobody_closed(headless) -> None:
 
 def test_the_safety_net_is_harmless_with_no_viewer(headless) -> None:
     carla_viewer.close_active()
+
+
+def test_the_minimap_fits_whatever_window_it_is_given() -> None:
+    """
+    Layout follows the surface SDL hands back, not the size asked for, so a
+    window that came back smaller still keeps its panels on screen.
+    """
+    for size in ((1280, 720), (1920, 1080), (2560, 1440)):
+        viewer = CarlaViewer.__new__(CarlaViewer)
+        viewer._minimap = SQUARE
+        viewer._map_rect = CarlaViewer._fit_minimap(SQUARE, size)
+
+        for x, y in ((0.0, 0.0), (100.0, 100.0), (0.0, 100.0)):
+            px, py = viewer._to_panel(x, y)
+            assert 0 <= px <= size[0], size
+            assert 0 <= py <= size[1], size
+
+
+def test_a_resized_window_moves_the_panels_with_it(headless) -> None:
+    """A layout fixed at construction strands the panels off the edge."""
+    viewer = CarlaViewer(_StubWorld(), follow=object(), size=(320, 200),
+                         minimap=SQUARE)
+    was = viewer._map_rect
+    assert was is not None
+
+    viewer._screen = viewer._pygame.display.set_mode((640, 480))
+    viewer._relayout()
+
+    assert viewer._size == (640, 480)
+    assert viewer._map_rect != was
+    viewer.close()

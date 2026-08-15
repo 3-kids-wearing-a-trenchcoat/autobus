@@ -261,6 +261,11 @@ class CarlaViewer:
         pygame.init()
         pygame.font.init()
         self._screen = pygame.display.set_mode(size)
+        # What SDL actually gave, which is not always what was asked for: a
+        # window manager may cap it, and a scaled desktop may hand back a
+        # smaller surface. Laying panels out against the requested size puts
+        # them off the right and bottom edges, by more the larger the ask.
+        self._size = self._screen.get_size()
         pygame.display.set_caption(title)
         self._font = pygame.font.SysFont("dejavusansmono", HUD_FONT_PT)
         self._map_font = pygame.font.SysFont("dejavusansmono", MAP_FONT_PT)
@@ -268,11 +273,13 @@ class CarlaViewer:
                                                TABLE_FONT_PT)
         self._clock = pygame.time.Clock()
         self._minimap = minimap
-        self._map_rect = self._fit_minimap(minimap, size)
+        self._map_rect = self._fit_minimap(minimap, self._size)
 
         blueprint = world.get_blueprint_library().find("sensor.camera.rgb")
-        blueprint.set_attribute("image_size_x", str(size[0]))
-        blueprint.set_attribute("image_size_y", str(size[1]))
+        # Sized to the surface rather than the request, so the frame fills
+        # the window exactly instead of being cropped or leaving a border.
+        blueprint.set_attribute("image_size_x", str(self._size[0]))
+        blueprint.set_attribute("image_size_y", str(self._size[1]))
         blueprint.set_attribute("fov", str(fov))
         blueprint.set_attribute("sensor_tick", str(SENSOR_TICK_S))
         self._camera = world.spawn_actor(
@@ -295,6 +302,22 @@ class CarlaViewer:
     def _receive(self, image: "carla.Image") -> None:
         """Keep the newest frame, dropping whatever it replaces."""
         self._latest = image
+
+    def _relayout(self) -> None:
+        """
+        Re-place the panels if the window is no longer the size it was.
+
+        Cheap enough to check every frame — one call and a tuple compare —
+        and it covers the cases a layout fixed at construction cannot: a
+        window the manager resized, and a surface that only settles to its
+        real size after the first frame.
+        :return: None.
+        """
+        actual = self._screen.get_size()
+        if actual == self._size:
+            return
+        self._size = actual
+        self._map_rect = self._fit_minimap(self._minimap, actual)
 
     @staticmethod
     def _fit_minimap(
@@ -376,6 +399,8 @@ class CarlaViewer:
                 self._closed = True
                 return False
 
+        self._relayout()
+
         now_ms = self._pygame.time.get_ticks()
         if now_ms - self._last_drawn_ms < 1000 // MAX_FPS:
             return True
@@ -449,7 +474,10 @@ class CarlaViewer:
         ]
         width = max(surface.get_width() for surface in rendered)
         height = TABLE_LINE_H * len(rendered)
-        left = self._size[0] - width - TABLE_MARGIN - TABLE_PAD
+        # Clamped, so a table too wide for the window loses its right edge
+        # rather than sliding off the left where the counters are.
+        left = max(TABLE_MARGIN + TABLE_PAD,
+                   self._size[0] - width - TABLE_MARGIN - TABLE_PAD)
 
         panel = self._pygame.Surface((width + TABLE_PAD * 2,
                                       height + TABLE_PAD * 2))

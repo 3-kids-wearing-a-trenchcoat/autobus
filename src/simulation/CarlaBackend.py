@@ -243,11 +243,19 @@ class CarlaBackend(SimulationBackend):
         Pointless with ``no_rendering=True``, where there is nothing to look
         at. Defaults to False.
     :param debug_draw: Draw the bus's plan into the world: the route it was
-        told to drive, as a line that shows through buildings, and a
-        permanent marker wherever the traffic manager threw that route away.
-        For watching one run, not for measuring: it costs a handful of calls
-        a second and, like ``follow_camera``, shows nothing at all under
+        told to drive, a labelled box over every stop, and a permanent marker
+        wherever the traffic manager threw that route away. For watching one
+        run, not for measuring: it costs a handful of calls a second and,
+        like ``follow_camera``, shows nothing at all under
         ``no_rendering=True``. Defaults to False.
+    :param viewer: Open a chase-camera window with a real 2D HUD, instead of
+        squinting at counters drawn into the world. See ``carla_viewer``: it
+        is a viewer only, never advances the world and cannot change a
+        result, and closing it just stops the drawing. Needs a rendering
+        server for the camera to produce frames, but not a *watchable* one --
+        with this open the server can run ``-RenderOffScreen``. Defaults to
+        False.
+    :param viewer_size: Window size in pixels, when ``viewer`` is on.
     :param tm_port: Port for the traffic manager. Defaults to None, which
         finds a free one and shuts it down again on ``close``. Name a port
         only to share an existing traffic manager, in which case it is yours
@@ -285,6 +293,8 @@ class CarlaBackend(SimulationBackend):
         replan_every_s: float | None = None,
         follow_camera: bool = False,
         debug_draw: bool = False,
+        viewer: bool = False,
+        viewer_size: tuple[int, int] = (1280, 720),
         tm_port: int | None = None,
         reload_world: bool = False,
     ) -> None:
@@ -316,6 +326,9 @@ class CarlaBackend(SimulationBackend):
         self._replan_every_s = replan_every_s
         self._follow_camera = follow_camera
         self._debug_draw = debug_draw
+        self._viewer_wanted = viewer
+        self._viewer_size = viewer_size
+        self._viewer: object | None = None
         self._tm_port = tm_port
         self._reload_world = reload_world
         self._owns_traffic_manager = False
@@ -425,6 +438,7 @@ class CarlaBackend(SimulationBackend):
 
         self._spawn_npcs()
         self._spawn_bus()
+        self._open_viewer()
 
     def _acquire_world(self) -> "carla.World":
         """
@@ -518,6 +532,10 @@ class CarlaBackend(SimulationBackend):
         # belongs to this trial, so take it before handing fd 1 back.
         self._collect_messages()
         carla_stdout.restore()
+
+        if self._viewer is not None:
+            self._viewer.close()
+            self._viewer = None
 
         if self._client is None or self._world is None:
             return
@@ -668,6 +686,45 @@ class CarlaBackend(SimulationBackend):
     # Private helpers
     # ------------------------------------------------------------------
 
+    def _open_viewer(self) -> None:
+        """
+        Open the viewer window, once there is a bus for it to ride behind.
+
+        Imported here rather than at module scope so that pygame is needed
+        only by the people who ask for a window: a campaign, a test run and a
+        headless machine never touch it.
+        :return: None.
+        """
+        if not self._viewer_wanted or self._viewer is not None:
+            return
+        bus = self._bus()
+        if bus is None:
+            return
+        from src.simulation.carla_viewer import CarlaViewer
+
+        self._viewer = CarlaViewer(
+            self._world, bus, size=self._viewer_size,
+            title=f"autobus - {self._town} seed {self._seed}")
+
+    def _pump_viewer(self) -> None:
+        """
+        Give the viewer its turn, and let go of it once it is closed.
+
+        Dropped rather than kept on close, so that shutting the window costs
+        one dictionary lookup a tick for the rest of the run instead of a
+        window's worth of work. A viewer that fails is discarded outright:
+        it is a window, and a window must never take a trial down with it.
+        :return: None.
+        """
+        if self._viewer is None:
+            return
+        try:
+            if not self._viewer.update(self.hud_lines()):
+                self._viewer.close()
+                self._viewer = None
+        except Exception:                       # noqa: BLE001
+            self._viewer = None
+
     def _bus(self) -> "carla.Actor | None":
         """
         Return the bus actor, looked up fresh every time.
@@ -775,7 +832,7 @@ class CarlaBackend(SimulationBackend):
         try:
             debug = self._world.debug
             spectator = self._world.get_spectator()
-            # The counters follow the camera, so they are redrawn every
+            # The counters follow the spectator, so they are redrawn every
             # tick; the world overlay is nailed down and is not.
             self._draw_hud(debug, spectator)
 
@@ -784,7 +841,7 @@ class CarlaBackend(SimulationBackend):
                 return
             self._since_debug_draw_s = 0.0
             self._draw_route(debug)
-            self._draw_stops(debug, spectator)
+            self._draw_stops(debug, self._overlay_eye(spectator))
         except Exception:                       # noqa: BLE001
             pass
 
@@ -834,21 +891,38 @@ class CarlaBackend(SimulationBackend):
         near.sort()
         return [stop_id for _, stop_id in near[:DEBUG_LABEL_MAX_STOPS]]
 
-    def _draw_stops(self, debug: object, spectator: object) -> None:
+    def _overlay_eye(self, spectator: object) -> object:
+        """
+        Say whose view the stop labels are composed for.
+
+        The spectator is the right answer only when the spectator is what
+        anyone is looking through. With the viewer window open the camera
+        rides the bus instead, and picking labels by distance to a spectator
+        parked across town would letter the wrong stops and turn them to
+        face nobody.
+        :param spectator: The spectator actor.
+        :return: The actor to treat as the eye, or None if there is none.
+        """
+        if self._viewer is not None:
+            bus = self._bus()
+            if bus is not None:
+                return bus
+        return spectator
+
+    def _draw_stops(self, debug: object, eye: object) -> None:
         """
         Draw a box, a beacon and a label over the stops.
 
         Every stop gets the box and the beacon, which are a call each.
         Only the nearest few get lettering; see ``_labelled_stops``.
         :param debug: The world's debug helper.
-        :param spectator: The spectator actor, whose axes turn the labels to
-            face it. None leaves labels unturned rather than undrawn.
+        :param eye: The actor the labels are composed for -- see
+            ``_overlay_eye``. None leaves them unturned rather than undrawn.
         :return: None.
         """
-        eye = (spectator.get_transform().location if spectator is not None
-               else None)
-        wanted = self._labelled_stops(eye) if eye is not None else []
-        right, up = self._billboard_axes(spectator)
+        here = (eye.get_transform().location if eye is not None else None)
+        wanted = self._labelled_stops(here) if here is not None else []
+        right, up = self._billboard_axes(eye)
 
         for stop_id, (waiting, alighting) in self._stop_demand.items():
             color = self._stop_color(waiting, alighting)
@@ -872,7 +946,7 @@ class CarlaBackend(SimulationBackend):
 
             if stop_id not in wanted:
                 continue
-            height = self._label_height(base.distance(eye))
+            height = self._label_height(base.distance(here))
             spacing = height * DEBUG_LABEL_LINE_RATIO
             # Top line first, so the name sits highest and the counts read
             # down towards the beacon.
@@ -905,20 +979,20 @@ class CarlaBackend(SimulationBackend):
         return min(DEBUG_LABEL_MAX_M, max(DEBUG_LABEL_MIN_M, wanted))
 
     @staticmethod
-    def _billboard_axes(spectator: object) -> tuple[object, object]:
+    def _billboard_axes(eye: object) -> tuple[object, object]:
         """
         Return the axes that turn flat text to face the camera.
 
         Text is drawn upright rather than tilted with the camera's pitch: a
         label that rolls with a chase camera is harder to read than one that
         always stands up.
-        :param spectator: The spectator actor, or None for world axes.
+        :param eye: The actor being looked through, or None for world axes.
         :return: ``(right, up)`` unit vectors.
         """
         up = carla.Vector3D(x=0.0, y=0.0, z=1.0)
-        if spectator is None:
+        if eye is None:
             return carla.Vector3D(x=1.0, y=0.0, z=0.0), up
-        forward = spectator.get_transform().get_forward_vector()
+        forward = eye.get_transform().get_forward_vector()
         flat = math.hypot(forward.x, forward.y) or 1.0
         # Perpendicular to the camera's heading, in the ground plane.
         return carla.Vector3D(x=-forward.y / flat, y=forward.x / flat,
@@ -943,14 +1017,8 @@ class CarlaBackend(SimulationBackend):
         forward = transform.get_forward_vector()
         right = transform.get_right_vector()
         up = transform.get_up_vector()
-        now = self._stats["ticks"] * self._delta
 
-        lines = [
-            f"SIM {self._clock(now)}",
-            f"LEG {self._clock(now - self._leg_started_s)}",
-            f"NEXT {self._destination or '-'}",
-        ]
-        for index, text in enumerate(lines):
+        for index, text in enumerate(self.hud_lines()):
             drop = index * DEBUG_HUD_LINE_M
             origin = carla.Location(
                 x=(transform.location.x + forward.x * DEBUG_HUD_AHEAD_M
@@ -965,6 +1033,31 @@ class CarlaBackend(SimulationBackend):
             carla_debug_text.draw_text(
                 debug, text, origin, right, up, DEBUG_HUD_HEIGHT_M,
                 DEBUG_HUD_COLOR, self._delta * DEBUG_HUD_LIFETIME_TICKS)
+
+    def hud_lines(self) -> list[str]:
+        """
+        Build the counters, for whichever surface is showing them.
+
+        Shared by the world-space overlay and the viewer window so the two
+        can never drift apart, and public because the viewer is driven from
+        outside when a caller brings its own.
+        :return: One string per HUD line.
+        """
+        now = self._stats["ticks"] * self._delta
+        waiting = sum(count for count, _ in self._stop_demand.values())
+        aboard = sum(count for _, count in self._stop_demand.values())
+        lines = [
+            f"SIM  {self._clock(now)}",
+            f"LEG  {self._clock(now - self._leg_started_s)}",
+            f"NEXT {self._destination or '-'}",
+        ]
+        if self._stop_demand:
+            lines.append(f"WAIT {waiting}   ABOARD {aboard}")
+        drops = int(self._stats["route_drops"])
+        unroutable = int(self._stats["unroutable_legs"])
+        if drops or unroutable:
+            lines.append(f"DROPS {drops}   UNROUTABLE {unroutable}")
+        return lines
 
     @staticmethod
     def _clock(seconds: float) -> str:
@@ -1150,6 +1243,7 @@ class CarlaBackend(SimulationBackend):
         if self._follow_camera:
             self._point_camera_at(bus)
         self._draw_debug()
+        self._pump_viewer()
 
         here = bus.get_location()
         if self._last_location is not None:

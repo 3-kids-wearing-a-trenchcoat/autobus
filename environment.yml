@@ -16,6 +16,12 @@ dependencies:
   - matplotlib
   - seaborn
 
+  # Viewer window for watching a CARLA run. CARLA's own debug drawing is
+  # world-space only -- there is no screen-space API in it at all -- so a
+  # real 2D HUD needs a client-side window, which is how CARLA's bundled
+  # manual_control.py does it too. Only imported by src/simulation/viewer.py.
+  - pygame
+
   # Jupyter
   - jupyterlab
   - ipykernel

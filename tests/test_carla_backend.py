@@ -570,13 +570,16 @@ class _DebugWorld:
 
 
 class _LocatedBus:
-    """A bus actor that only knows where it stands."""
+    """A bus actor that only knows where it stands, and which way."""
 
     def __init__(self, x: float, y: float) -> None:
         self._location = carla.Location(x=x, y=y, z=0.0)
 
     def get_location(self) -> "carla.Location":
         return self._location
+
+    def get_transform(self) -> "carla.Transform":
+        return carla.Transform(self._location, carla.Rotation())
 
 
 def _straight_route(metres: float, step: float = 2.0) -> list[_FakeWaypoint]:
@@ -974,3 +977,136 @@ def test_a_label_holds_its_apparent_size_with_distance() -> None:
 def test_label_height_is_clamped_at_both_ends() -> None:
     assert CarlaBackend._label_height(0.0) == DEBUG_LABEL_MIN_M
     assert CarlaBackend._label_height(10000.0) == DEBUG_LABEL_MAX_M
+
+
+# ---------------------------------------------------------------------------
+# The viewer window
+#
+# No pygame and no server here: the backend's side of the contract is that it
+# builds the HUD text, pumps whatever it was given, and never lets a window
+# take a trial down.
+# ---------------------------------------------------------------------------
+
+class _FakeViewer:
+    """Stands in for the pygame window."""
+
+    def __init__(self, alive: int = 99, explode: bool = False) -> None:
+        self.seen: list[list[str]] = []
+        self.closed = False
+        self._alive = alive
+        self._explode = explode
+
+    def update(self, lines) -> bool:
+        if self._explode:
+            raise RuntimeError("display gone")
+        self.seen.append(list(lines))
+        return len(self.seen) < self._alive
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_the_viewer_is_off_by_default() -> None:
+    """A campaign must never open a window."""
+    assert _backend()._viewer_wanted is False
+    assert _backend()._viewer is None
+
+
+def test_the_counters_say_the_same_thing_on_both_surfaces() -> None:
+    """
+    The world overlay and the window read from one place, so they cannot
+    drift apart and disagree about the clock.
+    """
+    backend = _backend(debug_draw=True, fixed_delta_s=0.05)
+    backend._stats["ticks"] = 1200                  # 60 s
+    backend.set_destination("n0002_n_s02")
+    backend._stats["ticks"] = 2400                  # 120 s, 60 s into the leg
+
+    lines = backend.hud_lines()
+
+    assert lines[0] == "SIM  2:00"
+    assert lines[1] == "LEG  1:00"
+    assert lines[2] == "NEXT n0002_n_s02"
+
+
+def test_the_counters_report_demand_once_there_is_any() -> None:
+    backend = _backend(debug_draw=True)
+    backend._note_stop_demand(_demand_pool(
+        waiting=("n0001_n_s01", "n0002_n_s02"), aboard=("n0001_n_s01",)))
+
+    assert "WAIT 2   ABOARD 1" in backend.hud_lines()
+
+
+def test_the_counters_stay_quiet_about_faults_until_there_are_some() -> None:
+    """A line that always reads zero is a line nobody keeps reading."""
+    backend = _backend(debug_draw=True)
+    assert not any("DROPS" in line for line in backend.hud_lines())
+
+    backend._stats["route_drops"] = 3
+    assert "DROPS 3   UNROUTABLE 0" in backend.hud_lines()
+
+
+def test_the_viewer_is_given_the_counters_every_tick() -> None:
+    backend = _backend(viewer=True)
+    backend._viewer = _FakeViewer()
+
+    backend._pump_viewer()
+    backend._pump_viewer()
+
+    assert len(backend._viewer.seen) == 2
+    assert backend._viewer.seen[0][0].startswith("SIM")
+
+
+def test_closing_the_window_drops_it_for_the_rest_of_the_run() -> None:
+    """The trial carries on; it just stops paying for a window nobody has."""
+    backend = _backend(viewer=True)
+    viewer = _FakeViewer(alive=1)
+    backend._viewer = viewer
+
+    backend._pump_viewer()
+
+    assert backend._viewer is None
+    assert viewer.closed
+
+
+def test_a_viewer_that_fails_never_takes_the_trial_down() -> None:
+    backend = _backend(viewer=True)
+    backend._viewer = _FakeViewer(explode=True)
+
+    backend._pump_viewer()
+
+    assert backend._viewer is None
+
+
+def test_pumping_without_a_viewer_is_harmless() -> None:
+    """Every tick calls this, and most runs have no window at all."""
+    _backend()._pump_viewer()
+
+
+def test_the_labels_follow_the_spectator_with_no_viewer() -> None:
+    spectator = _FakeSpectator()
+    backend = _backend(debug_draw=True)
+
+    assert backend._overlay_eye(spectator) is spectator
+
+
+def test_the_labels_follow_the_bus_once_the_viewer_is_open() -> None:
+    """
+    The viewer's camera rides the bus. Choosing labels by distance to a
+    spectator parked across town would letter stops nobody is looking at.
+    """
+    debug = _FakeDebug()
+    backend = _drawing_backend(debug, viewer=True)
+    backend._viewer = _FakeViewer()
+
+    assert backend._overlay_eye(_FakeSpectator()) is backend._bus()
+
+
+def test_a_closed_viewer_hands_the_labels_back_to_the_spectator() -> None:
+    spectator = _FakeSpectator()
+    backend = _drawing_backend(_FakeDebug(), viewer=True)
+    backend._viewer = _FakeViewer(alive=1)
+
+    backend._pump_viewer()
+
+    assert backend._overlay_eye(spectator) is spectator

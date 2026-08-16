@@ -23,6 +23,7 @@ graph or bus stops: it takes two world locations and answers with turns.
 """
 
 from collections import deque
+from typing import NamedTuple
 
 import carla
 
@@ -35,8 +36,21 @@ STEP_M = 2.0
 GOAL_TOLERANCE_M = 4.0
 
 # Heading change across a junction, in degrees, beyond which the manoeuvre
-# is a turn rather than going straight on.
-TURN_THRESHOLD_DEG = 35.0
+# is a turn rather than going straight on. **CARLA's own value**, from
+# `Constants.h`: `static float const STRAIGHT_DEG = 19.0f;`.
+#
+# It was 35.0 until 2026-08-16, measured over the approach-to-exit span
+# rather than the junction interior. Naming has to agree with CARLA's,
+# because closed-loop steering hands CARLA the word and compares it against
+# the label CARLA reports — a manoeuvre we call `Straight` and CARLA calls
+# `Right` is a turn we then ask for and CARLA cannot supply.
+STRAIGHT_DEG = 19.0
+
+# CARLA's topology resolution, from `Constants.h`. Its junction interiors
+# are sampled this coarsely, ours at ``STEP_M``; the two therefore pick
+# slightly different first and last waypoints inside a junction. Recorded
+# here because it bounds how exactly the naming can be matched.
+CARLA_MAP_RESOLUTION_M = 5.0
 
 # Guard against pathological searches on a large map.
 MAX_SEARCH_NODES = 200000
@@ -144,6 +158,58 @@ def _reconstruct(came_from, seen_at, key) -> list["carla.Waypoint"]:
     return path
 
 
+class Crossing(NamedTuple):
+    """
+    One junction a route passes through, and the waypoints that describe it.
+
+    :param approach: Last waypoint before the junction. What ``_is_labelled``
+        interrogates, and the only part of a crossing that is not geometry.
+    :param first_inside: First waypoint inside the junction.
+    :param last_inside: Last waypoint inside it. With ``first_inside`` this
+        is the span CARLA measures the manoeuvre over.
+    :param junction_id: Id of the junction, or None if CARLA does not name
+        one for it.
+    """
+
+    approach: "carla.Waypoint"
+    first_inside: "carla.Waypoint"
+    last_inside: "carla.Waypoint"
+    junction_id: int | None
+
+
+def _crossings(route: list["carla.Waypoint"]) -> list[Crossing]:
+    """
+    Walk a route and pick out every junction it passes through.
+
+    Single source of truth for both readers below. They differ only in what
+    they do with a crossing — never in where they think the junction starts
+    and ends — so they cannot drift apart and name the same corner
+    differently.
+    :param route: Waypoints in travel order, as from ``plan_route``.
+    :return: One entry per junction crossed, in travel order.
+    """
+    found: list[Crossing] = []
+    approach: "carla.Waypoint | None" = None
+    inside: list["carla.Waypoint"] = []
+
+    for previous, waypoint in zip(route, route[1:]):
+        if waypoint.is_junction and not previous.is_junction:
+            approach = previous
+            inside = [waypoint]
+        elif waypoint.is_junction and inside:
+            inside.append(waypoint)
+        elif previous.is_junction and not waypoint.is_junction and inside:
+            junction = inside[0].get_junction()
+            found.append(Crossing(
+                approach=approach,
+                first_inside=inside[0],
+                last_inside=inside[-1],
+                junction_id=None if junction is None else int(junction.id),
+            ))
+            approach, inside = None, []
+    return found
+
+
 def _heading_change(before: float, after: float) -> float:
     """
     Signed heading change in degrees, wrapped to (-180, 180].
@@ -156,20 +222,42 @@ def _heading_change(before: float, after: float) -> float:
     return (after - before + 180.0) % 360.0 - 180.0
 
 
-def _turn_name(entry_yaw: float, exit_yaw: float) -> str:
+def _turn_name(first_inside_yaw: float, last_inside_yaw: float) -> str:
     """
-    Classify one junction manoeuvre from the headings either side of it.
+    Name a junction manoeuvre exactly as CARLA names it.
 
-    Shared by both readers below, so the positional list and the
-    junction-keyed one can never classify the same corner differently.
-    :param entry_yaw: Heading on the approach.
-    :param exit_yaw: Heading on the way out.
+    Takes CARLA's **threshold** and CARLA's **span**, but not CARLA's raw
+    arithmetic. `InMemoryMap.cpp` reads::
+
+        int16_t diff_angle = (junction_end_angle - current_angle) % 360;
+        bool straight = (diff_angle < STRAIGHT_DEG && diff_angle > -STRAIGHT_DEG);
+        bool right    = (diff_angle >= STRAIGHT_DEG && diff_angle <= 180) ||
+                        (diff_angle <= -180 && diff_angle >= -360+STRAIGHT_DEG);
+
+    ⚠ **Transcribing that literally was tried on 2026-08-16 and is wrong
+    here.** Its ``% 360`` only rescues magnitudes above 360, so a raw
+    difference of −358 — which is a 2° bend across the yaw wrap — falls
+    outside both the straight band and the right band and drops through to
+    ``Left``. That is safe for CARLA, which feeds it CARLA's own waypoints;
+    it is not safe for us. CARLA's yaws are **not normalised** — measured
+    values on our sampled waypoints include −270.21 and −539.91 — so the
+    literal version turned 1.44° bends into ``Left`` requests that CARLA
+    then could not satisfy. Measured over 56 legs it took Town05 from 14/14
+    legs and 0 dropped routes to 12/14 and **170**, and every one of the
+    nine junctions it renamed went ``Straight`` → a direction.
+
+    So the angle is wrapped properly first, which is what CARLA's arithmetic
+    is trying and failing to do, and only then compared against CARLA's
+    threshold.
+    :param first_inside_yaw: Heading at the first waypoint **inside** the
+        junction.
+    :param last_inside_yaw: Heading at the last waypoint inside it.
     :return: ``"Left"``, ``"Right"`` or ``"Straight"``.
     """
-    change = _heading_change(entry_yaw, exit_yaw)
-    if change > TURN_THRESHOLD_DEG:
+    change = _heading_change(first_inside_yaw, last_inside_yaw)
+    if change >= STRAIGHT_DEG:
         return "Right"
-    if change < -TURN_THRESHOLD_DEG:
+    if change <= -STRAIGHT_DEG:
         return "Left"
     return "Straight"
 
@@ -218,37 +306,32 @@ def turns_along(
     :return: Ordered turn names, e.g. ``["Left", "Left", "Straight"]``.
     """
     turns: list[str] = []
-    entry_yaw: float | None = None
-
-    for previous, waypoint in zip(route, route[1:]):
-        entering = waypoint.is_junction and not previous.is_junction
-        leaving = previous.is_junction and not waypoint.is_junction
-        if entering:
-            # `set_route` consumes the list in order, so an entry too many
-            # and an entry too few are equally fatal — each throws every
-            # later turn onto the wrong junction. The test therefore has to
-            # be the traffic manager's own, not a plausible stand-in for it.
-            #
-            # It was `len(previous.next(STEP_M)) > 1` until 2026-08-14,
-            # which asks whether the *lane* branches. The traffic manager
-            # asks whether the waypoint is *labelled*, which on a multi-lane
-            # map is a different question: a dedicated turn lane has one
-            # continuation through a junction that is signalised, so it is
-            # labelled, an entry is spent there, and a list built on
-            # branching is one short from that junction onward. Traced end
-            # to end on Town03 junction 655.
-            decides = (
-                len(previous.next(STEP_M)) > 1 if branching_only
-                else _is_labelled(previous)
-            )
-            entry_yaw = (
-                previous.transform.rotation.yaw if decides else None
-            )
-        elif leaving and entry_yaw is not None:
-            turns.append(
-                _turn_name(entry_yaw, waypoint.transform.rotation.yaw)
-            )
-            entry_yaw = None
+    for crossing in _crossings(route):
+        # `set_route` consumes the list in order, so an entry too many and
+        # an entry too few are equally fatal — each throws every later turn
+        # onto the wrong junction. The test therefore has to be the traffic
+        # manager's own, not a plausible stand-in for it.
+        #
+        # It was `len(approach.next(STEP_M)) > 1` until 2026-08-14, which
+        # asks whether the *lane* branches. The traffic manager asks whether
+        # the waypoint is *labelled*, which on a multi-lane map is a
+        # different question: a dedicated turn lane has one continuation
+        # through a junction that is signalised, so it is labelled, an entry
+        # is spent there, and a list built on branching is one short from
+        # that junction onward. Traced end to end on Town03 junction 655.
+        #
+        # Both readings are now known to be wrong about *which* junctions
+        # CARLA labels — see `junction_turns` — but this path is kept as it
+        # was so the results recorded under it stay comparable.
+        decides = (
+            len(crossing.approach.next(STEP_M)) > 1 if branching_only
+            else _is_labelled(crossing.approach)
+        )
+        if decides:
+            turns.append(_turn_name(
+                crossing.first_inside.transform.rotation.yaw,
+                crossing.last_inside.transform.rotation.yaw,
+            ))
     return turns
 
 
@@ -278,24 +361,14 @@ def junction_turns(
     :return: (junction id, turn name) in the order the route meets them,
         with repeats where the route revisits a junction.
     """
-    pairs: list[tuple[int, str]] = []
-    entry_yaw: float | None = None
-    inside: int | None = None
-
-    for previous, waypoint in zip(route, route[1:]):
-        entering = waypoint.is_junction and not previous.is_junction
-        leaving = previous.is_junction and not waypoint.is_junction
-        if entering:
-            entry_yaw = previous.transform.rotation.yaw
-            junction = waypoint.get_junction()
-            inside = None if junction is None else int(junction.id)
-        elif leaving and entry_yaw is not None and inside is not None:
-            pairs.append((
-                inside,
-                _turn_name(entry_yaw, waypoint.transform.rotation.yaw),
-            ))
-            entry_yaw, inside = None, None
-    return pairs
+    return [
+        (crossing.junction_id, _turn_name(
+            crossing.first_inside.transform.rotation.yaw,
+            crossing.last_inside.transform.rotation.yaw,
+        ))
+        for crossing in _crossings(route)
+        if crossing.junction_id is not None
+    ]
 
 
 def plan_turns(

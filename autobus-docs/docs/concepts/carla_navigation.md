@@ -104,11 +104,12 @@ driving — briskly, and in the wrong direction.
 
 ### A junction is labelled if it branches *or* is signalised — **refuted**
 
-!!! danger "This rule is wrong, and `_is_labelled` still implements it"
-    It was read from `InMemoryMap.cpp` rather than measured, and measurement
-    contradicts it. It is documented here because `_is_labelled` is still the
-    code path when `closed_loop=False`, and because five successive repairs
-    were built on it.
+!!! warning "The rule is right; an earlier reading of the measurement was not"
+    This page briefly claimed `_is_labelled` "asks about the wrong object".
+    **That was wrong**, and it is corrected below: the gate really is
+    evaluated on the approach waypoint, exactly as `_is_labelled` does. What
+    the measurement established is where the resulting label is *stored*,
+    which is a different question.
 
 The rule as read: a waypoint gets a directional label when it branches, **or**
 when it is a non-junction waypoint about to enter a junction and
@@ -124,12 +125,26 @@ with no imported route, actually shows:
 | Town03 | 308 | **0** | 324 | 213 |
 | Town05 | ~185 | **0** | ~112 | 112 |
 
-**CARLA never labels a non-junction waypoint.** The signal clause therefore
-describes nothing: `SIGNAL_LANDMARK_TYPES` and `SIGNAL_RANGE_M` have no
-observable effect. Labels live on waypoints *inside* junction connections, and
-`_is_labelled` evaluates the *approach* — a different object entirely.
-Labelling is uniform per connection `(road_id, lane_id)`, with zero mixed
-connections in any town measured.
+**CARLA never labels a non-junction waypoint**, and labelling is uniform per
+connection `(road_id, lane_id)` — zero mixed connections in any town measured.
+
+Both facts follow from the source, and neither contradicts `_is_labelled`:
+
+```cpp
+if (found_landmark || next_swp_size > 1) {          // decided on the APPROACH
+  ...
+  for (auto &twp : traversed_waypoints) {           // stored on the INTERIOR
+    twp->SetRoadOption(ro);
+  }
+}
+```
+
+`next_swp_size` is `swp->GetNextWaypoint().size()` and `found_landmark` comes
+from `swp->GetWaypoint()->GetAllLandmarksInDistance(15.0)`, both on the
+**approach** waypoint `swp` — which is precisely what `_is_labelled` asks. The
+label is then written to *every* interior waypoint, which is why it is found
+there and why connections are uniformly labelled. So the signal clause is
+real, and `SIGNAL_LANDMARK_TYPES` / `SIGNAL_RANGE_M` are CARLA's own criteria.
 
 Nor is the real predicate recoverable. Scoring all 36 observed Town03
 connections on full-connection geometry separates nothing:
@@ -142,9 +157,22 @@ connections on full-connection geometry separates nothing:
 ```
 
 Labelled connections include 0.0° turns; unlabelled ones include 90.5° turns.
-Five predicates have now been tried and failed — branching; branching-or-
-signalised; every junction; interior turn > 19°; full-connection geometry. That
-is what motivates giving up on prediction entirely.
+Five predicates have been tried and failed — branching; branching-or-
+signalised; every junction; interior turn > 19°; full-connection geometry.
+
+That search was, in hindsight, aimed at the wrong thing. The labelling
+predicate was never missing: it is `found_landmark || next_swp_size > 1`, and
+`_is_labelled` implements it. What geometry cannot recover is why a list built
+on the correct predicate still slipped — and the likeliest answer is the
+*consumption* rule rather than the labelling rule. An entry is spent at a
+label **transition**, and because the label is written to every interior
+waypoint, a junction is one long run of identical labels; two junctions meeting
+with no ordinary road between them are a single run. Counting labelled
+junctions is therefore not the same as counting consumption sites.
+
+This weakens the original case for closed-loop steering without touching its
+results: it still measures better, but "no predicate exists" was not the
+reason.
 
 ## Why this bit us, and why only on some towns
 
@@ -272,18 +300,59 @@ The three Town03 legs that the positional list loses, and what they cost:
     for does not exist at that junction, most likely the naming difference
     below.
 
-## Known remaining difference
+## Naming a turn the way CARLA names it
 
-`turns_along` and CARLA name the turns slightly differently:
+Both readers classify a manoeuvre through `_turn_name`, which uses **CARLA's
+own rule**: the heading change from the **first to the last waypoint inside
+the junction**, with anything under `STRAIGHT_DEG = 19.0` counted straight.
+That is what `InMemoryMap.cpp` does, and matching it matters most under
+closed-loop steering, which hands CARLA the word and compares it against the
+label CARLA reports.
 
-| | span measured | straight threshold |
-|---|---|---|
-| `turns_along` | approach heading vs exit heading | `TURN_THRESHOLD_DEG = 35.0` |
-| CARLA (`InMemoryMap`) | first vs last waypoint *inside* the junction | `STRAIGHT_DEG = 19.0` |
+Measured per junction connection while the bus is inside the junction — which
+is the only honest way to compare, see the warning below — this agrees with
+CARLA's own runtime label on **173 of 173 connections across all four towns**.
 
-Audited across two full tours this disagreed on **1 junction in 146**, so it
-was left alone. It is the first place to look if drops reappear on a town
-where the labelling rule is satisfied.
+!!! danger "Do not transcribe CARLA's arithmetic literally"
+    CARLA computes `(int16)back_yaw - (int16)front_yaw % 360` and tests
+    asymmetric bands. That was copied verbatim on 2026-08-16, wrap-around
+    quirk and all, on the reasoning that a connection CARLA labels `Left`
+    must be *asked for* as `Left`. **It is wrong for us**, because `% 360`
+    only rescues magnitudes above 360: a raw difference of −358 — a 2°
+    bend across the yaw wrap — falls outside both the straight band and the
+    right band and drops through to `Left`. And **CARLA's yaws are not
+    normalised**; values measured on our sampled waypoints include −270.21
+    and −539.91, so it fires often.
+
+    Shipped, it renamed nine junctions and **every one went `Straight` → a
+    direction**, asking CARLA for turns it could not supply:
+
+    | town | arm | before | after |
+    |---|---|---|---|
+    | Town05 | list | 14/14, **0** drops | 12/14, **170** drops |
+    | Town05 | closed loop | 14/14, 0 drops | 13/14, 55 drops |
+    | Town03 | closed loop | 14/14, 4 drops | 12/14, 48 drops |
+
+    Wrap the angle first — which is what CARLA's arithmetic is trying and
+    failing to do — then apply its threshold.
+
+!!! warning "Measure naming agreement per *connection*, not per intention"
+    Comparing our planned turn against whatever the buffer reports ahead is
+    **not** a naming measurement. Before a correction lands, the buffer
+    describes the exit *CARLA* intends, which is a different connection from
+    the one we want, so it disagrees for reasons that have nothing to do
+    with naming. That confusion made "29 corrections on Town01" look like a
+    naming fault when Town01 in fact agrees on every connection.
+
+Two limits are known and accepted:
+
+* CARLA samples junction interiors at `MAP_RESOLUTION = 5.0` and we sample at
+  `STEP_M = 2.0`. Five Town03 junctions name differently under the two
+  resolutions; every connection actually compared agrees, so this is a latent
+  risk rather than an observed fault.
+* CARLA walks a junction with `temp.front()`, taking the first successor even
+  at an internal fork, so its span can follow a different connection from the
+  one the vehicle drives. Exact matching is not achievable in general.
 
 ## The safety net: re-issuing the route
 

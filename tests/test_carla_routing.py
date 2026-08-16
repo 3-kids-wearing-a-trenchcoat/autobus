@@ -11,7 +11,7 @@ from src.simulation.carla_routing import (
     _lane_key,
     junction_turns,
     plan_route,
-    TURN_THRESHOLD_DEG,
+    STRAIGHT_DEG,
     _heading_change,
     turns_along,
 )
@@ -100,10 +100,14 @@ def _through_junction(entry_yaw: float, exit_yaw: float, exits: int = 2,
     :param junction: Id to give the junction being crossed.
     :return: Waypoints in travel order.
     """
+    # Two waypoints *inside* the junction, not one. CARLA measures the
+    # manoeuvre from the first to the last of them, so a junction modelled
+    # as a single interior point has no span and every turn reads Straight.
     return [
         _Waypoint(entry_yaw, is_junction=False, exits=exits,
                   signals=signals),
         _Waypoint(entry_yaw, is_junction=True, junction=junction),
+        _Waypoint(exit_yaw, is_junction=True, junction=junction),
         _Waypoint(exit_yaw, is_junction=False),
     ]
 
@@ -127,8 +131,40 @@ def test_a_quarter_turn_anticlockwise_is_a_left() -> None:
 
 def test_a_slight_bend_is_not_a_turn() -> None:
     """Roads are not perfectly straight; only real manoeuvres count."""
-    gentle = TURN_THRESHOLD_DEG - 5.0
+    gentle = STRAIGHT_DEG - 5.0
     assert turns_along(_through_junction(0.0, gentle)) == ["Straight"]
+
+
+def test_the_straight_band_is_carlas_and_not_ours() -> None:
+    """
+    A 25 degree corner is Straight under the old 35 degree band and Right
+    under CARLA's 19. Naming has to be CARLA's, or closed-loop steering asks
+    for a turn CARLA does not offer at that junction.
+    """
+    assert turns_along(_through_junction(0.0, 25.0)) == ["Right"]
+    assert turns_along(_through_junction(0.0, -25.0)) == ["Left"]
+
+
+def test_the_threshold_boundary_is_inclusive_as_carlas_is() -> None:
+    assert turns_along(_through_junction(0.0, STRAIGHT_DEG)) == ["Right"]
+    assert turns_along(
+        _through_junction(0.0, STRAIGHT_DEG - 1.0)
+    ) == ["Straight"]
+
+
+def test_a_gentle_bend_across_the_yaw_wrap_is_still_straight() -> None:
+    """
+    The regression that cost Town05 two legs and 170 dropped routes.
+
+    CARLA's yaws are not normalised -- measured values on our sampled
+    waypoints include -270.21 and -539.91 -- so a 1.4 degree bend can show
+    up as a raw difference of -358. Transcribing CARLA's ``% 360``
+    arithmetic literally calls that ``Left``, and CARLA then cannot supply
+    the turn. The angle has to be wrapped before it is classified.
+    """
+    assert turns_along(_through_junction(180.0, -178.56)) == ["Straight"]
+    assert turns_along(_through_junction(-181.44, -539.91)) == ["Straight"]
+    assert turns_along(_through_junction(-1.30, -270.21)) == ["Right"]
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +176,10 @@ def test_heading_change_wraps_across_the_backwards_direction() -> None:
     170 degrees to -170 is a 20 degree nudge, not a 340 degree spin. Getting
     this wrong turns a straight-on into a phantom turn at every junction
     that happens to sit near the wrap.
+
+    Kept because ``_heading_change`` is still the honest way to measure a
+    heading change -- but note ``_turn_name`` deliberately does **not** use
+    it, see the test below.
     """
     assert _heading_change(170.0, -170.0) == 20.0
     assert _heading_change(-170.0, 170.0) == -20.0
@@ -147,6 +187,12 @@ def test_heading_change_wraps_across_the_backwards_direction() -> None:
 
 def test_a_turn_that_straddles_the_wrap_is_still_a_turn() -> None:
     assert turns_along(_through_junction(170.0, -100.0)) == ["Right"]
+
+
+def test_a_nudge_across_the_wrap_is_not_a_turn_either_way() -> None:
+    """-175 to 175 is a 10 degree nudge, in both directions."""
+    assert turns_along(_through_junction(-175.0, 175.0)) == ["Straight"]
+    assert turns_along(_through_junction(175.0, -175.0)) == ["Straight"]
 
 
 # ---------------------------------------------------------------------------

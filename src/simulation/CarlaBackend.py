@@ -1635,14 +1635,21 @@ class CarlaBackend(SimulationBackend):
             )
             return
 
-        turns = turns_along(route)
-        self._issued_turns = turns
         self._issued_at_s = self._stats["ticks"] * self._delta
         if self._steering is not None:
             # Nothing is handed over up front: every junction is decided
             # just in time, so there is no list to fall out of step with.
+            #
+            # ``_issued_turns`` is deliberately left empty rather than
+            # filled from ``turns_along``. It feeds the diagnostic tag on a
+            # dropped route, and a list we computed but never sent would
+            # read there as the list CARLA was refusing — which it is not.
+            self._issued_turns = []
             self._steering.set_plan(junction_turns(route))
             return
+
+        turns = turns_along(route)
+        self._issued_turns = turns
         if turns:
             self._traffic_manager.set_route(bus, turns)
         # An empty list means the route crosses no junction where there is

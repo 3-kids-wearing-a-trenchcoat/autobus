@@ -24,7 +24,10 @@ from collections.abc import Sequence
 
 from src.algorithm.RequestPool import RequestPool
 from src.simulation import carla_debug_text, carla_stdout
-from src.simulation.carla_routing import plan_route, turns_along
+from src.simulation.carla_routing import (
+    junction_turns, plan_route, turns_along,
+)
+from src.simulation.carla_steering import ClosedLoopSteering
 from src.simulation.SimulationBackend import AdvanceResult, SimulationBackend
 
 import carla
@@ -62,6 +65,15 @@ WALKER_LATERAL_OFFSET_M = 1.0
 QUEUE_AHEAD_M = 20.0
 QUEUE_LATERAL_M = 3.0
 QUEUE_STATIONARY_MS = 0.5
+
+# Least time between two off-route re-plans under closed-loop steering. The
+# guard is against a leg whose destination is unroutable: ``_steer_towards``
+# then falls back to ``set_path`` without adopting a plan, so every tick
+# would find the bus deciding at a junction no plan contains and start
+# another whole-town search — twenty a second. Sized above the 2.1 s gap
+# between the two genuine consecutive re-plans measured on the Town03
+# reference leg, so it never blocks a useful one.
+STEER_REPLAN_COOLDOWN_S = 1.0
 
 DEFAULT_TM_PORT = 8000
 TM_PORT_SEARCH_LIMIT = 20
@@ -253,6 +265,12 @@ class CarlaBackend(SimulationBackend):
         healthy leg on the town in question, so it never disturbs a leg that
         is going well: 300 s was measured good on Town03 and Town05, where
         healthy legs run 120–350 s.
+    :param closed_loop: Correct the traffic manager's junction decisions as
+        the bus drives, instead of handing it a positional list of turns for
+        the whole leg up front. The list can only be as good as our guess at
+        which junctions spend an entry, and that guess is not derivable —
+        see ``carla_steering``. Defaults to False so every result recorded
+        before it stays reproducible.
     :param follow_camera: Move the spectator camera to sit behind and above
         the bus on every tick, so a rendering server shows a chase view.
         Pointless with ``no_rendering=True``, where there is nothing to look
@@ -317,6 +335,7 @@ class CarlaBackend(SimulationBackend):
         blueprint_id: str = DEFAULT_BUS_ID,
         repath_after_s: float = 10.0,
         replan_every_s: float | None = None,
+        closed_loop: bool = False,
         follow_camera: bool = False,
         debug_draw: bool = False,
         viewer: bool = False,
@@ -353,6 +372,8 @@ class CarlaBackend(SimulationBackend):
         self._blueprint_id = blueprint_id
         self._repath_after_s = repath_after_s
         self._replan_every_s = replan_every_s
+        self._steering = ClosedLoopSteering() if closed_loop else None
+        self._since_steer_replan_s = 0.0
         self._follow_camera = follow_camera
         self._debug_draw = debug_draw
         self._viewer_wanted = viewer
@@ -432,6 +453,12 @@ class CarlaBackend(SimulationBackend):
             # ``carla_stdout``: the message itself carries no context, and
             # the tagged line on stdout is where the detail lives.
             "route_drops": 0,
+            # Closed-loop steering only: junctions where the traffic
+            # manager's own decision disagreed with the plan and was
+            # overridden, and times the bus was found deciding at a junction
+            # the plan does not contain and had to re-plan.
+            "steer_corrections": 0,
+            "steer_replans": 0,
             "walkers_spawned": 0,
             "walkers_removed": 0,
             "walker_spawn_failures": 0,
@@ -1392,6 +1419,33 @@ class CarlaBackend(SimulationBackend):
         self._last_location = here
 
         self._track_replan(bus)
+        self._track_steering(bus)
+
+    def _track_steering(self, bus: "carla.Actor") -> None:
+        """
+        Correct the junction the traffic manager is about to decide at.
+
+        Skipped while dwelling, like ``_track_replan``: a bus held at a stop
+        is not approaching anything, and the junction still in its buffer
+        would be re-decided pointlessly on every tick of the dwell.
+        :param bus: The bus actor.
+        """
+        if self._steering is None or not self._leg_armed:
+            return
+        if self._destination is None or self._dwell_remaining > 0.0:
+            return
+
+        self._since_steer_replan_s += self._delta
+        reason = self._steering.step(self._traffic_manager, bus)
+        if reason is not None and (self._since_steer_replan_s
+                                   >= STEER_REPLAN_COOLDOWN_S):
+            self._since_steer_replan_s = 0.0
+            # The bus is deciding at a junction its route does not contain,
+            # so it has left that route. Re-planning from where it actually
+            # is discards the drift rather than trying to unwind it.
+            self._steer_towards(bus, self._destination)
+            self._stats["steer_replans"] += 1
+        self._stats["steer_corrections"] = self._steering.corrections
 
     def _track_replan(self, bus: "carla.Actor") -> None:
         """
@@ -1584,6 +1638,11 @@ class CarlaBackend(SimulationBackend):
         turns = turns_along(route)
         self._issued_turns = turns
         self._issued_at_s = self._stats["ticks"] * self._delta
+        if self._steering is not None:
+            # Nothing is handed over up front: every junction is decided
+            # just in time, so there is no list to fall out of step with.
+            self._steering.set_plan(junction_turns(route))
+            return
         if turns:
             self._traffic_manager.set_route(bus, turns)
         # An empty list means the route crosses no junction where there is

@@ -3,11 +3,12 @@
 ## Overview
 
 CARLA has no "drive to this place" API. Getting a bus from one stop to another
-is therefore something this project implements, in `src/simulation/carla_routing.py`,
-and it is the single component that has cost the most debugging effort. This
-page exists so the next person does not rediscover any of it.
+is therefore something this project implements, in `src/simulation/carla_routing.py`
+and `src/simulation/carla_steering.py`, and it is the single component that has
+cost the most debugging effort. This page exists so the next person does not
+rediscover any of it.
 
-The chain is three steps:
+There are two ways to do it. The original hands over the whole leg up front:
 
 ```
 plan_route(map, origin, destination)   ->  waypoints along lanes
@@ -15,9 +16,27 @@ turns_along(route)                     ->  ["Left", "Straight", "Right", ...]
 TrafficManager.set_route(bus, turns)   ->  CARLA drives it
 ```
 
-The bus stays an ordinary autopilot vehicle throughout. We never write throttle
-or steering — we only tell the traffic manager which way to go at each
-decision point, and it does the driving.
+The other, `CarlaBackend(closed_loop=True)`, hands over nothing up front and
+corrects one junction at a time as the bus drives:
+
+```
+plan_route(map, origin, destination)   ->  waypoints along lanes
+junction_turns(route)                  ->  [(861, "Right"), (20, "Straight"), ...]
+                                              ^ keyed by junction, not position
+each tick:
+  TrafficManager.get_all_actions(bus)  ->  what CARLA intends just ahead
+  disagrees with the plan?             ->  set_route(bus, [turn], True)
+```
+
+The rest of this page explains why the second exists: the first is only ever as
+good as a prediction that turned out not to be derivable. **Start at
+[Closed-loop steering](#closed-loop-steering) if you only want the current
+design**; the sections before it are the history that justifies it, and two of
+their conclusions are now marked refuted.
+
+The bus stays an ordinary autopilot vehicle throughout, under either scheme. We
+never write throttle or steering — we only tell the traffic manager which way to
+go at each decision point, and it does the driving.
 
 ## Why not just give CARLA the destination
 
@@ -83,16 +102,49 @@ This route might diverge from the one expected.
 When that happens CARLA takes the last candidate anyway, so the bus keeps
 driving — briskly, and in the wrong direction.
 
-### A junction is labelled if it branches *or* is signalised
+### A junction is labelled if it branches *or* is signalised — **refuted**
 
-From `InMemoryMap.cpp`, a waypoint gets a directional label when it branches,
-**or** when it is a non-junction waypoint about to enter a junction — and in
-that second case only if `GetAllLandmarksInDistance(15.0)` finds a landmark of
-type `1000001` (traffic light), `206` (stop sign) or `205` (yield sign).
-Otherwise it stays `LaneFollow`, and no entry is spent there.
+!!! danger "This rule is wrong, and `_is_labelled` still implements it"
+    It was read from `InMemoryMap.cpp` rather than measured, and measurement
+    contradicts it. It is documented here because `_is_labelled` is still the
+    code path when `closed_loop=False`, and because five successive repairs
+    were built on it.
 
-`carla_routing._is_labelled` mirrors this rule exactly. It is the whole reason
-the module reaches for landmarks at all.
+The rule as read: a waypoint gets a directional label when it branches, **or**
+when it is a non-junction waypoint about to enter a junction and
+`GetAllLandmarksInDistance(15.0)` finds a landmark of type `1000001` (traffic
+light), `206` (stop sign) or `205` (yield sign).
+
+What sampling `get_all_actions` every tick, over 600 s of free driving per town
+with no imported route, actually shows:
+
+| town | non-junction waypoints | of those, labelled | junction waypoints | labelled |
+|---|---|---|---|---|
+| Town01 | 477 | **0** | 119 | 119 |
+| Town03 | 308 | **0** | 324 | 213 |
+| Town05 | ~185 | **0** | ~112 | 112 |
+
+**CARLA never labels a non-junction waypoint.** The signal clause therefore
+describes nothing: `SIGNAL_LANDMARK_TYPES` and `SIGNAL_RANGE_M` have no
+observable effect. Labels live on waypoints *inside* junction connections, and
+`_is_labelled` evaluates the *approach* — a different object entirely.
+Labelling is uniform per connection `(road_id, lane_id)`, with zero mixed
+connections in any town measured.
+
+Nor is the real predicate recoverable. Scoring all 36 observed Town03
+connections on full-connection geometry separates nothing:
+
+```
+     turn: labelled [0..91.5]   unlabelled [0..90.5]    <- total overlap
+  signals: labelled [0..2]      unlabelled [0..0]       <- most labelled have 0
+ siblings: labelled [1..5]      unlabelled [1..5]
+   length: labelled [14..42]    unlabelled [2..38]
+```
+
+Labelled connections include 0.0° turns; unlabelled ones include 90.5° turns.
+Five predicates have now been tried and failed — branching; branching-or-
+signalised; every junction; interior turn > 19°; full-connection geometry. That
+is what motivates giving up on prediction entirely.
 
 ## Why this bit us, and why only on some towns
 
@@ -140,6 +192,85 @@ routing is the only variable:
     keep `LaneFollow` and never consume the entry aimed at them, so it is
     spent later at the wrong place. The list must match CARLA's labelling
     exactly: not more, not less.
+
+## Closed-loop steering
+
+`CarlaBackend(closed_loop=True)` removes the prediction rather than improving
+it, in `src/simulation/carla_steering.py`. Three properties, and each one
+kills a specific failure above:
+
+* **Keyed by junction, not by list position.** `junction_turns` returns
+  `(junction id, turn)` pairs, so an entry can only ever be spent at the
+  junction it was computed for. A missing or extra one costs nothing instead of
+  throwing every later turn onto the wrong junction. It also expresses
+  something a positional list cannot at all: the Town03 leg `s05 -> s11`
+  crosses **junction 861 twice** and turns differently each time.
+* **CARLA is the oracle.** A junction its action buffer labels `Left`, `Right`
+  or `Straight` is a decision point; one left at `LaneFollow` is not, and is
+  left alone. Nothing has to guess which junctions spend an entry.
+* **One entry outstanding at a time**, aimed at a junction currently in the
+  buffer, so a mistake cannot compound into the rest of the leg.
+
+A junction the traffic manager is deciding at that the plan does not contain
+means the bus has left its route. That is reported so the backend can re-plan
+from where the bus actually is — an **off-route trigger for free**, firing on
+the divergence rather than 232 s later, which is where `replan_every_s` got to
+it. `STEER_REPLAN_COOLDOWN_S` bounds how often it can fire, because an
+unroutable destination would otherwise start a whole-town search twenty times a
+second.
+
+### The mechanic this depends on
+
+`set_route(bus, [turn], True)` **re-labels a junction the buffer has already
+decided on**, taking effect on the *next* world tick — the traffic manager
+re-decides when it ticks, so a same-tick re-read shows no change and reads as a
+false null. Verified 4/4 on Town03 with a positive control that forced a label
+CARLA had not chosen.
+
+The lead available is small: `get_all_actions` returns 1–3 entries spanning
+about 19 m, and costs 0.003 ms, so it is affordable every tick. On an open
+approach a junction appears 21–25 m ahead; in a cluster of close junctions the
+buffer is already inside the next one and it appears 0.1–5.2 m ahead.
+**Corrections at 4 m of lead or more took; one at 2.5 m did not.** That is the
+design's known ceiling, and the off-route trigger is what covers it.
+
+### Measured, four towns, 56 legs
+
+Every leg driven from a **fresh spawn at its own origin** on a **fresh server**,
+seed 0, no traffic, `replan_every_s=None` so steering is the only variable:
+
+| town | arm | arrived | simulated | driven | legs identical |
+|---|---|---|---|---|---|
+| Town01 | list | 14/14 | 1891 s | 11 986 m | |
+| Town01 | **closed loop** | **14/14** | 1891 s | 11 986 m | **14/14** |
+| Town02 | list | 14/14 | 1063 s | 6 735 m | |
+| Town02 | **closed loop** | **14/14** | 1063 s | 6 735 m | **14/14** |
+| Town03 | list | 11/14 | 10 558 s | 45 311 m | |
+| Town03 | **closed loop** | **14/14** | **2 471 s** | **12 310 m** | 10/14 |
+| Town05 | list | 14/14 | 2928 s | 10 777 m | |
+| Town05 | **closed loop** | **14/14** | 2928 s | 10 777 m | **14/14** |
+
+**52 of 56 legs come out bit-identical.** Town01, Town02 and Town05 are
+untouched to the decimal, which is the property that matters most: those towns
+were already correct, so any scheme that perturbed them would be wrong whatever
+it did elsewhere. All four changed legs are on Town03 — three that never
+arrived now do, and one that regressed.
+
+The three Town03 legs that the positional list loses, and what they cost:
+
+| leg | list | closed loop |
+|---|---|---|
+| `s05 -> s06` | never arrives, 11 044 m | **193 s, 831 m** |
+| `s10 -> s11` | never arrives, 12 369 m | **114 s, 823 m** |
+| `s11 -> s12` | never arrives, 12 852 m | **303 s, 888 m** |
+
+!!! note "Two open items"
+    `s02 -> s03` on Town03 **regressed**, 218 s to 520 s, with 12 corrections
+    and 3 re-plans — it still arrives, but worse. And the Town03 closed-loop
+    arm raises **4 route drops** where the list arm raises none. Under closed
+    loop a drop is informative rather than a slip: it means the turn we asked
+    for does not exist at that junction, most likely the naming difference
+    below.
 
 ## Known remaining difference
 

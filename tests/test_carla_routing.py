@@ -9,6 +9,7 @@ wrong or missing entry throws every later turn onto the wrong junction.
 
 from src.simulation.carla_routing import (
     _lane_key,
+    junction_turns,
     plan_route,
     TURN_THRESHOLD_DEG,
     _heading_change,
@@ -40,14 +41,22 @@ class _Waypoint:
         real junction advertises that there is a choice to make.
     :param signals: Landmark type codes within range, which is the other
         way a junction gets labelled -- see ``_is_labelled``.
+    :param junction: Id of the junction this point lies in, which is what
+        ``junction_turns`` keys its plan by.
     """
 
     def __init__(self, yaw: float, is_junction: bool = False,
-                 exits: int = 2, signals: tuple[str, ...] = ()) -> None:
+                 exits: int = 2, signals: tuple[str, ...] = (),
+                 junction: int = 1) -> None:
         self.transform = _Transform(yaw)
         self.is_junction = is_junction
         self._exits = exits
         self._signals = signals
+        self._junction = junction
+
+    def get_junction(self) -> "_Junction | None":
+        """Return the junction this point is in, as CARLA does."""
+        return _Junction(self._junction) if self.is_junction else None
 
     def next(self, distance: float) -> list["_Waypoint"]:
         """Return as many continuations as this waypoint was given."""
@@ -56,6 +65,16 @@ class _Waypoint:
     def get_landmarks(self, distance: float) -> list["_Landmark"]:
         """Return the landmarks this waypoint was given."""
         return [_Landmark(code) for code in self._signals]
+
+
+class _Junction:
+    """Stands in for carla.Junction.
+
+    :param id: The junction's id.
+    """
+
+    def __init__(self, id: int) -> None:
+        self.id = id
 
 
 class _Landmark:
@@ -69,7 +88,8 @@ class _Landmark:
 
 
 def _through_junction(entry_yaw: float, exit_yaw: float, exits: int = 2,
-                      signals: tuple[str, ...] = ()) -> list[_Waypoint]:
+                      signals: tuple[str, ...] = (),
+                      junction: int = 1) -> list[_Waypoint]:
     """
     Build the shortest route that enters and leaves one junction.
 
@@ -77,12 +97,13 @@ def _through_junction(entry_yaw: float, exit_yaw: float, exits: int = 2,
     :param exit_yaw: Heading on the way out.
     :param exits: Continuations offered on the approach.
     :param signals: Landmark type codes on the approach.
+    :param junction: Id to give the junction being crossed.
     :return: Waypoints in travel order.
     """
     return [
         _Waypoint(entry_yaw, is_junction=False, exits=exits,
                   signals=signals),
-        _Waypoint(entry_yaw, is_junction=True),
+        _Waypoint(entry_yaw, is_junction=True, junction=junction),
         _Waypoint(exit_yaw, is_junction=False),
     ]
 
@@ -187,6 +208,61 @@ def test_turns_come_back_in_the_order_they_must_be_made() -> None:
 
 def test_an_empty_route_is_handled() -> None:
     assert turns_along([]) == []
+
+
+# ---------------------------------------------------------------------------
+# Turns keyed by junction rather than by position
+# ---------------------------------------------------------------------------
+
+def test_every_junction_is_reported_with_its_id() -> None:
+    """No predicate: unlike ``turns_along``, nothing is filtered out."""
+    route = (
+        _through_junction(0.0, 90.0, junction=10)
+        + _through_junction(90.0, 90.0, junction=20)[1:]
+        + _through_junction(90.0, 0.0, junction=30)[1:]
+    )
+    assert junction_turns(route) == [
+        (10, "Right"), (20, "Straight"), (30, "Left"),
+    ]
+
+
+def test_a_junction_the_positional_list_skips_is_still_keyed() -> None:
+    """
+    The failure this exists to remove.
+
+    A junction that neither branches nor is signalised is dropped by
+    ``turns_along`` -- and CARLA spends an entry there anyway, which throws
+    every later turn onto the wrong junction. Keyed by id, it is simply
+    present.
+    """
+    route = (
+        _through_junction(0.0, 90.0, exits=1, junction=10)
+        + _through_junction(90.0, 180.0, junction=20)[1:]
+    )
+    assert turns_along(route) == ["Right"]
+    assert junction_turns(route) == [(10, "Right"), (20, "Right")]
+
+
+def test_a_junction_crossed_twice_appears_twice() -> None:
+    """
+    What a positional list cannot express at all.
+
+    The Town03 leg ``s05 -> s11`` crosses junction 861 twice and turns
+    differently each time.
+    """
+    route = (
+        _through_junction(0.0, 90.0, junction=861)
+        + _through_junction(90.0, 180.0, junction=20)[1:]
+        + _through_junction(180.0, 180.0, junction=861)[1:]
+    )
+    assert junction_turns(route) == [
+        (861, "Right"), (20, "Right"), (861, "Straight"),
+    ]
+
+
+def test_a_route_with_no_junctions_yields_no_pairs() -> None:
+    assert junction_turns([_Waypoint(0.0) for _ in range(5)]) == []
+    assert junction_turns([]) == []
 
 
 # ---------------------------------------------------------------------------

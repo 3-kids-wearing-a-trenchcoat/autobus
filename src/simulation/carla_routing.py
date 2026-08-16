@@ -156,6 +156,24 @@ def _heading_change(before: float, after: float) -> float:
     return (after - before + 180.0) % 360.0 - 180.0
 
 
+def _turn_name(entry_yaw: float, exit_yaw: float) -> str:
+    """
+    Classify one junction manoeuvre from the headings either side of it.
+
+    Shared by both readers below, so the positional list and the
+    junction-keyed one can never classify the same corner differently.
+    :param entry_yaw: Heading on the approach.
+    :param exit_yaw: Heading on the way out.
+    :return: ``"Left"``, ``"Right"`` or ``"Straight"``.
+    """
+    change = _heading_change(entry_yaw, exit_yaw)
+    if change > TURN_THRESHOLD_DEG:
+        return "Right"
+    if change < -TURN_THRESHOLD_DEG:
+        return "Left"
+    return "Straight"
+
+
 def _is_labelled(approach: "carla.Waypoint") -> bool:
     """
     Say whether the traffic manager will label the junction ahead.
@@ -227,17 +245,57 @@ def turns_along(
                 previous.transform.rotation.yaw if decides else None
             )
         elif leaving and entry_yaw is not None:
-            change = _heading_change(
-                entry_yaw, waypoint.transform.rotation.yaw
+            turns.append(
+                _turn_name(entry_yaw, waypoint.transform.rotation.yaw)
             )
-            if change > TURN_THRESHOLD_DEG:
-                turns.append("Right")
-            elif change < -TURN_THRESHOLD_DEG:
-                turns.append("Left")
-            else:
-                turns.append("Straight")
             entry_yaw = None
     return turns
+
+
+def junction_turns(
+    route: list["carla.Waypoint"],
+) -> list[tuple[int, str]]:
+    """
+    Read the manoeuvre at **every** junction the route crosses, keyed by
+    junction.
+
+    The difference from ``turns_along`` is not the geometry — it is that
+    nothing here tries to predict which junctions the traffic manager will
+    spend a route entry at. That prediction is what ``_is_labelled`` exists
+    to make, and it is not derivable: measured 2026-08-15, CARLA labels
+    waypoints *inside* junction connections, never approaches, and no
+    geometric feature separates a labelled connection from an unlabelled
+    one.
+
+    Carrying the junction id removes the need for it. A consumer can match
+    each turn to the junction it belongs to rather than to a position in a
+    list, so an extra or missing entry costs nothing instead of throwing
+    every later turn onto the wrong junction. It also expresses something a
+    positional list cannot: a route that crosses the **same junction
+    twice** and turns differently each time — which the Town03 leg
+    ``s05 -> s11`` does, at junction 861.
+    :param route: Waypoints in travel order, as from ``plan_route``.
+    :return: (junction id, turn name) in the order the route meets them,
+        with repeats where the route revisits a junction.
+    """
+    pairs: list[tuple[int, str]] = []
+    entry_yaw: float | None = None
+    inside: int | None = None
+
+    for previous, waypoint in zip(route, route[1:]):
+        entering = waypoint.is_junction and not previous.is_junction
+        leaving = previous.is_junction and not waypoint.is_junction
+        if entering:
+            entry_yaw = previous.transform.rotation.yaw
+            junction = waypoint.get_junction()
+            inside = None if junction is None else int(junction.id)
+        elif leaving and entry_yaw is not None and inside is not None:
+            pairs.append((
+                inside,
+                _turn_name(entry_yaw, waypoint.transform.rotation.yaw),
+            ))
+            entry_yaw, inside = None, None
+    return pairs
 
 
 def plan_turns(

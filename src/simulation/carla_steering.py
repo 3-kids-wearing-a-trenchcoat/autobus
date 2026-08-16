@@ -9,10 +9,16 @@ sent a 417 m leg 1649 m without arriving, silently: CARLA complains only
 when it can find *no* candidate for the turn requested, so a turn that
 lands on the wrong junction sets ``route_drops=0``.
 
-Five attempts to predict that set failed, and the prediction was then shown
-not to exist — see ``carla_routing._is_labelled`` for what it asks and why
-it asks the wrong question. This module removes the need for it by closing
-the loop instead:
+Five attempts to predict that set failed. ``carla_routing._is_labelled``
+transcribes CARLA's own gate — ``found_landmark || next_swp_size > 1``,
+both evaluated on the approach waypoint — and it is *still* unreliable,
+because CARLA evaluates it over a topology discretised at 5 m while we
+count continuations at ``STEP_M`` = 2 m. Measured 2026-08-16 on Town03
+junction 1901: ``_is_labelled`` says no entry is spent there, and the
+traffic manager's own buffer labels it a decision. Trusting that prediction
+to issue a turn early sent one leg round the same loop thirteen times.
+
+This module therefore never predicts. It closes the loop instead:
 
 * the plan is keyed by **junction id**, not by list position, so an entry
   can only ever be spent at the junction it was meant for, and a route that

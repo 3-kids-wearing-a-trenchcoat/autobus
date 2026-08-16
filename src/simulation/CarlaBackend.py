@@ -5,9 +5,12 @@ methods, and nothing above it changes. The runner still owns the clock, the
 tick order, demand, abandonment and metrics; this only takes destinations and
 reports arrivals.
 
-Steering keeps CARLA's own autonomous driving in charge, as the design
-review settled on: the bus is an ordinary autopilot vehicle, told which turns
-to take at each junction by `TrafficManager.set_route`. The turns come from
+Steering keeps CARLA's own autonomous driving in charge, which is what the
+design review expected rather than required: the bus is an ordinary autopilot
+vehicle, told which turns to take at each junction by
+`TrafficManager.set_route`. The review lists vehicle control as a *risk*,
+mitigated by "CARLA's built-in autonomous driving *should* be sufficient for
+a PoC", and scopes it as contained within the backend. The turns come from
 `carla_routing`, because a destination alone is not something the traffic
 manager can navigate to.
 

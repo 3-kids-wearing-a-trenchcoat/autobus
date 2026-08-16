@@ -35,6 +35,15 @@ dependencies:
   # Graphs (useful for routing / road logic)
   - networkx
 
+  # Required by CARLA's own `agents` package, which drives the bus along a
+  # planned route -- `basic_agent.py` uses it for obstacle detection. That
+  # package is NOT on PyPI and is NOT vendored here: it ships inside the
+  # pinned CARLA image and is installed into this environment by
+  # ./install-carla-agents.sh. Its own requirements.txt also pins
+  # numpy<2.0.0, which is over-broad -- the navigation code runs fine on the
+  # numpy above, measured 2026-08-11.
+  - shapely
+
   # YAML config
   - pyyaml
 

@@ -149,9 +149,18 @@ the routing helper it uses, and nothing above the backend imports either.
 
 #### Getting to a stop
 
-Steering is CARLA's own driving, as the design review intended: the bus is an
+Steering is CARLA's own driving, as the design review expected: the bus is an
 ordinary autopilot vehicle that is told where to go next. *How* it is told is
 the subtle part.
+
+!!! warning "The review predicts this; it does not require it"
+    §4 lists **CARLA vehicle control** as a risk — *"stop sequences must be
+    translated into smooth low-level vehicle commands"* — mitigated by
+    *"CARLA's built-in autonomous driving **should** be sufficient for a
+    PoC"*, with that "should" hedged in the original. It also scopes the
+    concern as *"contained within SimulationBackend, does not affect
+    algorithm correctness"*. Nothing in §1.1 or §1.2 mandates the traffic
+    manager, so replacing how the bus is driven is in scope.
 
 `TrafficManager.set_path` reads like a destination API and is not one. It is a
 **junction-decision** API: at each junction the traffic manager picks the exit

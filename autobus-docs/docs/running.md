@@ -10,6 +10,32 @@ the environment from the project root:
 conda env create -f environment.yml
 ```
 
+### CARLA's `agents` package — a second setup step
+
+Anything that drives a bus in CARLA also needs `agents.navigation`, which
+CARLA does **not** publish to PyPI. The `carla==0.9.16` wheel is client
+bindings only — its entire contents are `__init__.py`, `libcarla.so` and two
+`.pyi` stubs. The `agents` package ships inside the CARLA container image
+instead, which is why CARLA's own documentation shows a plain
+`from agents.navigation.basic_agent import BasicAgent`: their examples run
+from inside the source tree, where the package is already on the path.
+
+So `conda env create` alone does not finish the environment. Run this once:
+
+```bash
+bash install-carla-agents.sh
+```
+
+It copies `agents/` out of the pinned image into the environment's
+`site-packages` and then imports it to check. Re-running replaces the copy.
+
+!!! note "Why it is installed rather than copied into the repository"
+    Vendoring it would put ~1,800 lines of someone else's code under this
+    project's ownership for no benefit. Taking it from the **pinned image**
+    means it cannot drift out of step with the server that runs alongside
+    it, and it stays a dependency like any other. The cost is this extra
+    step, which is fair given the image is required to run CARLA anyway.
+
 ## Running the simulation
 
 Use `run.sh` from the project root to execute Python scripts inside the correct

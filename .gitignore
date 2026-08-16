@@ -8,3 +8,8 @@ __pycache__/.ipynb_checkpoints/
 # Decision 2026-08-11 -- the volume produced makes tracking them impractical.
 # How storage is handled may be revisited; the notebooks are the record.
 /results/runs/
+
+# Runs retired from the store because the code that produced them changed.
+# Kept out of the store so `load_runs` cannot pool them with current results,
+# and out of git for the same reason `/results/runs/` is.
+/results/archive/

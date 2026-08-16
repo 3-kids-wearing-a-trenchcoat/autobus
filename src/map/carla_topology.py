@@ -42,12 +42,15 @@ DEFAULT_TOWN_SPEED_LIMIT_KPH = 30.0
 # posted limit is achieved exactly, which is true of the mock backend by
 # construction and of nothing that drives.
 #
-# Measured on Town01 (``carla_calibrate``, 45 legs x 2 traffic levels): the
-# graph's free-flow estimate is 1.75x optimistic, of which 1.57x is time
-# spent stationary at red lights -- 31-41% of every run. This is a *bias*,
-# not noise; execution noise measured 0.003 (no traffic) to 0.028 (20 NPCs),
-# which is an order of magnitude below anything safety_factor was swept over.
-# A margin cannot repair a biased estimator, so the correction belongs here.
+# Re-measured 2026-08-16 under direct drive (``carla_calibrate``, 3 tours x
+# 4 towns at 20 NPCs, 45/45 legs arriving in every town): the fitted factors
+# run 0.35 (Town05) to 0.64 (Town03), a 1.8x range driven by red-light share
+# -- 32% of leg time on Town01 against 55% on Town05. This is a *bias*, not
+# noise, and a margin cannot repair a biased estimator, so the correction
+# belongs here rather than in safety_factor.
+#
+# The factor is fitted BY DRIVING, so it belongs to the steering it was
+# measured under. Changing how the bus drives invalidates every one of them.
 DEFAULT_TRAFFIC_EFFICIENCY = 1.0
 
 

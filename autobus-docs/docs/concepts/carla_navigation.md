@@ -8,6 +8,31 @@ and `src/simulation/carla_steering.py`, and it is the single component that has
 cost the most debugging effort. This page exists so the next person does not
 rediscover any of it.
 
+!!! success "Current design: the bus drives the route itself"
+    Since 2026-08-16 `CarlaBackend` **defaults to `direct_drive=True`**. The
+    planned waypoints go straight to CARLA's own
+    `agents.navigation.BasicAgent`, which follows them and handles red lights
+    and vehicles ahead:
+
+    ```
+    plan_route(map, origin, destination)  ->  waypoints along lanes
+    agent.set_global_plan(waypoints)      ->  CARLA's agent follows them
+    bus.apply_control(agent.run_step())   ->  every tick
+    ```
+
+    There is **no turn list, no RoadOption to predict, no labelling or
+    consumption rule, and nothing to correct mid-drive**. The planned
+    waypoints *are* the trajectory. Measured over 112 legs across four towns
+    at 0 and 20 NPCs: **56/56 legs arriving both times, zero dropped
+    routes**, and 55% less simulated time than the turn list — which loses
+    three legs entirely.
+
+    Everything below documents the **superseded** `set_route` scheme. It is
+    kept because it is still reachable (`direct_drive=False`), because the
+    campaign results recorded before that date were produced by it, and
+    because its failure modes took a month to understand and should not be
+    rediscovered. See [Direct drive](#direct-drive) at the foot of this page.
+
 There are two ways to do it. The original hands over the whole leg up front:
 
 ```
@@ -426,3 +451,81 @@ When adding or debugging a town:
   factor, because it is fitted by driving.
 - [Travel Model](travel_model.md) — what the policy *believes* about travel
   time, which is a separate quantity from what the bus does.
+
+
+## Direct drive
+
+The scheme in force. `CarlaBackend(direct_drive=True)`, the default.
+
+Autopilot is switched off, `plan_route`'s waypoints are handed to
+`agents.navigation.BasicAgent` via `set_global_plan`, and the backend applies
+`agent.run_step()` on every tick. The agent obeys traffic lights and brakes
+for vehicles ahead; `follow_speed_limits(True)` makes it target the posted
+limit rather than its own 20 km/h default, which is what `traffic_efficiency`
+is defined against.
+
+`agents` is **not vendored** — it is installed from the pinned CARLA image by
+`install-carla-agents.sh`. See [Running the Project](../running.md).
+
+### Why this replaced the turn list
+
+Every failure documented above lived in the *translation* between our route
+and the traffic manager's re-derivation of it: our road model is sampled at
+`STEP_M = 2.0` over `carla.Map`, CARLA's is sampled at `MAP_RESOLUTION = 5.0`
+over `InMemoryMap` with RoadOptions precomputed on **that** graph. Four
+separate bugs, one cause — turn naming, the yaw-wrap arithmetic, the
+labelling predicate, and where entries get consumed. Each fix relocated the
+failure rather than removing it.
+
+Direct drive deletes the translation instead of aligning it.
+
+| arm | arrived | simulated | driven | dropped routes |
+|---|---|---|---|---|
+| positional list | 53/56 | 16 440 s | 74 808 m | 0 |
+| closed loop | 56/56 | 8 352 s | 41 808 m | 4 |
+| **direct drive** | **56/56** | **7 434 s** | **40 035 m** | **0** |
+
+### What it gave up, and what that cost
+
+The bus is no longer a traffic-manager vehicle, so **it cannot change lanes
+or overtake**. It queues behind slow traffic instead of going around. That is
+visible in the calibration as within-leg spread rising from 0.028 to between
+0.04 and 0.19 at the same 20 NPCs: a leg's duration now depends on the
+traffic it happens to meet. It is policy-neutral — every arm meets the same
+traffic — but it widens confidence intervals, which §3.2 constrains.
+
+!!! warning "The plan is the trajectory, so *where* it was computed matters"
+    A turn list did not care where it was planned from. A waypoint list does.
+    The route for the next leg is planned the instant the bus **arrives**,
+    while it is still doing ~8 m/s, and a dwell then carries it several
+    metres past those opening waypoints — beyond the local planner's purge
+    radius, so they are never popped and the agent steers at a target 180°
+    astern. The bus pirouettes at full lock.
+
+    Measured before the fix on a Town01 trial: **306 m driven in 3360 s, 330
+    stall re-paths, every request cancelled.** `_replan_after_dwell` re-plans
+    once the bus is stationary, which removes it by construction.
+
+    Leg-level validation never caught this, because a leg starts from a fresh
+    stationary spawn with `dwell_s=0`. It is why a smoke *trial* is worth
+    running before any campaign.
+
+### The stall detector still earns its place
+
+`_track_stall` is not a routing crutch — under direct drive it is the net for
+a bus **physically displaced**, which re-planning genuinely fixes. It fires
+once in 56 legs, on a Town02 corner where the bus clips the geometry at
+8 m/s and sits wedged at full throttle until re-planned out. That costs 0.16%
+of total simulated time.
+
+Its red-light exemption had to change: `BasicAgent` brakes
+`_base_tlight_threshold` short of a light, which is **outside** the trigger
+volume, so `bus.is_at_traffic_light()` is False and a bus waiting ~28 s at a
+Town01 red read as stalled against a 10 s threshold — 234 phantom re-paths
+across four towns. `_agent_holds_for_hazard` asks the agent instead, taking
+it to 1. `get_traffic_lights_from_waypoint` does **not** substitute: the
+agent latches its light and holds, so the public query returns nothing.
+
+`_track_replan` — the periodic re-issue — is inert under direct drive. It
+existed only because a turn list is handed over once per leg and never
+refreshed.

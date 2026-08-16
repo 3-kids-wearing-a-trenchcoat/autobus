@@ -10,19 +10,25 @@ in the map layer.
 ## What it measures, and why both halves are needed
 
 The graph estimates ``length / speed_limit`` — free flow, with no notion of a
-traffic light. Measured on Town01, that is **1.75x optimistic**, of which
-**1.57x is time spent stationary at red lights**: 31–41% of every run.
+traffic light. Time stationary at reds is what the correction mostly absorbs:
+measured 2026-08-16 under direct drive, **32% of leg time on Town01 rising to
+55% on Town05**.
 
 Driving each leg several times separates two error terms that a campaign's
 aggregate counters cannot:
 
 * **within-leg spread** — execution luck, the thing ``NoisyTravelModel``
-  models and ``safety_factor`` hedges. Measured at **0.003** with no traffic
-  and **0.028** with twenty NPCs, an order of magnitude below the range that
-  knob was ever swept over.
+  models and ``safety_factor`` hedges. **0.04 on Town01 but 0.19 on Town02**
+  under direct drive at twenty NPCs, against 0.028 for the whole set under
+  the old turn-list steering. The bus no longer overtakes — the traffic
+  manager changed lanes around slow vehicles, `BasicAgent` queues behind
+  them — so a leg's duration now depends on the traffic it happens to meet.
 * **between-leg spread** — the estimator being wrong by *different* amounts
-  on different legs. Measured at **0.40**, and it is not noise. A safety
-  margin cannot repair it; only a better estimate can.
+  on different legs. **0.24 on Town01 to 0.55 on Town03**, and it is not
+  noise. A safety margin cannot repair it; only a better estimate can.
+
+⚠ Both spreads are per-town and neither transfers. Quoting one town's figure
+for another is the mistake ``traffic_efficiency`` itself exists to prevent.
 
 So the correction belongs in the map data, as ``traffic_efficiency``, and
 that is what ``--write`` records.

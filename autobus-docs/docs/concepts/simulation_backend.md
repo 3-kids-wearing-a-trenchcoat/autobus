@@ -149,9 +149,16 @@ the routing helper it uses, and nothing above the backend imports either.
 
 #### Getting to a stop
 
-Steering is CARLA's own driving, as the design review expected: the bus is an
-ordinary autopilot vehicle that is told where to go next. *How* it is told is
-the subtle part.
+Steering is CARLA's own driving, as the design review expected. Since
+2026-08-16 that means `direct_drive=True`, the default: the bus is **not** an
+autopilot vehicle, and `plan_route`'s waypoints are handed to
+`agents.navigation.BasicAgent`, which drives them. See
+[Navigating in CARLA](carla_navigation.md#direct-drive).
+
+The rest of this section describes the superseded scheme, where the bus was
+an ordinary autopilot vehicle told which turns to take. *How* it was told is
+the subtle part, and it is documented because that path is still reachable
+with `direct_drive=False`.
 
 !!! warning "The review predicts this; it does not require it"
     §4 lists **CARLA vehicle control** as a risk — *"stop sequences must be

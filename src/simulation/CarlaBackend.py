@@ -14,8 +14,16 @@ a PoC", and scopes it as contained within the backend. The turns come from
 `carla_routing`, because a destination alone is not something the traffic
 manager can navigate to.
 
-**This module imports carla.** Nothing else under `src/simulation` does, and
-nothing above the backend imports this.
+With ``direct_drive=True`` it stops negotiating with the traffic manager
+altogether and drives the planned route itself, through CARLA's own
+`agents.navigation.BasicAgent`. There is then no turn list, no RoadOption to
+predict and nothing to correct mid-drive: the planned waypoints *are* the
+trajectory. See ``_make_agent``.
+
+**This module imports carla**, and — for ``direct_drive`` — CARLA's `agents`
+package, which is installed by ``install-carla-agents.sh`` rather than
+vendored. Nothing else under `src/simulation` imports either, and nothing
+above the backend imports this.
 """
 
 import math
@@ -27,6 +35,9 @@ from collections.abc import Sequence
 
 from src.algorithm.RequestPool import RequestPool
 from src.simulation import carla_debug_text, carla_stdout
+from agents.navigation.basic_agent import BasicAgent
+from agents.navigation.local_planner import RoadOption
+
 from src.simulation.carla_routing import (
     junction_turns, plan_route, turns_along,
 )
@@ -274,6 +285,12 @@ class CarlaBackend(SimulationBackend):
         which junctions spend an entry, and that guess is not derivable —
         see ``carla_steering``. Defaults to False so every result recorded
         before it stays reproducible.
+    :param direct_drive: Drive the planned route directly with CARLA's own
+        `BasicAgent` instead of handing the traffic manager a turn list.
+        Autopilot is switched off and the backend applies the agent's control
+        each tick. This removes the entire turn-list translation — every
+        failure it caused is structurally impossible — at the cost of the bus
+        no longer being a traffic-manager vehicle. Overrides ``closed_loop``.
     :param follow_camera: Move the spectator camera to sit behind and above
         the bus on every tick, so a rendering server shows a chase view.
         Pointless with ``no_rendering=True``, where there is nothing to look
@@ -339,6 +356,7 @@ class CarlaBackend(SimulationBackend):
         repath_after_s: float = 10.0,
         replan_every_s: float | None = None,
         closed_loop: bool = False,
+        direct_drive: bool = False,
         follow_camera: bool = False,
         debug_draw: bool = False,
         viewer: bool = False,
@@ -375,7 +393,11 @@ class CarlaBackend(SimulationBackend):
         self._blueprint_id = blueprint_id
         self._repath_after_s = repath_after_s
         self._replan_every_s = replan_every_s
-        self._steering = ClosedLoopSteering() if closed_loop else None
+        self._direct_drive = direct_drive
+        self._agent: object | None = None
+        self._steering = (
+            ClosedLoopSteering() if closed_loop and not direct_drive else None
+        )
         self._since_steer_replan_s = 0.0
         self._follow_camera = follow_camera
         self._debug_draw = debug_draw
@@ -1348,6 +1370,11 @@ class CarlaBackend(SimulationBackend):
         :return: Tag fields naming what the traffic manager intends to do
             next and where the next junction along the lane is.
         """
+        if self._direct_drive:
+            # The bus is not an autopilot vehicle, so the traffic manager
+            # holds no buffer for it and asking would be meaningless at best.
+            return ["tm_next=n/a(direct_drive)"]
+
         action, target = self._traffic_manager.get_next_action(bus)
         gap = target.transform.location.distance(bus.get_location())
         parts = [
@@ -1403,11 +1430,16 @@ class CarlaBackend(SimulationBackend):
         if self._dwell_remaining > 0.0:
             # Hold the bus still for the dwell. Autopilot is left on so the
             # traffic manager keeps its route; the brake simply overrides it.
+            # Under ``direct_drive`` nothing else is driving anyway, so the
+            # same brake is the whole story and the agent is simply not
+            # stepped this tick.
             bus.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0))
             self._dwell_remaining -= self._delta
             if self._dwell_remaining <= 0.0:
                 self._dwell_remaining = 0.0
                 bus.apply_control(carla.VehicleControl(brake=0.0))
+        elif self._direct_drive:
+            self._drive_agent(bus)
 
         if self._follow_camera:
             self._point_camera_at(bus)
@@ -1423,6 +1455,21 @@ class CarlaBackend(SimulationBackend):
 
         self._track_replan(bus)
         self._track_steering(bus)
+
+    def _drive_agent(self, bus: "carla.Actor") -> None:
+        """
+        Apply one step of CARLA's driving agent.
+
+        The agent owns throttle, brake and steering; it also stops at red
+        lights and behind vehicles, which under the traffic manager were the
+        simulator's job. It is only stepped while a leg is armed — between
+        legs there is no route to follow, and stepping a finished plan makes
+        the agent emit a stop it does not need to.
+        :param bus: The bus actor.
+        """
+        if self._agent is None or not self._leg_armed:
+            return
+        bus.apply_control(self._agent.run_step())
 
     def _track_steering(self, bus: "carla.Actor") -> None:
         """
@@ -1475,6 +1522,16 @@ class CarlaBackend(SimulationBackend):
         30 s and 120 s made one of them three times slower.
         :param bus: The bus actor.
         """
+        if self._direct_drive:
+            # Nothing to re-establish. This exists because `set_route` hands
+            # the traffic manager one turn list per leg and never refreshes
+            # it, so a list that ran out or slipped left the bus navigating
+            # at random. Under ``direct_drive`` there is no list: the agent
+            # follows the planned waypoints and cannot take a turn we did not
+            # plan, so a periodic re-plan corrects nothing and only resets
+            # the agent's queue mid-drive. ``_track_stall`` remains as the
+            # net for a bus displaced by a collision.
+            return
         if self._replan_every_s is None or not self._leg_armed:
             return
         if self._destination is None or self._dwell_remaining > 0.0:
@@ -1602,9 +1659,56 @@ class CarlaBackend(SimulationBackend):
             and that light is red. A green light reads as False, so a bus
             that sits still on green is still treated as stalled.
         """
+        if self._direct_drive:
+            return self._agent_holds_for_hazard(bus)
         if not bus.is_at_traffic_light():
             return False
         return bus.get_traffic_light_state() == carla.TrafficLightState.Red
+
+    def _agent_holds_for_hazard(self, bus: "carla.Actor") -> bool:
+        """
+        Ask the driving agent whether it is deliberately holding the bus.
+
+        ``is_at_traffic_light`` is the wrong question under ``direct_drive``:
+        `BasicAgent` brakes ``_base_tlight_threshold`` short of the light,
+        which is **outside** its trigger volume, so CARLA reports no light
+        and the bus reads as stalled. Measured on Town01, where reds run
+        ~28 s against a 10 s stall threshold, that turned every red into two
+        or three phantom re-paths -- 234 across the four towns, every one of
+        them with the agent reporting a red light and no vehicle.
+
+        The agent's own determination is the only reliable signal: it latches
+        a red light and keeps holding for it, so neither
+        ``get_traffic_lights_from_waypoint`` nor the trigger volume sees what
+        it is waiting for.
+
+        These two helpers are underscore-private in CARLA's package, which is
+        pinned and never edited here; the alternative is re-deriving a
+        judgement the agent has already made and can only disagree with.
+        :param bus: The bus actor.
+        :return: True if a red light or a vehicle ahead is the reason.
+        """
+        if self._agent is None:
+            return False
+        # Both thresholds scale with speed exactly as `run_step` does.
+        speed_kmh = bus.get_velocity().length() * 3.6
+        try:
+            held_by_light, _ = self._agent._affected_by_traffic_light(
+                self._agent._lights_list,
+                self._agent._base_tlight_threshold
+                + self._agent._speed_ratio * speed_kmh,
+            )
+            if held_by_light:
+                return True
+            held_by_vehicle, _, _ = self._agent._vehicle_obstacle_detected(
+                self._world.get_actors().filter("*vehicle*"),
+                self._agent._base_vehicle_threshold
+                + self._agent._speed_ratio * speed_kmh,
+            )
+            return bool(held_by_vehicle)
+        except Exception:                           # noqa: BLE001
+            # A diagnostic must never be able to stop a run.
+            return False
 
     def _steer_towards(self, bus: "carla.Actor", stop_id: str) -> None:
         """
@@ -1628,6 +1732,16 @@ class CarlaBackend(SimulationBackend):
             self._location_of(stop_id),
         )
         self._remember_debug_route(route)
+        if self._direct_drive and route is not None:
+            # The waypoints are the trajectory. RoadOption is bookkeeping for
+            # the agent's own planner here, not a decision CARLA re-derives,
+            # so LANEFOLLOW throughout is both honest and sufficient.
+            self._issued_turns = []
+            self._issued_at_s = self._stats["ticks"] * self._delta
+            self._agent.set_global_plan(
+                [(waypoint, RoadOption.LANEFOLLOW) for waypoint in route]
+            )
+            return
         if route is None:
             # Nothing sensible to say, so fall back to the old behaviour of
             # simply aiming at the stop. It is poor, but an instruction the
@@ -1717,7 +1831,12 @@ class CarlaBackend(SimulationBackend):
             )
 
         self._bus_id = bus.id
-        bus.set_autopilot(True, self._traffic_manager.get_port())
+        if self._direct_drive:
+            # We apply control ourselves every tick; autopilot would fight it.
+            bus.set_autopilot(False)
+            self._agent = self._make_agent(bus, carla_map)
+        else:
+            bus.set_autopilot(True, self._traffic_manager.get_port())
         self._last_location = bus.get_location()
 
         # Let the vehicle settle onto its suspension before anything reads
@@ -1725,6 +1844,33 @@ class CarlaBackend(SimulationBackend):
         for _ in range(int(round(0.5 / self._delta))):
             self._world.tick()
             self._stats["ticks"] += 1
+
+    def _make_agent(self, bus: "carla.Actor",
+                    carla_map: "carla.Map") -> BasicAgent:
+        """
+        Build CARLA's own driving agent for the bus.
+
+        `BasicAgent` is what the traffic manager was standing in for: it
+        follows a route it is given, obeys traffic lights and brakes for
+        vehicles ahead. The difference that matters is that it **follows**
+        the route rather than re-deriving it from a list of turns, so
+        nothing can reinterpret where we meant to go.
+        :param bus: The bus actor.
+        :param carla_map: The town's map, passed in so the agent does not
+            fetch its own — that call is expensive and we already hold one.
+        :return: The agent, ready for ``set_global_plan``.
+        """
+        agent = BasicAgent(bus, map_inst=carla_map, opt_dict={
+            # The PID gains are tuned against a timestep; leaving this at its
+            # 1/20 s default while the world ticks at something else would
+            # silently mistune them.
+            "dt": self._delta,
+            # Drive at the posted limit rather than the agent's flat 20 km/h
+            # default, which is what the traffic manager did and what the
+            # calibrated travel model expects.
+            "follow_speed_limits": True,
+        })
+        return agent
 
     def _waiting_spot(self, stop_id: str) -> "carla.Transform":
         """

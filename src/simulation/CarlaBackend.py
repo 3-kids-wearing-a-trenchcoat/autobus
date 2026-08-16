@@ -1443,6 +1443,7 @@ class CarlaBackend(SimulationBackend):
             if self._dwell_remaining <= 0.0:
                 self._dwell_remaining = 0.0
                 bus.apply_control(carla.VehicleControl(brake=0.0))
+                self._replan_after_dwell(bus)
         elif self._direct_drive:
             self._drive_agent(bus)
 
@@ -1460,6 +1461,35 @@ class CarlaBackend(SimulationBackend):
 
         self._track_replan(bus)
         self._track_steering(bus)
+
+    def _replan_after_dwell(self, bus: "carla.Actor") -> None:
+        """
+        Re-plan from where the bus actually stopped, once the dwell ends.
+
+        The route for the next leg is planned the instant the bus *arrives*,
+        which is while it is still doing ~8 m/s: the runner is handed the
+        arrival and issues the next destination on the same tick. The dwell
+        then brakes for its full length, and the bus rolls several metres
+        past the point that route was planned from.
+
+        Under the traffic manager that cost nothing — a turn list does not
+        care where it was computed. Under ``direct_drive`` the plan is the
+        trajectory, so those opening waypoints are now *behind* the bus by
+        more than the local planner's purge radius. They are never popped,
+        the agent steers at a target 180 degrees astern, and the bus
+        pirouettes at full lock until something rescues it. Measured on a
+        Town01 trial: 306 m driven in 3360 s, 330 stall re-paths, every
+        request cancelled.
+
+        Re-planning here costs one search per stop and removes the failure
+        by construction, because the bus is stationary when it happens.
+        :param bus: The bus actor.
+        """
+        if not self._direct_drive or not self._leg_armed:
+            return
+        if self._destination is None or self._traffic_manager is None:
+            return
+        self._steer_towards(bus, self._destination)
 
     def _drive_agent(self, bus: "carla.Actor") -> None:
         """

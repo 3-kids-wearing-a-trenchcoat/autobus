@@ -206,6 +206,7 @@ def calibrate(
     town: str, tours: int, npc_vehicles: int, host: str, port: int,
     verbose: bool = True,
     replan_every_s: float | None = CAMPAIGN_REPLAN_EVERY_S,
+    direct_drive: bool = True,
 ) -> dict[str, object]:
     """
     Drive a town and report how its estimates compare with the driving.
@@ -219,7 +220,14 @@ def calibrate(
     :param verbose: Print each leg as it completes.
     :param replan_every_s: How often to re-issue the route while driving.
         Must match what the campaign uses, or the factor describes a bus the
-        campaign never has — see ``CAMPAIGN_REPLAN_EVERY_S``.
+        campaign never has — see ``CAMPAIGN_REPLAN_EVERY_S``. Ignored under
+        ``direct_drive``, which has no turn list to re-issue.
+    :param direct_drive: Drive with CARLA's own agent rather than handing the
+        traffic manager a turn list. **Must match the campaign.** The factor
+        is fitted *by driving*, so a bus calibrated one way and campaigned
+        the other gives the policy an estimate of a bus it never has:
+        measured over 56 legs, direct drive is 55% faster than the turn list
+        and reaches stops the turn list never does.
     :return: The full report, ready for JSON.
     """
     provider = CarlaMapProvider(town)
@@ -232,6 +240,7 @@ def calibrate(
         stop_positions=positions, position=order[0], town=town,
         host=host, port=port, npc_vehicles=npc_vehicles, seed=0,
         no_rendering=True, replan_every_s=replan_every_s,
+        direct_drive=direct_drive,
     )
     started = time.perf_counter()
     backend.start()
@@ -553,11 +562,15 @@ def main(argv: list[str] | None = None) -> int:
                         help="Write the full report here as JSON.")
     parser.add_argument("--write", action="store_true",
                         help="Record traffic_efficiency into the town's dump.")
+    parser.add_argument("--turn-list", action="store_true",
+                        help="Calibrate the pre-2026-08-16 turn-list "
+                             "steering instead of CARLA's own agent.")
     arguments = parser.parse_args(argv)
 
     summary = calibrate(
         arguments.town, arguments.tours, arguments.npc_vehicles,
         arguments.host, arguments.port,
+        direct_drive=not arguments.turn_list,
     )
     report(summary)
 

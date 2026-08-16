@@ -291,6 +291,11 @@ class CarlaBackend(SimulationBackend):
         each tick. This removes the entire turn-list translation — every
         failure it caused is structurally impossible — at the cost of the bus
         no longer being a traffic-manager vehicle. Overrides ``closed_loop``.
+
+        **The default since 2026-08-16**, on 112 legs across four towns at 0
+        and 20 NPCs: 56/56 arriving both times, no dropped routes, and 55%
+        less simulated time than the turn list, which loses 3 legs entirely.
+        Set False only to reproduce a result recorded before that date.
     :param follow_camera: Move the spectator camera to sit behind and above
         the bus on every tick, so a rendering server shows a chase view.
         Pointless with ``no_rendering=True``, where there is nothing to look
@@ -356,7 +361,7 @@ class CarlaBackend(SimulationBackend):
         repath_after_s: float = 10.0,
         replan_every_s: float | None = None,
         closed_loop: bool = False,
-        direct_drive: bool = False,
+        direct_drive: bool = True,
         follow_camera: bool = False,
         debug_draw: bool = False,
         viewer: bool = False,

@@ -18,21 +18,15 @@ services:
     environment:
       DISPLAY: ${DISPLAY}
       XAUTHORITY: /tmp/.Xauthority
-      SDL_VIDEODRIVER: x11
+      SDL_VIDEODRIVER: dummy
+      VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
       # sanity check
       # LIBGL_ALWAYS_SOFTWARE: "1"
 
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
-      - /usr/lib:/usr/lib:ro
-      - /usr/lib64:/usr/lib64:ro
 
       - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.Xauthority:rw # Map host auth to container
-
-      - /usr/lib/libdrm.so.2:/usr/lib/libdrm.so.2:ro
-      - /usr/lib/libdrm_amdgpu.so.1:/usr/lib/libdrm_amdgpu.so.1:ro
-      - /usr/lib/libvulkan.so.1:/usr/lib/libvulkan.so.1:ro
-      - /usr/share/vulkan:/usr/share/vulkan:ro
 
     # command: ["bash", "CarlaUE4.sh", "-nosound"]
 

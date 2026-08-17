@@ -1,9 +1,9 @@
 {
  "schema_version": 2,
  "map": "Town02",
- "note": "re-dumped 2026-08-17 to record lane-change legality; speed limits and traffic_efficiency carried over unchanged",
+ "note": "traffic_efficiency 0.4478 calibrated over 45 legs at 20 NPCs; previous factor 0.458",
  "default_speed_limit_kph": 30.0,
- "traffic_efficiency": 0.458,
+ "traffic_efficiency": 0.4478,
  "speed_limit_overrides": {
   "18": 30.0,
   "13": 31.98,

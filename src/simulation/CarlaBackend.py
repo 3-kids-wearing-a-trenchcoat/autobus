@@ -32,6 +32,7 @@ import re
 import socket
 
 from collections.abc import Sequence
+from typing import Callable
 
 from src.algorithm.RequestPool import RequestPool
 from src.simulation import carla_debug_text, carla_stdout
@@ -249,6 +250,12 @@ class CarlaBackend(SimulationBackend):
         ``get_stops()``; taken as plain coordinates so this class needs no
         map layer of its own.
     :param position: TransitGraph node ID of the stop the bus starts at.
+    :param speed_for: Posted speed limit in km/h for an OpenDRIVE road ID,
+        from ``speed_limits_from(provider)``. Routes are planned to minimise
+        travel time when this is given and distance when it is not, and only
+        the former matches how ``TransitGraph`` prices a leg — so leaving it
+        out has the bus drive routes the policy never costed. Defaults to
+        None, which reproduces every run recorded before 2026-08-17.
     :param town: Town to load. The server defaults to Town10HD on startup,
         so this is loaded unless it is already the current map.
     :param host: CARLA server host.
@@ -347,6 +354,7 @@ class CarlaBackend(SimulationBackend):
         self,
         stop_positions: dict[str, tuple[float, float, float]],
         position: str,
+        speed_for: Callable[[int], float] | None = None,
         town: str = "Town01",
         host: str = "localhost",
         port: int = 2000,
@@ -396,6 +404,7 @@ class CarlaBackend(SimulationBackend):
         self._npc_vehicles = npc_vehicles
         self._seed = seed
         self._blueprint_id = blueprint_id
+        self._speed_for = speed_for
         self._repath_after_s = repath_after_s
         self._replan_every_s = replan_every_s
         self._direct_drive = direct_drive
@@ -1765,6 +1774,7 @@ class CarlaBackend(SimulationBackend):
             self._world.get_map(),
             origin,
             self._location_of(stop_id),
+            self._speed_for,
         )
         self._remember_debug_route(route)
         if self._direct_drive and route is not None:
@@ -2021,3 +2031,19 @@ def stop_positions_from(provider: object) -> dict[str, tuple[float, float,
         stop.edge.id: (stop.x, stop.y, stop.z)
         for stop in provider.get_stops()
     }
+
+
+def speed_limits_from(provider: object) -> Callable[[int], float]:
+    """
+    Build the speed-limit lookup the route planner prices travel time with.
+
+    The same table ``TransitGraph`` weights its edges by, so the planner and
+    the policy cost a leg the same way. ``speed_limit_for`` already falls back
+    to the town default for roads carrying no sign, so the caller never has to
+    know what that default is.
+    :param provider: A CarlaMapProvider, whose topology carries the limits
+        read from the town's speed-limit landmarks at dump time.
+    :return: Callable from OpenDRIVE road ID to speed limit in km/h.
+    :raises AttributeError: If the provider has no topology to read.
+    """
+    return provider.topology.speed_limit_for

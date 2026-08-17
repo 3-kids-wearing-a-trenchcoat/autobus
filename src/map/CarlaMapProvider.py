@@ -71,6 +71,11 @@ POSITION_PRECISION = 3
 # can never grow wider than this.
 NODE_SNAP_M = 0.25
 
+# How far apart two lanes' edges may start and still be neighbours.
+# CARLA lanes sit ~3.5 m apart; the window is wide enough for a
+# widened lane and far too narrow to reach across a carriageway.
+LANE_GAP_M = (1.5, 6.0)
+
 # A split is skipped when it would leave a sub-edge shorter than this, which
 # would otherwise put a zero-weight edge in the graph.
 MIN_EDGE_M = 0.5
@@ -92,6 +97,7 @@ class CarlaMapProvider(MapProvider):
     ) -> None:
         self._topology: CarlaTopology = load_topology(town, directory)
         self._authored: list[CarlaStop] = load_stops(town, directory)
+        self._edge_segment: dict[str, RoadSegment] = {}
 
         self._nodes: list[RoadNodeRecord] = []
         self._edges: list[RoadEdgeRecord] = []
@@ -123,6 +129,93 @@ class CarlaMapProvider(MapProvider):
     def get_road_edges(self) -> list[RoadEdgeRecord]:
         """Return every directed road edge, segments split at their stops."""
         return list(self._edges)
+
+    def get_lane_changes(self) -> list[tuple[str, str]]:
+        """
+        Road edges a bus may legally move sideways between.
+
+        Two edges are lateral neighbours when they belong to adjacent lanes
+        of one road, running the same way, and the markings on the origin
+        lane permit crossing towards the target. Which side the target lies
+        on is decided **geometrically**, from the origin's heading and the
+        offset to the target, rather than from lane-ID arithmetic: the
+        OpenDRIVE numbering flips meaning between positive and negative
+        lanes, and transcribing that by hand is a known way to get it
+        backwards.
+
+        A lane change is placed where an edge begins, since that is where the
+        graph can represent it. Real changes happen part way along a lane, so
+        this under-counts the opportunities rather than inventing any.
+        :return: ``(from_edge_id, to_edge_id)`` pairs.
+        """
+        by_road: dict[int, list[RoadEdgeRecord]] = {}
+        for edge in self._edges:
+            segment = self._edge_segment.get(edge.id)
+            if segment is not None:
+                by_road.setdefault(segment.road_id, []).append(edge)
+
+        pairs: list[tuple[str, str]] = []
+        for edges in by_road.values():
+            for origin in edges:
+                pairs.extend(self._lane_changes_from(origin, edges))
+        return sorted(set(pairs))
+
+    def _lane_changes_from(
+        self, origin: RoadEdgeRecord, on_road: list[RoadEdgeRecord]
+    ) -> list[tuple[str, str]]:
+        """
+        Legal sideways moves leaving one edge.
+        :param origin: The edge being left.
+        :param on_road: Every edge on the same road.
+        :return: ``(from_edge_id, to_edge_id)`` pairs leaving ``origin``.
+        """
+        here = self._edge_segment[origin.id]
+        start = self._node_position(origin.from_node_id)
+        heading = self._edge_heading(origin)
+        if heading is None:
+            return []
+
+        best: dict[int, tuple[float, RoadEdgeRecord]] = {}
+        for target in on_road:
+            there = self._edge_segment[target.id]
+            if target.id == origin.id or there is here:
+                continue
+            if (there.lane_id > 0) != (here.lane_id > 0):
+                continue                    # oncoming carriageway
+            if abs(abs(there.lane_id) - abs(here.lane_id)) != 1:
+                continue                    # not the next lane over
+            offset = self._node_position(target.from_node_id)
+            across = (offset[0] - start[0], offset[1] - start[1])
+            gap = math.hypot(*across)
+            if not LANE_GAP_M[0] <= gap <= LANE_GAP_M[1]:
+                continue
+            # z of the cross product: positive means the target lies to one
+            # consistent side of the heading. Which side that is depends on
+            # the handedness of the coordinates, so it is checked against
+            # CARLA rather than assumed -- see the lane-change verification.
+            side = heading[0] * across[1] - heading[1] * across[0]
+            allowed = (here.may_change_left() if side < 0
+                       else here.may_change_right())
+            if not allowed:
+                continue
+            # One move per neighbouring lane: the nearest place to cross.
+            keep = best.get(there.lane_id)
+            if keep is None or gap < keep[0]:
+                best[there.lane_id] = (gap, target)
+        return [(origin.id, target.id) for _, target in best.values()]
+
+    def _node_position(self, node_id: str) -> tuple[float, float, float]:
+        """Coordinates of a road node."""
+        node = next(n for n in self._nodes if n.id == node_id)
+        return (node.x, node.y, node.z)
+
+    def _edge_heading(self, edge: RoadEdgeRecord) -> tuple[float, float] | None:
+        """Unit heading of an edge, or None if it has no length."""
+        start = self._node_position(edge.from_node_id)
+        end = self._node_position(edge.to_node_id)
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        norm = math.hypot(dx, dy)
+        return (dx / norm, dy / norm) if norm > 1e-6 else None
 
     def traffic_efficiency(self) -> float:
         """
@@ -207,7 +300,10 @@ class CarlaMapProvider(MapProvider):
             ))
 
         for index, segment in enumerate(self._topology.segments):
+            before = len(self._edges)
             self._split_segment(segment, stops_by_segment.get(index, []))
+            for edge in self._edges[before:]:
+                self._edge_segment[edge.id] = segment
 
     def _position_key(self, point: object) -> tuple[float, float, float]:
         """

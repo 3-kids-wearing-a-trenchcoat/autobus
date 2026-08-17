@@ -36,4 +36,21 @@ class MapProvider(ABC):
         """
         return 1.0
 
+    def get_lane_changes(self) -> list[tuple[str, str]]:
+        """
+        Road edges a vehicle may move sideways between.
+
+        Deciding this needs lane identity and the road markings that govern
+        it, which only the map source has — so it is answered here rather
+        than re-derived from geometry in TransitGraph.
+
+        Deliberately **not abstract**, and defaulting to none, for the same
+        reason as ``traffic_efficiency``: a planar graph has no lanes to
+        change between, and every synthetic result this project rests on
+        must keep producing identical numbers.
+        :return: ``(from_edge_id, to_edge_id)`` pairs, each a legal lateral
+            move. Directed: legality is not always symmetric.
+        """
+        return []
+
     # TODO: some kind of update method

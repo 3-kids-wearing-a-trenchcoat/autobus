@@ -74,6 +74,37 @@ def walk_segment(
     return walked
 
 
+def lane_change_along(waypoints: list["carla.Waypoint"]) -> str:
+    """
+    Name the lane changes legal along a whole segment.
+
+    ``lane_change`` is a property of a waypoint, not of a segment: the road
+    markings can turn solid part way along. The **most restrictive** value
+    wins, because a manoeuvre is only safe to plan if it is legal for the
+    whole stretch the planner might place it on -- and the graph places a
+    lane change at a segment boundary without knowing where along the lane
+    the vehicle will actually move over.
+    :param waypoints: The segment's sampled waypoints.
+    :return: One of "None", "Left", "Right", "Both".
+    """
+    import carla
+
+    left = right = True
+    for waypoint in waypoints:
+        change = waypoint.lane_change
+        left = left and change in (carla.LaneChange.Left,
+                                   carla.LaneChange.Both)
+        right = right and change in (carla.LaneChange.Right,
+                                     carla.LaneChange.Both)
+        if not (left or right):
+            return "None"
+    if left and right:
+        return "Both"
+    if left:
+        return "Left"
+    return "Right" if right else "None"
+
+
 def with_terminus(
     points: tuple[SegmentPoint, ...], location: "carla.Location"
 ) -> tuple[SegmentPoint, ...]:
@@ -257,7 +288,8 @@ def dump_world(
     seen: set[tuple] = set()
 
     for entry, exit_waypoint in carla_map.get_topology():
-        points = to_points(walk_segment(entry, exit_waypoint))
+        walked = walk_segment(entry, exit_waypoint)
+        points = to_points(walked)
         if not points:
             continue
         points = with_terminus(points, exit_waypoint.transform.location)
@@ -279,6 +311,7 @@ def dump_world(
             lane_id=entry.lane_id,
             is_junction=entry.is_junction,
             points=points,
+            lane_change=lane_change_along(walked),
         ))
 
     if overrides is None:

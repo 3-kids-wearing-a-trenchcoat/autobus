@@ -1,6 +1,8 @@
 import networkx as nx
 from itertools import permutations
-from src.map.map_data import StopRecord, RoadNodeRecord, RoadEdgeRecord, DEFAULT_SPEED_LIMIT
+from src.map.map_data import (StopRecord, RoadNodeRecord, RoadEdgeRecord,
+                              DEFAULT_SPEED_LIMIT, LANE_CHANGE_RAMP_M,
+                              LANE_CHANGE_PENALTY_S)
 from src.map.MapProvider import MapProvider
 
 def _dict_edge_by_origin_node(road_nodes: list[RoadNodeRecord],
@@ -50,6 +52,49 @@ def _calc_weights(graph: nx.DiGraph, traffic_efficiency: float = 1.0) -> None:
         travel_time_s = length_m / (speed_limit_mps * traffic_efficiency)
         graph[origin_id][dest_id]["weight"] = travel_time_s
 
+
+def _add_lane_changes(graph: nx.DiGraph, provider: MapProvider,
+                      traffic_efficiency: float = 1.0) -> int:
+    """
+    Add the sideways moves between lanes that the map source reports.
+
+    Road edges are joined end to end, which is complete on a single-lane
+    grid and badly incomplete on a multi-lane one: parallel lanes only meet
+    at junctions, so reaching the lane a stop sits in can mean driving round
+    the block. Measured on Town05, that inflated a 164 m hop into a 706 m
+    drive.
+
+    Priced, not free. A lane change costs the time to drive its ramp plus a
+    penalty, and both come from ``map_data`` so the CARLA route planner
+    charges the same thing -- a planner and a policy that disagree here have
+    the bus beating or missing its own estimates.
+
+    Run after ``_calc_weights``, which derives every weight from the origin
+    node's own length and speed and would therefore misprice a lateral move.
+    :param graph: The edge-node graph, modified in place.
+    :param provider: Map source, asked which edges are lane neighbours.
+    :param traffic_efficiency: Fraction of the posted limit actually
+        achieved, applied to the ramp exactly as it is to ordinary travel.
+    :return: How many lane-change edges were added.
+    """
+    added = 0
+    for origin_id, destination_id in provider.get_lane_changes():
+        if not (graph.has_node(origin_id) and graph.has_node(destination_id)):
+            continue
+        if graph.has_edge(origin_id, destination_id):
+            continue        # already reachable by driving; no need to cross
+        speed_limit_kph = (graph.nodes[origin_id].get("speed_limit")
+                           or DEFAULT_SPEED_LIMIT)
+        speed_mps = speed_limit_kph * 1000 / 3600 * traffic_efficiency
+        graph.add_edge(
+            origin_id, destination_id,
+            weight=LANE_CHANGE_RAMP_M / speed_mps + LANE_CHANGE_PENALTY_S,
+            kind="lane_change",
+        )
+        added += 1
+    return added
+
+
 def _build_map(provider: MapProvider) -> nx.DiGraph:
     """
     Generate an edge-node graph representing the road map, where each directed edge A -> B from the world map
@@ -80,6 +125,8 @@ def _build_map(provider: MapProvider) -> nx.DiGraph:
             output.add_edge(origin_edge_id, dest.id)
     # Give edges weights, that they may be used with built-in networkx algorithms
     _calc_weights(output, provider.traffic_efficiency())
+    # After weighting: a lane change is not priced by the origin's length.
+    _add_lane_changes(output, provider, provider.traffic_efficiency())
 
     return output
 

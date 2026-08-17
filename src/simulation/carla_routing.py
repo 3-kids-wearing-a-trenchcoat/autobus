@@ -28,6 +28,13 @@ from typing import Callable, NamedTuple
 
 import carla
 
+# The one place a lane change is priced. Imported rather than repeated
+# because TransitGraph charges the same thing, and a planner that
+# disagrees with the policy has the bus beating its own estimates.
+# ``map_data`` imports nothing from this project, so this cannot cycle.
+from src.map.map_data import (LANE_CHANGE_PENALTY_S,
+                              LANE_CHANGE_RAMP_M)
+
 # How far apart successive waypoints are while searching. Small enough to
 # resolve short junction links, large enough that a whole town stays a few
 # thousand nodes.
@@ -95,6 +102,7 @@ def plan_route(
     origin: "carla.Location",
     destination: "carla.Location",
     speed_for: Callable[[int], float] | None = None,
+    lane_changes: bool = False,
 ) -> list["carla.Waypoint"] | None:
     """
     Find the quickest driveable path along lanes from one location to another.
@@ -119,6 +127,11 @@ def plan_route(
         normally ``CarlaTopology.speed_limit_for``. Defaults to None, which
         charges every step equally and therefore minimises distance, the
         behaviour this planner had before travel time was priced.
+    :param lane_changes: Let the search move sideways into a legal adjacent
+        lane. Without it a route can only finish in the goal's lane by
+        driving round the block — measured on Town05, a 164 m hop becomes a
+        706 m drive. Defaults to False, which reproduces every run recorded
+        before 2026-08-17.
     :return: Waypoints from origin to destination, or None if unreachable.
     """
     start = carla_map.get_waypoint(
@@ -130,11 +143,54 @@ def plan_route(
     goal_lane = (goal.road_id, goal.lane_id)
     goal_location = goal.transform.location
 
+    def speed_mps(waypoint: "carla.Waypoint") -> float:
+        """Posted limit on this waypoint's road, in metres per second."""
+        return speed_for(waypoint.road_id) * 1000 / 3600
+
     def step_cost(waypoint: "carla.Waypoint") -> float:
         """Cost of stepping STEP_M on from this waypoint."""
         if speed_for is None:
             return 1.0
-        return STEP_M / (speed_for(waypoint.road_id) * 1000 / 3600)
+        return STEP_M / speed_mps(waypoint)
+
+    def sideways(waypoint: "carla.Waypoint") -> list:
+        """
+        Legal lane changes leaving this waypoint, already along their ramp.
+
+        The neighbour is advanced LANE_CHANGE_RAMP_M so the move is a
+        diagonal rather than a sideways teleport: a single lateral waypoint
+        asks BasicAgent's controller for a step it cannot track.
+        :param waypoint: Waypoint to leave sideways.
+        :return: (waypoint, cost) pairs.
+        """
+        if not lane_changes:
+            return []
+        change = waypoint.lane_change
+        moves = []
+        for neighbour, permitted in (
+            (waypoint.get_left_lane(),
+             (carla.LaneChange.Left, carla.LaneChange.Both)),
+            (waypoint.get_right_lane(),
+             (carla.LaneChange.Right, carla.LaneChange.Both)),
+        ):
+            if neighbour is None or change not in permitted:
+                continue
+            if neighbour.lane_type != carla.LaneType.Driving:
+                continue
+            # get_left_lane can hand back the oncoming carriageway; the sign
+            # of lane_id is CARLA's own marker for direction of travel.
+            if (neighbour.lane_id > 0) != (waypoint.lane_id > 0):
+                continue
+            if speed_for is None:
+                # Untimed: charge the ramp in steps, to stay commensurate
+                # with the uniform step cost above.
+                cost = LANE_CHANGE_RAMP_M / STEP_M
+            else:
+                cost = (LANE_CHANGE_RAMP_M / speed_mps(waypoint)
+                        + LANE_CHANGE_PENALTY_S)
+            moves.extend((ahead, cost)
+                         for ahead in neighbour.next(LANE_CHANGE_RAMP_M))
+        return moves
 
     start_key = _lane_key(start)
     came_from: dict[tuple[int, int, int], tuple[int, int, int] | None] = {
@@ -162,8 +218,11 @@ def plan_route(
         if arrived:
             return _reconstruct(came_from, seen_at, key)
 
-        onward = cost + step_cost(current)
-        for following in current.next(STEP_M):
+        moves = [(following, step_cost(current))
+                 for following in current.next(STEP_M)]
+        moves += sideways(current)
+        for following, step in moves:
+            onward = cost + step
             following_key = _lane_key(following)
             if onward >= best.get(following_key, float("inf")):
                 continue

@@ -1,7 +1,7 @@
 {
- "schema_version": 1,
+ "schema_version": 2,
  "map": "Town03",
- "note": "traffic_efficiency 0.6403 calibrated over 45 legs at 20 NPCs; previous factor 0.3653",
+ "note": "re-dumped 2026-08-17 to record lane-change legality; speed limits and traffic_efficiency carried over unchanged",
  "default_speed_limit_kph": 30.0,
  "traffic_efficiency": 0.6403,
  "speed_limit_overrides": {
@@ -13,6 +13,7 @@
    "road_id": 1959,
    "lane_id": -2,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -33.171,
@@ -134,6 +135,7 @@
    "road_id": 1959,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -33.163,
@@ -255,6 +257,7 @@
    "road_id": 1933,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -37.22,
@@ -346,6 +349,7 @@
    "road_id": 1930,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -127.132,
@@ -479,6 +483,7 @@
    "road_id": 1917,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -129.621,
@@ -600,6 +605,7 @@
    "road_id": 1909,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -149.028,
@@ -733,6 +739,7 @@
    "road_id": 1908,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -145.549,
@@ -866,6 +873,7 @@
    "road_id": 1868,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -145.512,
@@ -933,6 +941,7 @@
    "road_id": 1861,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -134.71,
@@ -1000,6 +1009,7 @@
    "road_id": 1853,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -149.003,
@@ -1067,6 +1077,7 @@
    "road_id": 1846,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -134.71,
@@ -1134,6 +1145,7 @@
    "road_id": 1829,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -149.003,
@@ -1201,6 +1213,7 @@
    "road_id": 1828,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -145.512,
@@ -1268,6 +1281,7 @@
    "road_id": 1810,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      94.078,
@@ -1347,6 +1361,7 @@
    "road_id": 1809,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      94.17,
@@ -1414,6 +1429,7 @@
    "road_id": 1805,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      82.748,
@@ -1481,6 +1497,7 @@
    "road_id": 1786,
    "lane_id": -5,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -0.359,
@@ -1542,6 +1559,7 @@
    "road_id": 1786,
    "lane_id": -4,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -0.381,
@@ -1597,6 +1615,7 @@
    "road_id": 1772,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      11.519,
@@ -1616,6 +1635,7 @@
    "road_id": 1772,
    "lane_id": 4,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      13.71,
@@ -1635,6 +1655,7 @@
    "road_id": 1772,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      1.42,
@@ -1726,6 +1747,7 @@
    "road_id": 1772,
    "lane_id": 4,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      4.92,
@@ -1817,6 +1839,7 @@
    "road_id": 1772,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      1.433,
@@ -1836,6 +1859,7 @@
    "road_id": 1772,
    "lane_id": 4,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      4.933,
@@ -1855,6 +1879,7 @@
    "road_id": 1737,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -6.58,
@@ -1874,6 +1899,7 @@
    "road_id": 1737,
    "lane_id": 4,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -10.08,
@@ -1893,6 +1919,7 @@
    "road_id": 1737,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -7.523,
@@ -1936,6 +1963,7 @@
    "road_id": 1737,
    "lane_id": 4,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -10.978,
@@ -1979,6 +2007,7 @@
    "road_id": 1735,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      150.715,
@@ -2064,6 +2093,7 @@
    "road_id": 1734,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      153.779,
@@ -2149,6 +2179,7 @@
    "road_id": 1708,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      153.779,
@@ -2222,6 +2253,7 @@
    "road_id": 1577,
    "lane_id": -3,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -7.722,
@@ -2331,6 +2363,7 @@
    "road_id": 1577,
    "lane_id": -2,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -4.271,
@@ -2440,6 +2473,7 @@
    "road_id": 1566,
    "lane_id": 5,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -21.252,
@@ -2459,6 +2493,7 @@
    "road_id": 1566,
    "lane_id": 2,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -41.369,
@@ -2550,6 +2585,7 @@
    "road_id": 1566,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -43.369,
@@ -2569,6 +2605,7 @@
    "road_id": 1470,
    "lane_id": -5,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -23.944,
@@ -2618,6 +2655,7 @@
    "road_id": 1470,
    "lane_id": -4,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -20.445,
@@ -2661,6 +2699,7 @@
    "road_id": 1468,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      152.77,
@@ -2734,6 +2773,7 @@
    "road_id": 1467,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      149.619,
@@ -2807,6 +2847,7 @@
    "road_id": 1453,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      149.619,
@@ -2874,6 +2915,7 @@
    "road_id": 1445,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      152.77,
@@ -2941,6 +2983,7 @@
    "road_id": 1435,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      91.521,
@@ -2990,6 +3033,7 @@
    "road_id": 1431,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      105.786,
@@ -3051,6 +3095,7 @@
    "road_id": 1426,
    "lane_id": 2,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      240.155,
@@ -3178,6 +3223,7 @@
    "road_id": 1426,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      243.654,
@@ -3305,6 +3351,7 @@
    "road_id": 1425,
    "lane_id": -2,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      230.597,
@@ -3432,6 +3479,7 @@
    "road_id": 1425,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      234.096,
@@ -3559,6 +3607,7 @@
    "road_id": 1382,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      210.405,
@@ -3692,6 +3741,7 @@
    "road_id": 1374,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      230.597,
@@ -3813,6 +3863,7 @@
    "road_id": 1354,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      240.155,
@@ -3946,6 +3997,7 @@
    "road_id": 1335,
    "lane_id": 2,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -0.302,
@@ -4031,6 +4083,7 @@
    "road_id": 1335,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -3.801,
@@ -4116,6 +4169,7 @@
    "road_id": 1293,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      6.076,
@@ -4201,6 +4255,7 @@
    "road_id": 1275,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -3.801,
@@ -4268,6 +4323,7 @@
    "road_id": 1257,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      9.575,
@@ -4335,6 +4391,7 @@
    "road_id": 1251,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      19.211,
@@ -4402,6 +4459,7 @@
    "road_id": 1243,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -0.302,
@@ -4487,6 +4545,7 @@
    "road_id": 1230,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      19.211,
@@ -4596,6 +4655,7 @@
    "road_id": 1229,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -13.436,
@@ -4705,6 +4765,7 @@
    "road_id": 100,
    "lane_id": -2,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      17.101,
@@ -4826,6 +4887,7 @@
    "road_id": 100,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      17.11,
@@ -4947,6 +5009,7 @@
    "road_id": 350,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -61.084,
@@ -5050,6 +5113,7 @@
    "road_id": 341,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -74.636,
@@ -5135,6 +5199,7 @@
    "road_id": 1334,
    "lane_id": -2,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      9.575,
@@ -5220,6 +5285,7 @@
    "road_id": 1334,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      6.076,
@@ -5305,6 +5371,7 @@
    "road_id": 246,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -88.037,
@@ -5378,6 +5445,7 @@
    "road_id": 1017,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -65.041,
@@ -5487,6 +5555,7 @@
    "road_id": 239,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -98.125,
@@ -5578,6 +5647,7 @@
    "road_id": 222,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      5.6,
@@ -5675,6 +5745,7 @@
    "road_id": 1301,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -13.436,
@@ -5742,6 +5813,7 @@
    "road_id": 213,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -6.094,
@@ -5857,6 +5929,7 @@
    "road_id": 123,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      2.101,
@@ -5960,6 +6033,7 @@
    "road_id": 358,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      82.176,
@@ -6033,6 +6107,7 @@
    "road_id": 101,
    "lane_id": 2,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -20.382,
@@ -6154,6 +6229,7 @@
    "road_id": 101,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -20.374,
@@ -6275,6 +6351,7 @@
    "road_id": 104,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -9.594,
@@ -6348,6 +6425,7 @@
    "road_id": 875,
    "lane_id": -2,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -88.393,
@@ -6475,6 +6553,7 @@
    "road_id": 875,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -84.893,
@@ -6602,6 +6681,7 @@
    "road_id": 227,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      21.193,
@@ -6723,6 +6803,7 @@
    "road_id": 89,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      17.109,
@@ -6826,6 +6907,7 @@
    "road_id": 88,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -5.699,
@@ -6929,6 +7011,7 @@
    "road_id": 622,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      86.189,
@@ -6996,6 +7079,7 @@
    "road_id": 81,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      91.461,
@@ -7015,6 +7099,7 @@
    "road_id": 852,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -99.636,
@@ -7130,6 +7215,7 @@
    "road_id": 1960,
    "lane_id": 2,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -68.985,
@@ -7251,6 +7337,7 @@
    "road_id": 1960,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -71.299,
@@ -7372,6 +7459,7 @@
    "road_id": 1703,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      139.659,
@@ -7445,6 +7533,7 @@
    "road_id": 80,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      170.675,
@@ -7470,6 +7559,7 @@
    "road_id": 80,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      167.174,
@@ -7495,6 +7585,7 @@
    "road_id": 79,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      170.676,
@@ -7514,6 +7605,7 @@
    "road_id": 79,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      167.175,
@@ -7533,6 +7625,7 @@
    "road_id": 332,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -98.125,
@@ -7600,6 +7693,7 @@
    "road_id": 75,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      149.27,
@@ -7751,6 +7845,7 @@
    "road_id": 75,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      151.965,
@@ -7902,6 +7997,7 @@
    "road_id": 78,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      170.676,
@@ -7927,6 +8023,7 @@
    "road_id": 78,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      167.176,
@@ -7952,6 +8049,7 @@
    "road_id": 77,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      170.676,
@@ -7971,6 +8069,7 @@
    "road_id": 77,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      167.176,
@@ -7990,6 +8089,7 @@
    "road_id": 203,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      21.193,
@@ -8081,6 +8181,7 @@
    "road_id": 974,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -65.041,
@@ -8214,6 +8315,7 @@
    "road_id": 73,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      151.327,
@@ -8329,6 +8431,7 @@
    "road_id": 73,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      154.214,
@@ -8444,6 +8547,7 @@
    "road_id": 324,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -78.135,
@@ -8529,6 +8633,7 @@
    "road_id": 67,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      229.658,
@@ -9472,6 +9577,7 @@
    "road_id": 67,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Both",
    "points": [
     [
      233.157,
@@ -10415,6 +10521,7 @@
    "road_id": 67,
    "lane_id": 2,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      17.128,
@@ -11358,6 +11465,7 @@
    "road_id": 67,
    "lane_id": 3,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      17.136,
@@ -12301,6 +12409,7 @@
    "road_id": 69,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -62.043,
@@ -12464,6 +12573,7 @@
    "road_id": 69,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Both",
    "points": [
     [
      -64.357,
@@ -12627,6 +12737,7 @@
    "road_id": 69,
    "lane_id": 2,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -85.135,
@@ -12790,6 +12901,7 @@
    "road_id": 69,
    "lane_id": 3,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -88.635,
@@ -12953,6 +13065,7 @@
    "road_id": 1691,
    "lane_id": 2,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -2.869,
@@ -13002,6 +13115,7 @@
    "road_id": 1691,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -6.368,
@@ -13051,6 +13165,7 @@
    "road_id": 68,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -20.409,
@@ -13100,6 +13215,7 @@
    "road_id": 68,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Both",
    "points": [
     [
      -20.4,
@@ -13149,6 +13265,7 @@
    "road_id": 68,
    "lane_id": 2,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -33.145,
@@ -13198,6 +13315,7 @@
    "road_id": 68,
    "lane_id": 3,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -33.136,
@@ -13247,6 +13365,7 @@
    "road_id": 66,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      231.1,
@@ -13320,6 +13439,7 @@
    "road_id": 66,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      234.599,
@@ -13393,6 +13513,7 @@
    "road_id": 66,
    "lane_id": 2,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      241.094,
@@ -13466,6 +13587,7 @@
    "road_id": 66,
    "lane_id": 3,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      244.593,
@@ -13539,6 +13661,7 @@
    "road_id": 65,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      166.21,
@@ -14272,6 +14395,7 @@
    "road_id": 65,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      166.21,
@@ -15005,6 +15129,7 @@
    "road_id": 65,
    "lane_id": 2,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      242.533,
@@ -15738,6 +15863,7 @@
    "road_id": 65,
    "lane_id": 3,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      246.031,
@@ -16471,6 +16597,7 @@
    "road_id": 1146,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      220.948,
@@ -16568,6 +16695,7 @@
    "road_id": 317,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -98.125,
@@ -16689,6 +16817,7 @@
    "road_id": 831,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -78.206,
@@ -16780,6 +16909,7 @@
    "road_id": 316,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -61.084,
@@ -16901,6 +17031,7 @@
    "road_id": 59,
    "lane_id": -5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      138.675,
@@ -17046,6 +17177,7 @@
    "road_id": 59,
    "lane_id": -4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      138.583,
@@ -17191,6 +17323,7 @@
    "road_id": 62,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -97.68,
@@ -17312,6 +17445,7 @@
    "road_id": 62,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -134.728,
@@ -17433,6 +17567,7 @@
    "road_id": 1684,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      4.08,
@@ -17452,6 +17587,7 @@
    "road_id": 1684,
    "lane_id": 2,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      7.579,
@@ -17471,6 +17607,7 @@
    "road_id": 1684,
    "lane_id": 2,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      4.95,
@@ -17514,6 +17651,7 @@
    "road_id": 1684,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      8.397,
@@ -17557,6 +17695,7 @@
    "road_id": 61,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -43.351,
@@ -17630,6 +17769,7 @@
    "road_id": 61,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -65.059,
@@ -17703,6 +17843,7 @@
    "road_id": 25,
    "lane_id": -3,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -7.368,
@@ -17722,6 +17863,7 @@
    "road_id": 25,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -3.904,
@@ -17741,6 +17883,7 @@
    "road_id": 28,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      7.628,
@@ -17988,6 +18131,7 @@
    "road_id": 28,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Both",
    "points": [
     [
      4.129,
@@ -18235,6 +18379,7 @@
    "road_id": 28,
    "lane_id": 2,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -0.922,
@@ -18482,6 +18627,7 @@
    "road_id": 28,
    "lane_id": 3,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -4.42,
@@ -18729,6 +18875,7 @@
    "road_id": 24,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -61.005,
@@ -18868,6 +19015,7 @@
    "road_id": 24,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -18.995,
@@ -19007,6 +19155,7 @@
    "road_id": 1105,
    "lane_id": 2,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      29.329,
@@ -19122,6 +19271,7 @@
    "road_id": 1105,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      29.441,
@@ -19237,6 +19387,7 @@
    "road_id": 23,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -148.494,
@@ -19424,6 +19575,7 @@
    "road_id": 23,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -98.204,
@@ -19611,6 +19763,7 @@
    "road_id": 22,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -149.049,
@@ -19660,6 +19813,7 @@
    "road_id": 22,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -145.557,
@@ -19709,6 +19863,7 @@
    "road_id": 1050,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      185.656,
@@ -19824,6 +19979,7 @@
    "road_id": 21,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -149.012,
@@ -19927,6 +20083,7 @@
    "road_id": 21,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -145.528,
@@ -20030,6 +20187,7 @@
    "road_id": 1049,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      150.965,
@@ -20145,6 +20303,7 @@
    "road_id": 20,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -99.561,
@@ -20626,6 +20785,7 @@
    "road_id": 20,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -145.503,
@@ -21107,6 +21267,7 @@
    "road_id": 791,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -88.469,
@@ -21180,6 +21341,7 @@
    "road_id": 19,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -13.361,
@@ -21343,6 +21505,7 @@
    "road_id": 19,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -65.154,
@@ -21506,6 +21669,7 @@
    "road_id": 533,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      140.563,
@@ -21579,6 +21743,7 @@
    "road_id": 1100,
    "lane_id": -5,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      22.938,
@@ -21688,6 +21853,7 @@
    "road_id": 1100,
    "lane_id": -4,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      19.439,
@@ -21797,6 +21963,7 @@
    "road_id": 18,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      70.84,
@@ -21960,6 +22127,7 @@
    "road_id": 18,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      19.136,
@@ -22123,6 +22291,7 @@
    "road_id": 271,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -74.636,
@@ -22214,6 +22383,7 @@
    "road_id": 14,
    "lane_id": -5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -2.181,
@@ -22233,6 +22403,7 @@
    "road_id": 14,
    "lane_id": -4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -1.922,
@@ -22252,6 +22423,7 @@
    "road_id": 144,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      21.193,
@@ -22385,6 +22557,7 @@
    "road_id": 17,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      139.734,
@@ -22524,6 +22697,7 @@
    "road_id": 17,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      96.109,
@@ -22663,6 +22837,7 @@
    "road_id": 13,
    "lane_id": -5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -20.139,
@@ -22682,6 +22857,7 @@
    "road_id": 13,
    "lane_id": -4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -17.226,
@@ -22701,6 +22877,7 @@
    "road_id": 16,
    "lane_id": 3,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -7.711,
@@ -22720,6 +22897,7 @@
    "road_id": 16,
    "lane_id": 4,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -11.157,
@@ -22739,6 +22917,7 @@
    "road_id": 15,
    "lane_id": 2,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      5.393,
@@ -22758,6 +22937,7 @@
    "road_id": 15,
    "lane_id": 3,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      8.814,
@@ -22777,6 +22957,7 @@
    "road_id": 0,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      140.915,
@@ -22916,6 +23097,7 @@
    "road_id": 0,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Both",
    "points": [
     [
      140.827,
@@ -23055,6 +23237,7 @@
    "road_id": 0,
    "lane_id": 2,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      97.255,
@@ -23194,6 +23377,7 @@
    "road_id": 0,
    "lane_id": 3,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      97.167,
@@ -23333,6 +23517,7 @@
    "road_id": 255,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -61.084,
@@ -23418,6 +23603,7 @@
    "road_id": 2,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -11.887,
@@ -23743,6 +23929,7 @@
    "road_id": 2,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Both",
    "points": [
     [
      -11.975,
@@ -24068,6 +24255,7 @@
    "road_id": 2,
    "lane_id": 2,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -77.975,
@@ -24393,6 +24581,7 @@
    "road_id": 2,
    "lane_id": 3,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -74.477,
@@ -24718,6 +24907,7 @@
    "road_id": 130,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -18.915,
@@ -24797,6 +24987,7 @@
    "road_id": 76,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      21.243,
@@ -25326,6 +25517,7 @@
    "road_id": 76,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      167.176,
@@ -25855,6 +26047,7 @@
    "road_id": 1158,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      232.036,
@@ -25934,6 +26127,7 @@
    "road_id": 1031,
    "lane_id": -2,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -9.352,
@@ -26013,6 +26207,7 @@
    "road_id": 1031,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -5.852,
@@ -26092,6 +26287,7 @@
    "road_id": 5,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      221.12,
@@ -26111,6 +26307,7 @@
    "road_id": 5,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      221.068,
@@ -26130,6 +26327,7 @@
    "road_id": 5,
    "lane_id": 4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      220.148,
@@ -26149,6 +26347,7 @@
    "road_id": 5,
    "lane_id": 5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      220.096,
@@ -26168,6 +26367,7 @@
    "road_id": 519,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      166.21,
@@ -26253,6 +26453,7 @@
    "road_id": 776,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -84.971,
@@ -26344,6 +26545,7 @@
    "road_id": 6,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      220.32,
@@ -26519,6 +26721,7 @@
    "road_id": 6,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      220.268,
@@ -26694,6 +26897,7 @@
    "road_id": 6,
    "lane_id": 4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      164.385,
@@ -26869,6 +27073,7 @@
    "road_id": 6,
    "lane_id": 5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      164.332,
@@ -27044,6 +27249,7 @@
    "road_id": 263,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -84.537,
@@ -27147,6 +27353,7 @@
    "road_id": 1089,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      15.327,
@@ -27214,6 +27421,7 @@
    "road_id": 1089,
    "lane_id": 4,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      18.077,
@@ -27281,6 +27489,7 @@
    "road_id": 1089,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      29.329,
@@ -27336,6 +27545,7 @@
    "road_id": 1089,
    "lane_id": 4,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      29.441,
@@ -27391,6 +27601,7 @@
    "road_id": 7,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      135.56,
@@ -27524,6 +27735,7 @@
    "road_id": 7,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      135.507,
@@ -27657,6 +27869,7 @@
    "road_id": 7,
    "lane_id": 4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      93.513,
@@ -27790,6 +28003,7 @@
    "road_id": 7,
    "lane_id": 5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      93.46,
@@ -27923,6 +28137,7 @@
    "road_id": 8,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      64.678,
@@ -27990,6 +28205,7 @@
    "road_id": 8,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      64.625,
@@ -28057,6 +28273,7 @@
    "road_id": 8,
    "lane_id": 4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      46.378,
@@ -28124,6 +28341,7 @@
    "road_id": 8,
    "lane_id": 5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      46.326,
@@ -28191,6 +28409,7 @@
    "road_id": 9,
    "lane_id": -5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -0.5,
@@ -28210,6 +28429,7 @@
    "road_id": 9,
    "lane_id": -4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -0.5,
@@ -28229,6 +28449,7 @@
    "road_id": 11,
    "lane_id": -5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      22.945,
@@ -28248,6 +28469,7 @@
    "road_id": 11,
    "lane_id": -4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      19.445,
@@ -28267,6 +28489,7 @@
    "road_id": 139,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -18.915,
@@ -28400,6 +28623,7 @@
    "road_id": 12,
    "lane_id": -5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -23.946,
@@ -28419,6 +28643,7 @@
    "road_id": 12,
    "lane_id": -4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -20.446,
@@ -28438,6 +28663,7 @@
    "road_id": 1608,
    "lane_id": -3,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -7.722,
@@ -28499,6 +28725,7 @@
    "road_id": 1608,
    "lane_id": -2,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -4.271,
@@ -28566,6 +28793,7 @@
    "road_id": 1608,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -16.789,
@@ -28675,6 +28903,7 @@
    "road_id": 526,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      166.21,
@@ -28760,6 +28989,7 @@
    "road_id": 783,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -65.079,
@@ -28833,6 +29063,7 @@
    "road_id": 29,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      10.195,
@@ -28948,6 +29179,7 @@
    "road_id": 29,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Both",
    "points": [
     [
      6.696,
@@ -29063,6 +29295,7 @@
    "road_id": 29,
    "lane_id": 2,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      0.567,
@@ -29178,6 +29411,7 @@
    "road_id": 29,
    "lane_id": 3,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -2.932,
@@ -29293,6 +29527,7 @@
    "road_id": 800,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -99.636,
@@ -29384,6 +29619,7 @@
    "road_id": 30,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -10.067,
@@ -29619,6 +29855,7 @@
    "road_id": 30,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -6.567,
@@ -29854,6 +30091,7 @@
    "road_id": 30,
    "lane_id": 4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      1.905,
@@ -30089,6 +30327,7 @@
    "road_id": 30,
    "lane_id": 5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      5.405,
@@ -30324,6 +30563,7 @@
    "road_id": 3,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -88.706,
@@ -30679,6 +30919,7 @@
    "road_id": 3,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Both",
    "points": [
     [
      -85.206,
@@ -31034,6 +31275,7 @@
    "road_id": 3,
    "lane_id": 2,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -77.893,
@@ -31389,6 +31631,7 @@
    "road_id": 3,
    "lane_id": 3,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -74.393,
@@ -31744,6 +31987,7 @@
    "road_id": 4,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -88.287,
@@ -32027,6 +32271,7 @@
    "road_id": 4,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Both",
    "points": [
     [
      -84.787,
@@ -32310,6 +32555,7 @@
    "road_id": 4,
    "lane_id": 2,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -77.537,
@@ -32593,6 +32839,7 @@
    "road_id": 4,
    "lane_id": 3,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -74.037,
@@ -32876,6 +33123,7 @@
    "road_id": 1059,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      170.674,
@@ -32973,6 +33221,7 @@
    "road_id": 1655,
    "lane_id": -5,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -18.549,
@@ -33034,6 +33283,7 @@
    "road_id": 1655,
    "lane_id": -4,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -15.881,
@@ -33095,6 +33345,7 @@
    "road_id": 32,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -9.209,
@@ -33114,6 +33365,7 @@
    "road_id": 32,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -5.709,
@@ -33133,6 +33385,7 @@
    "road_id": 32,
    "lane_id": 4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      2.295,
@@ -33152,6 +33405,7 @@
    "road_id": 32,
    "lane_id": 5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      5.795,
@@ -33171,6 +33425,7 @@
    "road_id": 33,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -9.205,
@@ -33190,6 +33445,7 @@
    "road_id": 33,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -5.705,
@@ -33209,6 +33465,7 @@
    "road_id": 33,
    "lane_id": 4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      2.301,
@@ -33228,6 +33485,7 @@
    "road_id": 33,
    "lane_id": 5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      5.801,
@@ -33247,6 +33505,7 @@
    "road_id": 34,
    "lane_id": 3,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      31.676,
@@ -33266,6 +33525,7 @@
    "road_id": 34,
    "lane_id": 4,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      31.772,
@@ -33285,6 +33545,7 @@
    "road_id": 291,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -84.537,
@@ -33376,6 +33637,7 @@
    "road_id": 35,
    "lane_id": -5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      22.946,
@@ -33395,6 +33657,7 @@
    "road_id": 35,
    "lane_id": -4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      19.446,
@@ -33414,6 +33677,7 @@
    "road_id": 36,
    "lane_id": -5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      0.608,
@@ -33433,6 +33697,7 @@
    "road_id": 36,
    "lane_id": -4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      0.437,
@@ -33452,6 +33717,7 @@
    "road_id": 37,
    "lane_id": -5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -0.5,
@@ -33471,6 +33737,7 @@
    "road_id": 37,
    "lane_id": -4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -0.5,
@@ -33490,6 +33757,7 @@
    "road_id": 10,
    "lane_id": -5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      15.348,
@@ -33515,6 +33783,7 @@
    "road_id": 10,
    "lane_id": -4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      12.904,
@@ -33534,6 +33803,7 @@
    "road_id": 551,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      154.826,
@@ -33613,6 +33883,7 @@
    "road_id": 1661,
    "lane_id": -4,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -18.549,
@@ -33632,6 +33903,7 @@
    "road_id": 1661,
    "lane_id": -3,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -15.881,
@@ -33651,6 +33923,7 @@
    "road_id": 1661,
    "lane_id": -4,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -17.088,
@@ -33706,6 +33979,7 @@
    "road_id": 1661,
    "lane_id": -3,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -14.613,
@@ -33761,6 +34035,7 @@
    "road_id": 38,
    "lane_id": -5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -23.872,
@@ -33780,6 +34055,7 @@
    "road_id": 38,
    "lane_id": -4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -20.383,
@@ -33799,6 +34075,7 @@
    "road_id": 809,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -65.079,
@@ -33890,6 +34167,7 @@
    "road_id": 1066,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      185.656,
@@ -33981,6 +34259,7 @@
    "road_id": 41,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      82.689,
@@ -34096,6 +34375,7 @@
    "road_id": 41,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      85.673,
@@ -34211,6 +34491,7 @@
    "road_id": 298,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -88.037,
@@ -34302,6 +34583,7 @@
    "road_id": 42,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      81.28,
@@ -34423,6 +34705,7 @@
    "road_id": 42,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      83.454,
@@ -34544,6 +34827,7 @@
    "road_id": 1070,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      170.674,
@@ -34641,6 +34925,7 @@
    "road_id": 43,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      79.25,
@@ -34792,6 +35077,7 @@
    "road_id": 43,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      81.093,
@@ -34943,6 +35229,7 @@
    "road_id": 44,
    "lane_id": -5,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -105.181,
@@ -35058,6 +35345,7 @@
    "road_id": 44,
    "lane_id": -4,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -102.692,
@@ -35173,6 +35461,7 @@
    "road_id": 45,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      90.952,
@@ -35192,6 +35481,7 @@
    "road_id": 1073,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      150.965,
@@ -35295,6 +35585,7 @@
    "road_id": 46,
    "lane_id": 3,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      28.991,
@@ -35314,6 +35605,7 @@
    "road_id": 46,
    "lane_id": 4,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      29.051,
@@ -35333,6 +35625,7 @@
    "road_id": 817,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -74.706,
@@ -35406,6 +35699,7 @@
    "road_id": 588,
    "lane_id": 2,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      71.533,
@@ -35491,6 +35785,7 @@
    "road_id": 588,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      71.445,
@@ -35576,6 +35871,7 @@
    "road_id": 47,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      210.396,
@@ -35661,6 +35957,7 @@
    "road_id": 47,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      185.665,
@@ -35746,6 +36043,7 @@
    "road_id": 589,
    "lane_id": -2,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      97.519,
@@ -35831,6 +36129,7 @@
    "road_id": 589,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      97.431,
@@ -35916,6 +36215,7 @@
    "road_id": 48,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      150.956,
@@ -35941,6 +36241,7 @@
    "road_id": 48,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      145.065,
@@ -35966,6 +36267,7 @@
    "road_id": 49,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      145.056,
@@ -35985,6 +36287,7 @@
    "road_id": 49,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      141.245,
@@ -36004,6 +36307,7 @@
    "road_id": 50,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      141.236,
@@ -36029,6 +36333,7 @@
    "road_id": 50,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      136.745,
@@ -36054,6 +36359,7 @@
    "road_id": 51,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      136.736,
@@ -36073,6 +36379,7 @@
    "road_id": 51,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      136.365,
@@ -36092,6 +36399,7 @@
    "road_id": 1363,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      210.405,
@@ -36213,6 +36521,7 @@
    "road_id": 52,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      136.356,
@@ -36316,6 +36625,7 @@
    "road_id": 52,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      105.795,
@@ -36419,6 +36729,7 @@
    "road_id": 282,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -78.135,
@@ -36510,6 +36821,7 @@
    "road_id": 823,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -99.636,
@@ -36589,6 +36901,7 @@
    "road_id": 1678,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -145.057,
@@ -36662,6 +36975,7 @@
    "road_id": 1624,
    "lane_id": -5,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -1.583,
@@ -36765,6 +37079,7 @@
    "road_id": 1624,
    "lane_id": -4,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -1.416,
@@ -36868,6 +37183,7 @@
    "road_id": 1,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      71.797,
@@ -37031,6 +37347,7 @@
    "road_id": 1,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Both",
    "points": [
     [
      71.709,
@@ -37194,6 +37511,7 @@
    "road_id": 1,
    "lane_id": 2,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      20.639,
@@ -37357,6 +37675,7 @@
    "road_id": 1,
    "lane_id": 3,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      20.551,
@@ -37520,6 +37839,7 @@
    "road_id": 1806,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      79.956,
@@ -37593,6 +37913,7 @@
    "road_id": 183,
    "lane_id": 4,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      2.101,
@@ -37696,6 +38017,7 @@
    "road_id": 183,
    "lane_id": 5,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      5.6,
@@ -37799,6 +38121,7 @@
    "road_id": 697,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      11.064,
@@ -37860,6 +38183,7 @@
    "road_id": 1679,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -149.057,
@@ -37933,6 +38257,7 @@
    "road_id": 1266,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      19.211,
@@ -38018,6 +38343,7 @@
    "road_id": 184,
    "lane_id": -2,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -9.594,
@@ -38121,6 +38447,7 @@
    "road_id": 184,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -6.094,
@@ -38224,6 +38551,7 @@
    "road_id": 58,
    "lane_id": -4,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      -22.466,
@@ -38285,6 +38613,7 @@
    "road_id": 394,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      96.184,
@@ -38358,6 +38687,7 @@
    "road_id": 83,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -9.199,
@@ -38443,6 +38773,7 @@
    "road_id": 1165,
    "lane_id": -2,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      232.036,
@@ -38570,6 +38901,7 @@
    "road_id": 1165,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      235.535,
@@ -38697,6 +39029,7 @@
    "road_id": 406,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      82.176,
@@ -38770,6 +39103,7 @@
    "road_id": 413,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      70.765,
@@ -38843,6 +39177,7 @@
    "road_id": 434,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      84.778,
@@ -38928,6 +39263,7 @@
    "road_id": 435,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      82.176,
@@ -39013,6 +39349,7 @@
    "road_id": 949,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -77.787,
@@ -39146,6 +39483,7 @@
    "road_id": 1206,
    "lane_id": -5,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      18.181,
@@ -39195,6 +39533,7 @@
    "road_id": 1206,
    "lane_id": -4,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      15.416,
@@ -39244,6 +39583,7 @@
    "road_id": 442,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      84.778,
@@ -39317,6 +39657,7 @@
    "road_id": 956,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -97.698,
@@ -39438,6 +39779,7 @@
    "road_id": 990,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -65.041,
@@ -39589,6 +39931,7 @@
    "road_id": 449,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      70.765,
@@ -39662,6 +40005,7 @@
    "road_id": 713,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      7.565,
@@ -39759,6 +40103,7 @@
    "road_id": 482,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      93.632,
@@ -39856,6 +40201,7 @@
    "road_id": 483,
    "lane_id": 4,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      64.506,
@@ -39953,6 +40299,7 @@
    "road_id": 483,
    "lane_id": 5,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      64.454,
@@ -40050,6 +40397,7 @@
    "road_id": 1284,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -13.436,
@@ -40135,6 +40483,7 @@
    "road_id": 743,
    "lane_id": -2,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -88.469,
@@ -40226,6 +40575,7 @@
    "road_id": 743,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -84.971,
@@ -40317,6 +40667,7 @@
    "road_id": 1030,
    "lane_id": 4,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      2.291,
@@ -40396,6 +40747,7 @@
    "road_id": 1030,
    "lane_id": 5,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      5.791,
@@ -40475,6 +40827,7 @@
    "road_id": 489,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      77.595,
@@ -40554,6 +40907,7 @@
    "road_id": 494,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      93.684,
@@ -40633,6 +40987,7 @@
    "road_id": 499,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      140.563,
@@ -40724,6 +41079,7 @@
    "road_id": 510,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      140.651,
@@ -40815,6 +41171,7 @@
    "road_id": 60,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      91.079,
@@ -41062,6 +41419,7 @@
    "road_id": 1142,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      220.896,
@@ -41141,6 +41499,7 @@
    "road_id": 1713,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      139.659,
@@ -41208,6 +41567,7 @@
    "road_id": 90,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      17.101,
@@ -41293,6 +41653,7 @@
    "road_id": 631,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      71.445,
@@ -41366,6 +41727,7 @@
    "road_id": 667,
    "lane_id": 2,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -12.15,
@@ -41475,6 +41837,7 @@
    "road_id": 667,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -12.238,
@@ -41584,6 +41947,7 @@
    "road_id": 383,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      70.765,
@@ -41669,6 +42033,7 @@
    "road_id": 1181,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      164.556,
@@ -41742,6 +42107,7 @@
    "road_id": 668,
    "lane_id": -2,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      20.903,
@@ -41851,6 +42217,7 @@
    "road_id": 668,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      20.815,
@@ -41960,6 +42327,7 @@
    "road_id": 384,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      96.184,
@@ -42045,6 +42413,7 @@
    "road_id": 925,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -65.041,
@@ -42106,6 +42475,7 @@
    "road_id": 703,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      20.815,
@@ -42203,6 +42573,7 @@
    "road_id": 726,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -12.238,
@@ -42270,6 +42641,7 @@
    "road_id": 742,
    "lane_id": 2,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -78.206,
@@ -42361,6 +42733,7 @@
    "road_id": 742,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -74.706,
@@ -42446,6 +42819,7 @@
    "road_id": 853,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -65.079,
@@ -42561,6 +42935,7 @@
    "road_id": 874,
    "lane_id": 2,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      -77.787,
@@ -42688,6 +43063,7 @@
    "road_id": 874,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      -74.287,
@@ -42815,6 +43191,7 @@
    "road_id": 365,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      96.184,
@@ -42888,6 +43265,7 @@
    "road_id": 906,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -88.393,
@@ -43015,6 +43393,7 @@
    "road_id": 911,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -97.698,
@@ -43094,6 +43473,7 @@
    "road_id": 918,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -88.393,
@@ -43155,6 +43535,7 @@
    "road_id": 934,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -84.893,
@@ -43234,6 +43615,7 @@
    "road_id": 399,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      84.778,
@@ -43307,6 +43689,7 @@
    "road_id": 1197,
    "lane_id": -4,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      46.55,
@@ -43326,6 +43709,7 @@
    "road_id": 1197,
    "lane_id": -3,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      46.497,
@@ -43345,6 +43729,7 @@
    "road_id": 1197,
    "lane_id": -4,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      43.648,
@@ -43388,6 +43773,7 @@
    "road_id": 1197,
    "lane_id": -3,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      43.596,
@@ -43431,6 +43817,7 @@
    "road_id": 943,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -77.787,
@@ -43576,6 +43963,7 @@
    "road_id": 967,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -74.287,
@@ -43697,6 +44085,7 @@
    "road_id": 980,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -97.698,
@@ -43806,6 +44195,7 @@
    "road_id": 1018,
    "lane_id": 1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -97.698,
@@ -43915,6 +44305,7 @@
    "road_id": 1020,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -9.352,
@@ -44000,6 +44391,7 @@
    "road_id": 31,
    "lane_id": -2,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      -9.399,
@@ -44031,6 +44423,7 @@
    "road_id": 31,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      -5.899,
@@ -44062,6 +44455,7 @@
    "road_id": 31,
    "lane_id": 4,
    "is_junction": false,
+   "lane_change": "Right",
    "points": [
     [
      2.148,
@@ -44093,6 +44487,7 @@
    "road_id": 31,
    "lane_id": 5,
    "is_junction": false,
+   "lane_change": "Left",
    "points": [
     [
      5.648,
@@ -44124,6 +44519,7 @@
    "road_id": 1122,
    "lane_id": -3,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      22.938,
@@ -44233,6 +44629,7 @@
    "road_id": 1122,
    "lane_id": -2,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      19.439,
@@ -44342,6 +44739,7 @@
    "road_id": 1697,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      150.715,
@@ -44409,6 +44807,7 @@
    "road_id": 74,
    "lane_id": -1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      150.28,
@@ -44536,6 +44935,7 @@
    "road_id": 74,
    "lane_id": 1,
    "is_junction": false,
+   "lane_change": "None",
    "points": [
     [
      153.118,
@@ -44663,6 +45063,7 @@
    "road_id": 1156,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      235.535,
@@ -44760,6 +45161,7 @@
    "road_id": 1166,
    "lane_id": 2,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      241.596,
@@ -44887,6 +45289,7 @@
    "road_id": 1166,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      245.095,
@@ -45014,6 +45417,7 @@
    "road_id": 1173,
    "lane_id": 4,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      135.388,
@@ -45111,6 +45515,7 @@
    "road_id": 1173,
    "lane_id": 5,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      135.336,
@@ -45208,6 +45613,7 @@
    "road_id": 1174,
    "lane_id": -2,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      164.556,
@@ -45305,6 +45711,7 @@
    "road_id": 1174,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      164.504,
@@ -45402,6 +45809,7 @@
    "road_id": 1188,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      148.466,
@@ -45475,6 +45883,7 @@
    "road_id": 110,
    "lane_id": -1,
    "is_junction": true,
+   "lane_change": "None",
    "points": [
     [
      -18.915,
@@ -45572,6 +45981,7 @@
    "road_id": 1192,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      43.476,
@@ -45591,6 +46001,7 @@
    "road_id": 1192,
    "lane_id": 4,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      43.424,
@@ -45610,6 +46021,7 @@
    "road_id": 1192,
    "lane_id": 3,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      32.406,
@@ -45653,6 +46065,7 @@
    "road_id": 1192,
    "lane_id": 4,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      32.416,
@@ -45696,6 +46109,7 @@
    "road_id": 1214,
    "lane_id": -4,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      18.181,
@@ -45715,6 +46129,7 @@
    "road_id": 1214,
    "lane_id": -3,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      15.416,
@@ -45734,6 +46149,7 @@
    "road_id": 1214,
    "lane_id": -4,
    "is_junction": true,
+   "lane_change": "Left",
    "points": [
     [
      19.438,
@@ -45783,6 +46199,7 @@
    "road_id": 1214,
    "lane_id": -3,
    "is_junction": true,
+   "lane_change": "Right",
    "points": [
     [
      16.479,

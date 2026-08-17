@@ -20,7 +20,7 @@ from pathlib import Path
 
 from src.map.carla_stops import CARLA_MAPS_DIR, town_name
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Applied to roads carrying no speed-limit sign of their own. Leaving it
 # unset would fall through to DEFAULT_SPEED_LIMIT (130 km/h) and make every
@@ -87,12 +87,27 @@ class RoadSegment:
         rather than something inferred.
     :param points: Sampled positions from the segment's start to its end, in
         driving order.
+    :param lane_change: Which way a vehicle may legally leave this lane
+        sideways -- ``"None"``, ``"Left"``, ``"Right"`` or ``"Both"``,
+        naming CARLA's own ``LaneChange`` values. Read from the road
+        markings, so it is a fact about the map rather than about driving.
+        Defaults to ``"None"``, which is what a schema 1 dump implies: it
+        predates the measurement and recorded no lane changes at all.
     """
 
     road_id: int
     lane_id: int
     is_junction: bool
     points: tuple[SegmentPoint, ...]
+    lane_change: str = "None"
+
+    def may_change_left(self) -> bool:
+        """Whether leaving this lane to the left is legal."""
+        return self.lane_change in ("Left", "Both")
+
+    def may_change_right(self) -> bool:
+        """Whether leaving this lane to the right is legal."""
+        return self.lane_change in ("Right", "Both")
 
     @property
     def start(self) -> SegmentPoint:
@@ -269,6 +284,8 @@ def load_topology(
             lane_id=int(entry["lane_id"]),
             is_junction=bool(entry["is_junction"]),
             points=points,
+            # Absent in schema 1, which recorded no lane changes.
+            lane_change=str(entry.get("lane_change", "None")),
         ))
 
     return CarlaTopology(
@@ -320,6 +337,7 @@ def save_topology(
                 "road_id": segment.road_id,
                 "lane_id": segment.lane_id,
                 "is_junction": segment.is_junction,
+                "lane_change": segment.lane_change,
                 "points": [
                     [round(p.x, 3), round(p.y, 3),
                      round(p.z, 3), round(p.s, 3)]

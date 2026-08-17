@@ -469,3 +469,83 @@ def test_snapping_cannot_chain_across_a_road(tmp_path: Path) -> None:
     # Roads 2 and 3 start 0.4 m apart -- beyond the tolerance from each
     # other, so they must not have been chained through road 1's end.
     assert len(starts) >= 2
+
+
+# ---------------------------------------------------------------------------
+# Trap 5 -- lane changes come from the markings, not from lane-ID arithmetic
+# ---------------------------------------------------------------------------
+
+def _parallel(directory: Path, lane_change: str,
+              inner_lane: int = -1, outer_lane: int = -2
+              ) -> CarlaMapProvider:
+    """
+    Two lanes of one road running side by side 3.5 m apart.
+    :param directory: Where to write the map.
+    :param lane_change: Legality recorded on both lanes.
+    :param inner_lane: Lane ID of the lane at y = 0.
+    :param outer_lane: Lane ID of the lane at y = 3.5.
+    :return: The provider.
+    """
+    inner = _straight(1, inner_lane, (0.0, 0.0), (200.0, 0.0))
+    outer = _straight(1, outer_lane, (0.0, 3.5), (200.0, 3.5))
+    segments = [
+        RoadSegment(s.road_id, s.lane_id, s.is_junction, s.points,
+                    lane_change=lane_change)
+        for s in (inner, outer)
+    ]
+    return _write_map(directory, segments, [])
+
+
+def test_no_lane_change_where_the_markings_forbid_it(tmp_path: Path) -> None:
+    """A solid line is a solid line, however adjacent the lanes are."""
+    assert _parallel(tmp_path, "None").get_lane_changes() == []
+
+
+def test_a_lane_change_is_found_where_the_markings_allow_it(
+        tmp_path: Path) -> None:
+    """Both lanes permitting either side must yield a move each way."""
+    pairs = _parallel(tmp_path, "Both").get_lane_changes()
+
+    assert len(pairs) == 2, "one move out of each lane"
+    assert {a for a, _ in pairs} == {b for _, b in pairs}, \
+        "the pair should be symmetric when both lanes permit both sides"
+
+
+def test_one_sided_markings_give_a_one_way_move(tmp_path: Path) -> None:
+    """
+    Left-only markings must produce a move in exactly one direction.
+
+    Which direction is decided from the geometry, so this asserts the count
+    rather than the side -- the side is checked against CARLA itself, which
+    is the only authority on the handedness of its own coordinates.
+    """
+    pairs = _parallel(tmp_path, "Left").get_lane_changes()
+
+    assert len(pairs) == 1, "only one lane may be left, and only one way"
+
+
+def test_lane_changes_reach_the_graph_as_priced_edges(tmp_path: Path
+                                                      ) -> None:
+    """
+    A lane change must arrive in TransitGraph priced, not free.
+
+    Free lane changes make a shortest-path search weave between lanes to
+    save a metre, planning a trajectory no bus would drive.
+    """
+    provider = _parallel(tmp_path, "Both")
+    graph = TransitGraph(provider)
+
+    lateral = [(a, b, data) for a, b, data in graph.map.edges(data=True)
+               if data.get("kind") == "lane_change"]
+    assert lateral, "the graph should carry the provider's lane changes"
+    assert all(data["weight"] > 0.0 for _, _, data in lateral)
+
+
+def test_a_planar_map_has_no_lane_changes() -> None:
+    """
+    The default must stay empty: every synthetic result rests on a planar
+    graph, and those numbers have to keep reproducing exactly.
+    """
+    from src.map.MapProvider import MapProvider
+
+    assert MapProvider.get_lane_changes(object()) == []

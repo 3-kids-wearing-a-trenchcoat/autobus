@@ -246,7 +246,7 @@ def calibrate(
 
     backend = CarlaBackend(
         stop_positions=positions, position=order[0], town=town,
-        speed_for=speed_limits_from(provider),
+        speed_for=speed_limits_from(provider), lane_changes=True,
         host=host, port=port, npc_vehicles=npc_vehicles, seed=0,
         no_rendering=True, replan_every_s=replan_every_s,
         direct_drive=direct_drive,
@@ -517,7 +517,7 @@ def calibrate_policy_driven(
         """Build the campaign's backend, wrapped in a leg recorder."""
         inner = CarlaBackend(
             stop_positions=positions, position=start_stop_id, town=town,
-            speed_for=speed_limits_from(provider),
+            speed_for=speed_limits_from(provider), lane_changes=True,
             host=host, port=port, npc_vehicles=npc_vehicles,
             seed=current_seed[0], no_rendering=True,
             dwell_s=trial_kwargs.get("dwell_s", 0.0),

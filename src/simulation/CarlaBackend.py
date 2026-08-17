@@ -256,6 +256,11 @@ class CarlaBackend(SimulationBackend):
         the former matches how ``TransitGraph`` prices a leg — so leaving it
         out has the bus drive routes the policy never costed. Defaults to
         None, which reproduces every run recorded before 2026-08-17.
+    :param lane_changes: Let the route planner move sideways into a legal
+        adjacent lane. Must match whether ``TransitGraph`` was built with
+        lane-change edges, or the policy and the bus disagree about what a
+        leg costs. Defaults to False, reproducing runs recorded before
+        2026-08-17.
     :param town: Town to load. The server defaults to Town10HD on startup,
         so this is loaded unless it is already the current map.
     :param host: CARLA server host.
@@ -355,6 +360,7 @@ class CarlaBackend(SimulationBackend):
         stop_positions: dict[str, tuple[float, float, float]],
         position: str,
         speed_for: Callable[[int], float] | None = None,
+        lane_changes: bool = False,
         town: str = "Town01",
         host: str = "localhost",
         port: int = 2000,
@@ -405,6 +411,7 @@ class CarlaBackend(SimulationBackend):
         self._seed = seed
         self._blueprint_id = blueprint_id
         self._speed_for = speed_for
+        self._lane_changes = lane_changes
         self._repath_after_s = repath_after_s
         self._replan_every_s = replan_every_s
         self._direct_drive = direct_drive
@@ -1775,6 +1782,7 @@ class CarlaBackend(SimulationBackend):
             origin,
             self._location_of(stop_id),
             self._speed_for,
+            self._lane_changes,
         )
         self._remember_debug_route(route)
         if self._direct_drive and route is not None:

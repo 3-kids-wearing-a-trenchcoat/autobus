@@ -395,3 +395,77 @@ def test_town01_stop_ids_are_graph_nodes(
     graph = TransitGraph(town01)
     for stop in town01.get_stops():
         assert stop.id in graph.map.nodes
+
+
+# ---------------------------------------------------------------------------
+# Trap 4 -- endpoints that are the same place must share one node
+#
+# Node identity was a decimetre grid until 2026-08-17. Two endpoints that
+# straddle a bucket boundary then get separate IDs, the segments never join,
+# and the graph is silently poorer than the road it describes: measured, that
+# left 9 points on Town03 and 4 on Town05 split into halves 0.1-0.2 m apart,
+# routing 16% and 17% of their stop pairs the long way round.
+# ---------------------------------------------------------------------------
+
+def test_endpoints_a_fraction_apart_are_one_node(tmp_path: Path) -> None:
+    """
+    A join must survive the second segment starting a few centimetres off.
+
+    0.15 m is inside NODE_SNAP_M and, importantly, straddles a decimetre
+    boundary -- 199.95 and 200.10 round to 200.0 and 200.1 -- which is
+    exactly the case the old grid lost.
+    """
+    provider = _write_map(tmp_path, [
+        _straight(1, -1, (0.0, 0.0), (199.95, 0.0)),
+        _straight(2, -1, (200.10, 0.0), (400.0, 0.0)),
+    ], [])
+
+    graph = TransitGraph(provider)
+    edges = provider.get_road_edges()
+    first = [edge for edge in edges if edge.from_node_id == "n0000"]
+    assert first, "the first segment should start at the first node"
+
+    # The join is what matters: the node road 1 ends at must be the node
+    # road 2 starts from, so the far end is reachable from the near one.
+    joined = {edge.to_node_id for edge in edges} & {
+        edge.from_node_id for edge in edges}
+    assert joined, "the two segments should meet at a shared node"
+    assert nx.has_path(graph.map, first[0].id, edges[-1].id), \
+        "the far segment should be reachable across the join"
+
+
+def test_a_gap_wider_than_the_tolerance_stays_two_nodes(tmp_path: Path
+                                                        ) -> None:
+    """
+    Snapping must not weld genuinely separate places together.
+
+    A metre is far wider than any split measured on a real town, and welding
+    at that range would invent transitions the road does not have.
+    """
+    provider = _write_map(tmp_path, [
+        _straight(1, -1, (0.0, 0.0), (200.0, 0.0)),
+        _straight(2, -1, (201.0, 0.0), (400.0, 0.0)),
+    ], [])
+
+    edges = provider.get_road_edges()
+    assert not ({edge.to_node_id for edge in edges}
+                & {edge.from_node_id for edge in edges}), \
+        "a metre apart is two places, not one"
+
+
+def test_snapping_cannot_chain_across_a_road(tmp_path: Path) -> None:
+    """
+    Three points each within the tolerance of the next must not collapse
+    into one: a position joins a claimed position or becomes one, never
+    both, so no cluster grows wider than NODE_SNAP_M.
+    """
+    provider = _write_map(tmp_path, [
+        _straight(1, -1, (0.0, 0.0), (200.00, 0.0)),
+        _straight(2, -1, (200.20, 0.0), (300.0, 0.0)),
+        _straight(3, -1, (200.40, 0.0), (400.0, 0.0)),
+    ], [])
+
+    starts = {edge.from_node_id for edge in provider.get_road_edges()}
+    # Roads 2 and 3 start 0.4 m apart -- beyond the tolerance from each
+    # other, so they must not have been chained through road 1's end.
+    assert len(starts) >= 2

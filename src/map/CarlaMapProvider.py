@@ -35,6 +35,8 @@ Attaching it to ``e1`` is the intuitive reading and is wrong by exactly one
 edge length on every estimate.
 """
 
+import math
+
 from pathlib import Path
 
 from src.map.MapProvider import MapProvider
@@ -46,10 +48,28 @@ from src.map.carla_topology import (
 )
 from src.map.map_data import RoadEdgeRecord, RoadNodeRecord, StopRecord
 
-# Positions are matched to a decimetre when deciding whether two segments
-# meet. CARLA reports a junction's shared endpoints identically, so this only
-# has to absorb float formatting in the dump.
-POSITION_PRECISION = 1
+# Endpoints are rounded to a millimetre purely to make a hashable key. This
+# is NOT the tolerance at which two segments are judged to meet -- see
+# NODE_SNAP_M, which is.
+POSITION_PRECISION = 3
+
+# How close two segment endpoints must be to be treated as the same place.
+#
+# This was a decimetre grid until 2026-08-17, and rounding to a grid is the
+# wrong shape for the question: two endpoints a millimetre apart still land
+# in different buckets when they straddle a boundary, and the join is lost
+# silently. Measured, that split 9 points on Town03 and 4 on Town05 into
+# unreachable halves 0.1-0.2 m apart, leaving 16% and 17% of their stop pairs
+# routed the long way round -- one Town03 leg was priced at 4.87x its true
+# cost. Town01 and Town02 have no such split, which is why it went unnoticed.
+#
+# Snapping to the nearest already-claimed position has no boundary to
+# straddle. 0.25 m is measured rather than guessed: every genuine split sits
+# at 0.1-0.2 m, the next-closest distinct pair on Town03 is 0.3 m, and the
+# shortest edge on any town is 0.51 m, so this cannot collapse a real edge.
+# A point joins an existing position or becomes one, never both, so a cluster
+# can never grow wider than this.
+NODE_SNAP_M = 0.25
 
 # A split is skipped when it would leave a sub-edge shorter than this, which
 # would otherwise put a zero-weight edge in the graph.
@@ -180,24 +200,61 @@ class CarlaMapProvider(MapProvider):
             for segment in self._topology.segments
             for point in (segment.start, segment.end)
         })
-        self._node_ids = {
-            key: f"n{index:04d}" for index, key in enumerate(positions)
-        }
-        for key, node_id in self._node_ids.items():
+        self._node_ids, places = self._snap_positions(positions)
+        for node_id, place in places.items():
             self._nodes.append(RoadNodeRecord(
-                id=node_id, x=key[0], y=key[1], z=key[2]
+                id=node_id, x=place[0], y=place[1], z=place[2]
             ))
 
         for index, segment in enumerate(self._topology.segments):
             self._split_segment(segment, stops_by_segment.get(index, []))
 
     def _position_key(self, point: object) -> tuple[float, float, float]:
-        """Round a point to the precision at which segments are joined."""
+        """
+        Round a point to a hashable key.
+
+        This identifies a point, it does not decide which points are the same
+        place -- ``_snap_positions`` does that, at ``NODE_SNAP_M``. The
+        rounding here only has to be fine enough never to merge anything on
+        its own.
+        :param point: A point carrying x, y and z.
+        :return: The rounded coordinates.
+        """
         return (
             round(point.x, POSITION_PRECISION),
             round(point.y, POSITION_PRECISION),
             round(point.z, POSITION_PRECISION),
         )
+
+    def _snap_positions(
+        self, positions: list[tuple[float, float, float]]
+    ) -> tuple[dict[tuple[float, float, float], str],
+               dict[str, tuple[float, float, float]]]:
+        """
+        Give every endpoint a node ID, sharing one where they are the same
+        place.
+
+        Walks the positions in sorted order and joins each to an already-
+        claimed position within ``NODE_SNAP_M``, or claims it as a new one.
+        Because a position only ever joins a claimed position and never
+        becomes one itself, no cluster can grow wider than the tolerance --
+        so this cannot chain across a road.
+        :param positions: Every endpoint key, sorted, deduplicated.
+        :return: Endpoint key to node ID, and node ID to its coordinates.
+        """
+        node_ids: dict[tuple[float, float, float], str] = {}
+        places: dict[str, tuple[float, float, float]] = {}
+
+        for position in positions:
+            for node_id, claimed in places.items():
+                if math.dist(position, claimed) <= NODE_SNAP_M:
+                    node_ids[position] = node_id
+                    break
+            else:
+                node_id = f"n{len(places):04d}"
+                places[node_id] = position
+                node_ids[position] = node_id
+        return node_ids, places
 
     def _assign_stops_to_segments(self) -> dict[int, list[CarlaStop]]:
         """

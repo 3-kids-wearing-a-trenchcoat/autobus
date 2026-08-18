@@ -18,6 +18,10 @@
 
 ::: src.simulation.CarlaBackend.CarlaBackend
 
+::: src.simulation.CarlaBackend.stop_positions_from
+
+::: src.simulation.CarlaBackend.speed_limits_from
+
 ::: src.simulation.carla_routing.plan_route
 
 ::: src.simulation.carla_stdout.install
@@ -42,7 +46,11 @@
 
 ::: src.simulation.carla_viewer.format_table
 
+::: src.simulation.carla_viewer.close_active
+
 ::: src.simulation.carla_debug_text.draw_text
+
+::: src.simulation.carla_debug_text.advance
 
 ::: src.simulation.carla_debug_text.text_width
 

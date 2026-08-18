@@ -88,9 +88,9 @@ timing. `render_size` decouples the camera's resolution from the window's,
 so a large window need not cost a large render.
 
 Because the camera renders server-side, the server must render — but it no
-longer has to render *for you*. Run it `-RenderOffScreen`
-(`compose_backup.yml`) and the server stops drawing a viewport nobody is
-watching.
+longer has to render *for you*. `compose.yml` already runs the server with
+`-RenderOffScreen`, so it stops drawing a viewport nobody is watching while
+still producing frames for the camera.
 
 ## The minimap's two tabs
 

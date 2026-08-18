@@ -27,16 +27,19 @@ set_destination(stop_id: str) -> None       # abstract
 advance(dt: float) -> AdvanceResult         # abstract
 current_location() -> str                   # abstract
 
-start() -> None                             # no-op by default
-close() -> None                             # no-op by default
-sync_passengers(pool: RequestPool) -> None  # no-op by default
+start() -> None                                   # no-op by default
+close() -> None                                   # no-op by default
+set_planned_route(stop_ids: Sequence[str]) -> None  # no-op by default
+sync_passengers(pool: RequestPool) -> None        # no-op by default
 
 stats() -> dict[str, float]                 # optional; not declared at all
 ```
 
 Only three methods are abstract, because only three questions genuinely need
 the world to answer them. The rest have inert defaults so a world with no
-setup and nothing to render does not have to say so.
+setup and nothing to render does not have to say so — `set_planned_route`
+and `sync_passengers` exist purely for worlds that *show* things, and
+steering never consults either.
 
 `stats()` is not on the base class in any form. `run_trial` looks for it by
 duck typing and records whatever it returns as

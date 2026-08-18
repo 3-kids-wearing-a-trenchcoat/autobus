@@ -541,8 +541,8 @@ fig.show()
 
 Valid field names are the attribute names of `KPISnapshot`:
 `mean_wait_time`, `p90_wait_time`, `max_wait_time`, `mean_ride_time`,
-`mean_journey_time`, `fulfillment_rate`, `throughput`, `fulfilled_count`,
-`cancelled_count`.
+`mean_journey_time`, `fulfillment_rate`, `served_fraction`, `throughput`,
+`fulfilled_count`, `cancelled_count`.
 
 ### plot_wait_distribution
 

@@ -24,13 +24,25 @@ The bus routing algorithm should not need to know whether its map data comes
 from a `PlanarStreetGraph`, from a CARLA simulation, or from any other source.
 `MapProvider` is the abstract class that enforces this separation.
 
-It defines three methods:
+Three methods are abstract — the questions no map source can decline:
 
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `get_stops()` | `list[StopRecord]` | All bus stops on the map |
 | `get_road_nodes()` | `list[RoadNodeRecord]` | All navigational nodes (intersections) |
 | `get_road_edges()` | `list[RoadEdgeRecord]` | All directed road segments |
+
+Two more are concrete, with defaults chosen so that a source which does not
+care about them behaves exactly as it did before they existed:
+
+| Method | Default | Description |
+|--------|---------|-------------|
+| `traffic_efficiency()` | `1.0` | Fraction of the posted limit a bus actually averages here |
+| `get_lane_changes()` | `[]` | Directed `(from_edge_id, to_edge_id)` pairs a bus may move sideways between |
+
+Those defaults are load-bearing, not laziness. A planar graph has no lanes to
+change between and its mock backend drives exactly what it predicts, so every
+synthetic result the project rests on keeps producing identical numbers.
 
 Anything that needs map data — most importantly [TransitGraph](#transitgraph) — depends
 only on this interface. The concrete source of the data is invisible to it.
@@ -94,7 +106,8 @@ The graph is generated from a [Voronoi diagram](https://en.wikipedia.org/wiki/Vo
    bounding box. Four extra seeds are placed far outside the box so that all
    Voronoi ridges within the box are finite.
 2. **Intersection nodes** — each Voronoi vertex that falls inside the bounding
-   box becomes an `INTERSECTION` node.
+   box becomes a node, carrying only its `x` and `y`. Nodes are untyped:
+   every one of them is an intersection, so there is nothing to distinguish.
 3. **Road edges** — each Voronoi ridge with both endpoints inside the box
    becomes a road. A random `speed_limit` is assigned; some roads are made
    one-way.
@@ -189,26 +202,55 @@ has a decision to make or otherwise needs to change its behavior"*.
     intuitive reading and is wrong by exactly one edge length on every
     estimate.
 
-#### Speed limits are a stated assumption
+#### Speed limits are read from the town
 
-CARLA 0.9.16 publishes none: no type-274 landmarks, no `traffic.speed_limit.*`
-actors, no waypoint attribute. Leaving `speed_limit_kph` as `None` would fall
-through to `DEFAULT_SPEED_LIMIT`'s 130 km/h and make every urban estimate
-roughly four times too fast.
+!!! warning "This section said the opposite until 2026-08-11"
+    It claimed CARLA 0.9.16 published no speed limits at all — no type-274
+    landmarks, no actors, no waypoint attribute — and that a town-level
+    default was the best available. **That was wrong.** Town01 publishes 22
+    type-274 landmarks at 30, 60 and 90, and a driving vehicle reads them
+    back. Its arterials are 37.7% of the town's length and were being priced
+    at 30, which made the whole travel model 1.75× optimistic. Every result
+    recorded before that date was discarded.
 
-The dump therefore carries a town-level `default_speed_limit_kph` of **30.0**
-(CARLA's own fallback), with optional per-road overrides. This feeds the
-*policy's estimates* only — real driving speed is whatever the traffic manager
-does, so a wrong value degrades plan quality rather than breaking a run. It is
-the same estimate-versus-truth gap [`NoisyTravelModel`](travel_model.md)
-models.
+`carla_dump.read_speed_limits` reads the type-274 landmarks. A road's limit
+changes along its length — Town01's road 8 runs 30, 90, 60, 30 — but a road is
+a single graph edge, so the sections are combined into one number by a
+**length-weighted harmonic mean**, the average that preserves total travel
+time. Roads with no sign fall back to the town-level
+`default_speed_limit_kph` recorded in the dump.
+
+Two approximations are known and quantified by `carla_calibrate`: sign
+orientation is ignored (both directions of a road share a road ID here), and
+the declared `mph` unit is ignored, because `get_speed_limit()` returns the
+bare number and the traffic manager drives it as km/h — the number is what
+governs the driving, so the number is what is recorded.
+
+#### What the bus achieves is not what the sign says
+
+A posted limit is an upper bound the bus never averages: about a third of
+every CARLA run is spent stationary at a red light. That is a **bias, not
+noise** — execution noise on the same runs measures 0.034 — so it belongs in
+the estimate rather than in a safety margin, and it is reported by the map
+source rather than configured on a policy.
+
+`traffic_efficiency` carries it: a multiplier in (0, 1] that `TransitGraph`
+applies to every edge weight. It is stored in the town's dump, fitted **by
+driving** with `src.map.carla_calibrate`, and therefore belongs to the way
+the bus was driven when it was measured — recalibrate after any change to
+that. Measured 2026-08-17 under direct drive: Town01 0.476, Town02 0.448,
+Town03 0.627, Town05 0.367. It decisively does not transfer between towns.
+
+With both in place the model predicts Town01's legs with bias 1.000× and
+residual sigma 0.278, against 1.75× and 0.408 before.
 
 #### Checking a map
 
 `validate()` returns one line per problem and an empty list when the map is
-healthy. It covers the failures that are otherwise silent: a stop that matched
-no segment, a stop too close to a segment end to own an edge, an edge naming a
-node that does not exist, and a node the bus could never leave.
+healthy. It covers the failures that are otherwise silent: an authored stop
+that matched no segment or could not be given its own edge, an edge naming a
+node that does not exist, an edge carrying metadata (which would make the
+record unhashable), and a node the bus could never leave.
 
 ```python
 provider = CarlaMapProvider("Town01")
@@ -259,7 +301,29 @@ The graph is build on top of [networkx](https://networkx.org/en/), and each node
 9. **metadata** -- dictionary of additional data (matching `metadata` in `RoadEdgeRecord`)  
 
 Additionally, each edge in `TransitGraph` also has certain data associated with them:  
-1. **weight** -- expected travel time in seconds, calculated as `length / speed_limit` (falling back to 130 kph when `speed_limit` is `None`)  
+1. **weight** -- expected travel time in seconds.
+
+There are two kinds of edge, priced differently:
+
+* A **transition** between two road edges is weighted by the *origin* node's
+  own travel time, `length / (speed_limit × traffic_efficiency)`, with
+  `speed_limit` falling back to `DEFAULT_SPEED_LIMIT`'s 130 kph when the
+  source edge specifies none. Weighting by the origin is what makes a
+  shortest path sum every edge except its destination — see the warning about
+  which edge a stop belongs to, above.
+* A **lane change**, one per pair returned by `MapProvider.get_lane_changes()`,
+  is weighted `LANE_CHANGE_RAMP_M / speed + LANE_CHANGE_PENALTY_S`: 15 m of
+  forward travel while moving sideways, plus a flat 3 s. A lane change is a
+  diagonal rather than a teleport, and the penalty stops a shortest-path
+  search weaving between lanes to save a metre. `map_data` holds both
+  constants, and `carla_routing` charges the same figures, or the bus would
+  beat its own estimates. Raising `LANE_CHANGE_PENALTY_S` to a large number
+  prices lane changes out entirely and recovers the behaviour from before
+  they existed.
+
+`traffic_efficiency` comes from the provider and is validated to be in
+(0, 1]; at the default 1.0 the weights are exactly what they were before it
+was introduced.
 
 `TransitGraph` defines the following methods:  
 | Method | Returns | Description |  

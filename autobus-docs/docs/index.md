@@ -20,7 +20,8 @@ src/
 │   ├── CarlaMapProvider.py    # MapProvider for a CARLA town; imports no carla
 │   ├── carla_topology.py      # Road topology schema and IO
 │   ├── carla_stops.py         # Bus stop schema and IO, addressed by OpenDRIVE
-│   ├── carla_dump.py          # Dumps a town's topology; the only part needing a server
+│   ├── carla_dump.py          # Dumps a town's topology and speed limits; needs a server
+│   ├── carla_calibrate.py     # Fits traffic_efficiency by driving; needs a server
 │   ├── carla_maps/            # Per-town topology and hand-authored stops (JSON)
 │   ├── TransitGraph.py        # Routing graph
 │   ├── graph.py               # PlanarStreetGraph and supporting types
@@ -47,7 +48,10 @@ src/
 │   ├── MockBackend.py         # Dead reckoning over a TransitGraph
 │   ├── ScriptedBackend.py     # A timetable; no map at all
 │   ├── CarlaBackend.py        # A real vehicle in a CARLA town
-│   ├── carla_routing.py       # Which turns lead to a stop; imports carla
+│   ├── carla_routing.py       # Plans a drivable route to a stop; imports carla
+│   ├── carla_viewer.py        # Chase-camera window with a 2D HUD, for watching a run
+│   ├── carla_debug_text.py    # Stroke lettering for CARLA's world-space debug drawing
+│   ├── carla_stdout.py        # Captures and attributes what the traffic manager prints
 │   ├── SimulationRunner.py    # Owns the clock, tick order and orchestration
 │   ├── AnimationRecorder.py   # Per-tick frames for replaying a trial
 │   └── DemandGenerator.py     # Synthetic demand: GenerationPolicy and DemandGenerator
@@ -61,8 +65,13 @@ src/
     └── animation.py           # animate_trial(), show_animation(), show_animations()
 
 results/
-└── runs/                      # One JSON file per completed run; tracked in git
+├── runs/                      # One JSON file per completed run
+└── archive/                   # Runs retired because the code that produced them changed
 ```
+
+Neither `results/` directory is tracked in git — the volume makes it
+impractical, and archived runs are kept out of the store so `load_runs` cannot
+pool them with current results. The notebooks are the record.
 
 ## Running the project
 

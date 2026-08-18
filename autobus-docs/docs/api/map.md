@@ -20,6 +20,12 @@
 
 ::: src.map.carla_stops.save_stops
 
+::: src.map.carla_stops.stops_path
+
+::: src.map.carla_stops.town_name
+
+::: src.map.carla_stops.available_towns
+
 ::: src.map.carla_topology.SegmentPoint
 
 ::: src.map.carla_topology.RoadSegment
@@ -30,4 +36,27 @@
 
 ::: src.map.carla_topology.save_topology
 
+::: src.map.carla_topology.topology_path
+
 ::: src.map.TransitGraph.TransitGraph
+
+## Dumping and calibrating a CARLA town
+
+Both need a live server, and neither is used at trial time — a town's roads
+and its `traffic_efficiency` are dumped once and read from JSON thereafter.
+
+::: src.map.carla_dump.dump_world
+
+::: src.map.carla_dump.read_speed_limits
+
+::: src.map.carla_dump.lane_change_along
+
+::: src.map.carla_calibrate.calibrate
+
+::: src.map.carla_calibrate.calibrate_policy_driven
+
+::: src.map.carla_calibrate.drive_tour
+
+::: src.map.carla_calibrate.check_speed_limits
+
+::: src.map.carla_calibrate.report

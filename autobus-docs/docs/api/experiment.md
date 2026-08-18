@@ -4,6 +4,8 @@
 
 ::: src.experiment.trial.run_trial
 
+::: src.experiment.trial.require_pinned_hash_seed
+
 ::: src.experiment.comparison.compare_policies
 
 ::: src.experiment.summary.summarize_comparison
@@ -27,6 +29,10 @@
 ::: src.experiment.store.load_frame
 
 ::: src.experiment.store.to_results
+
+::: src.experiment.store.run_id_for
+
+::: src.experiment.store.is_recorded
 
 ::: src.experiment.plots.plot_kpi_bars
 

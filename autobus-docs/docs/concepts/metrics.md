@@ -45,6 +45,7 @@ Calling `snapshot(sim_time)` at any point during or after a run returns a
 | `max_wait_time` | Longest wait time across all fulfilled requests (seconds). | No fulfilled requests yet. |
 | `p90_wait_time` | 90th-percentile wait time across fulfilled requests (seconds). | No fulfilled requests yet. |
 | `fulfillment_rate` | `fulfilled / (fulfilled + cancelled)` — fraction of terminal requests served. | No terminal requests yet. |
+| `served_fraction` | `fulfilled / (fulfilled + cancelled + pending + on_bus)` — fraction of *all* requests ever created. | The pool holds no requests. |
 | `throughput` | Fulfilled requests per simulation minute (`fulfilled / sim_time * 60`). | `sim_time` is 0. |
 
 ### In-flight exclusion
@@ -56,6 +57,15 @@ means when no requests have been fulfilled yet.
 
 `fulfillment_rate` covers all *terminal* requests (fulfilled + cancelled), so it
 is also unaffected by in-flight state.
+
+!!! warning "Prefer `served_fraction` when a run can strand demand"
+    `fulfillment_rate` counts only requests that reached a terminal state, so
+    demand the bus never got to — still `PENDING` when the run ends — is
+    simply absent from both halves of the fraction. A policy that ignores a
+    whole district can therefore post a high `fulfillment_rate`.
+    `served_fraction` divides by every request ever created, so stranded
+    demand counts against it. It is the fraction the campaign notebooks
+    report.
 
 `snapshot()` is safe to call at any point mid-run.
 

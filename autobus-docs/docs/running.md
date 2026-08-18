@@ -65,12 +65,14 @@ The script sets `PYTHONPATH` to the project root before starting Jupyter, so
 `src.*` imports work correctly from any notebook regardless of where it lives in
 the repository. Experiment notebooks are kept in the `notebooks/` directory.
 
-Two of them are the entry points:
+Four of them are the entry points — two that produce runs, two that read them:
 
 | notebook | what it does |
 |---|---|
 | `synthetic-campaign.ipynb` | Sweeps the policies and their service windows on the campus map, filing every run in the store. Stop it whenever you like; re-running continues rather than restarting. |
-| `results.ipynb` | Reads the store and draws the tables and graphs. Runs no simulation and needs no CARLA server, so it works while a campaign is still going. |
+| `carla-campaign-towns.ipynb` | The same comparison driven in real CARLA towns. Needs a live server, and runs per seed so a hiccup costs one trial rather than the night. |
+| `results-explorer.ipynb` | Reads **exactly the runs you ask for**, selected by the constants in its *Filters* cell and faceted by `GROUP_BY`. This is the one to reach for. |
+| `results.ipynb` | Reads the store and draws the tables and graphs for whichever scenario has the most runs. Neither reader runs a simulation or needs a server, so both work while a campaign is still going. |
 
 ### Reproducibility: set `PYTHONHASHSEED`
 
@@ -137,11 +139,14 @@ tested and experimented on with nothing running:
 run_trial(policy_factory=..., provider=CarlaMapProvider("Town01"))
 ```
 
-Only two things need a live server: driving the bus with
-[`CarlaBackend`](concepts/simulation_backend.md#carlabackend), and re-dumping a
-town's road topology with `src.map.carla_dump`.
+Only three things need a live server: driving the bus with
+[`CarlaBackend`](concepts/simulation_backend.md#carlabackend), re-dumping a
+town's roads and speed limits with `src.map.carla_dump`, and fitting a town's
+`traffic_efficiency` with `src.map.carla_calibrate` — which measures it *by
+driving*, so it must be re-run after any change to how the bus is driven.
 
-To watch the bus drive, use `notebooks/carla-demo.ipynb`.
+To watch the bus drive, use `notebooks/carla-single-run.ipynb`, which runs one
+trial with the [viewer](concepts/watching_a_run.md) on.
 
 !!! warning "Load the town before touching the traffic manager"
     A `carla.TrafficManager` caches the road network when it is first created

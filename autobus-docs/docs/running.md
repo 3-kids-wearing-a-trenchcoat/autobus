@@ -26,15 +26,18 @@ So `conda env create` alone does not finish the environment. Run this once:
 bash install-carla-agents.sh
 ```
 
-It copies `agents/` out of the pinned image into the environment's
-`site-packages` and then imports it to check. Re-running replaces the copy.
+It pulls the pinned `carlasim/carla:0.9.16` image if it is not already
+present, copies `agents/` out of it into the environment's `site-packages`,
+and imports it to check. Re-running replaces the copy. **This is the one
+place the project needs Docker**, and it needs it to fetch a Python package
+— not to run anything.
 
 !!! note "Why it is installed rather than copied into the repository"
     Vendoring it would put ~1,800 lines of someone else's code under this
     project's ownership for no benefit. Taking it from the **pinned image**
-    means it cannot drift out of step with the server that runs alongside
-    it, and it stays a dependency like any other. The cost is this extra
-    step, which is fair given the image is required to run CARLA anyway.
+    means it cannot drift out of step with the version the client wheel is
+    pinned to, and it stays a dependency like any other. The cost is this
+    extra setup step.
 
 ## Running the simulation
 
@@ -115,21 +118,26 @@ showing `null` is one whose exact reproduction cannot be guaranteed. Averages
 over many seeds remain meaningful either way; individual seeded numbers do
 not.
 
-## Running the CARLA server
+## The CARLA server
 
-The server runs from `compose.yml` in the project root and must be started by
-hand:
+**How the server is started is out of scope for this project.** Nothing here
+launches, configures or manages it: the code takes a host and a port and
+connects. Any 0.9.16 server reachable on that address will do, however you
+choose to run it.
 
-```bash
-docker compose up -d carla     # start
-docker compose down            # stop
-```
+!!! note "What this was developed against"
+    CARLA **0.9.16**, run in Docker. The version matters — the client wheel
+    is pinned to it, and the `agents` package is taken from the matching
+    image — but nothing below assumes Docker, or any particular way of
+    bringing the server up.
 
-`tests/sanity_cehck_carla.py` confirms it is live: it connects, spawns a
-vehicle, drives it on autopilot for three seconds and destroys it.
+`tests/sanity_cehck_carla.py` confirms a server is live and usable: it
+connects, spawns a vehicle, drives it on autopilot for three seconds and
+destroys it. Run it before blaming the code.
 
-**The server starts on Town10HD_Opt**, not on the town the project uses. That
-matters for more than convenience — see the warning below.
+**Whatever town the server starts on is almost certainly not the one you
+want.** That matters for more than convenience — see the traffic manager
+warning below.
 
 Most of the project needs no server at all. `CarlaMapProvider` reads a town's
 roads and stops from version-controlled JSON, so a CARLA town can be routed,
@@ -150,9 +158,9 @@ trial with the [viewer](concepts/watching_a_run.md) on.
 
 !!! warning "Load the town before touching the traffic manager"
     A `carla.TrafficManager` caches the road network when it is first created
-    and **never re-caches it** when a new map is loaded. One created while
-    Town10HD_Opt is still loaded will steer vehicles around Town01 using
-    Town10HD's waypoints — measured, 0 of 5 stops reached and off any lane for
+    and **never re-caches it** when a new map is loaded. One created before
+    the town you want is loaded will steer vehicles around the *previous*
+    map's waypoints — measured, 0 of 5 stops reached and off any lane for
     93% of the run, looking exactly like bad driving rather than a
     misconfiguration.
 
@@ -173,8 +181,9 @@ trial with the [viewer](concepts/watching_a_run.md) on.
     that drives vehicles, do the same rather than assuming port 8000 is
     yours.
 
-### If the CARLA window looks frozen
+### If the server looks frozen
 
 The world has been left in synchronous mode with nobody ticking it, usually by
-an interrupted run. The preflight cell in `notebooks/carla-demo.ipynb` restores
-asynchronous mode and clears stray actors; it is safe to run at any time.
+an interrupted run — the server is waiting for a tick that is never coming.
+The preflight cell in `notebooks/carla-demo.ipynb` restores asynchronous mode
+and clears stray actors; it is safe to run at any time.

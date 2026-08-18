@@ -300,7 +300,7 @@ yields a traffic manager that drives nothing.
 So the backend searches upward from port 8000 for one nobody is using, and
 `close()` shuts down only what it created. Pass `tm_port` to override, in
 which case managing it becomes the caller's job. See
-[Running the Project](../running.md#running-the-carla-server).
+[Running the Project](../running.md#the-carla-server).
 
 #### A clean world per trial
 

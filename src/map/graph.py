@@ -64,18 +64,6 @@ class PlanarStreetGraph:
 
         return cls(graph)
 
-    def neighbors(self, node_id: int) -> list[int]:
-        """Return node IDs directly reachable from node_id in one hop."""
-        return list(self._graph.successors(node_id))
-
-    def edge_distance(self, u: int, v: int) -> float:
-        """Road length of the directed edge u → v in the same units as bounds."""
-        return self._graph[u][v]['distance']
-
-    def edge_travel_time(self, u: int, v: int) -> float:
-        """Effective travel time (distance / speed_limit) for the edge u → v."""
-        return self._graph[u][v]['travel_time']
-
     def edge_stop(self, u: int, v: int) -> dict | None:
         """Return stop metadata for edge u → v, or None if there is no stop.
 
@@ -86,11 +74,6 @@ class PlanarStreetGraph:
           for generated graphs)
         """
         return self._graph[u][v].get('stop')
-
-    def node_position(self, node_id: int) -> tuple[float, float]:
-        """Return the (x, y) position of the given node."""
-        node = self._graph.nodes[node_id]
-        return (node['x'], node['y'])
 
     def shortest_path(self, source: int, target: int) -> list[int]:
         """Return the minimum travel-time path from source to target as a node list."""

@@ -6,24 +6,19 @@ tick order, demand, abandonment and metrics; this only takes destinations and
 reports arrivals.
 
 Steering keeps CARLA's own autonomous driving in charge, which is what the
-design review expected rather than required: the bus is an ordinary autopilot
-vehicle, told which turns to take at each junction by
-`TrafficManager.set_route`. The review lists vehicle control as a *risk*,
-mitigated by "CARLA's built-in autonomous driving *should* be sufficient for
-a PoC", and scopes it as contained within the backend. The turns come from
-`carla_routing`, because a destination alone is not something the traffic
-manager can navigate to.
+design review expected rather than required. The review lists vehicle control
+as a *risk*, mitigated by "CARLA's built-in autonomous driving *should* be
+sufficient for a PoC", and scopes it as contained within the backend.
 
-With ``direct_drive=True`` it stops negotiating with the traffic manager
-altogether and drives the planned route itself, through CARLA's own
-`agents.navigation.BasicAgent`. There is then no turn list, no RoadOption to
-predict and nothing to correct mid-drive: the planned waypoints *are* the
-trajectory. See ``_make_agent``.
+The bus drives the planned route itself, through CARLA's own
+`agents.navigation.BasicAgent`: the waypoints from `carla_routing` *are* the
+trajectory, so there is no turn list, no RoadOption to predict and nothing to
+correct mid-drive. See ``_make_agent``.
 
-**This module imports carla**, and — for ``direct_drive`` — CARLA's `agents`
-package, which is installed by ``install-carla-agents.sh`` rather than
-vendored. Nothing else under `src/simulation` imports either, and nothing
-above the backend imports this.
+**This module imports carla** and CARLA's `agents` package, which is
+installed by ``install-carla-agents.sh`` rather than vendored. Nothing else
+under `src/simulation` imports either, and nothing above the backend imports
+this.
 """
 
 import math
@@ -39,10 +34,7 @@ from src.simulation import carla_debug_text, carla_stdout
 from agents.navigation.basic_agent import BasicAgent
 from agents.navigation.local_planner import RoadOption
 
-from src.simulation.carla_routing import (
-    junction_turns, plan_route, turns_along,
-)
-from src.simulation.carla_steering import ClosedLoopSteering
+from src.simulation.carla_routing import plan_route
 from src.simulation.SimulationBackend import AdvanceResult, SimulationBackend
 
 import carla
@@ -80,15 +72,6 @@ WALKER_LATERAL_OFFSET_M = 1.0
 QUEUE_AHEAD_M = 20.0
 QUEUE_LATERAL_M = 3.0
 QUEUE_STATIONARY_MS = 0.5
-
-# Least time between two off-route re-plans under closed-loop steering. The
-# guard is against a leg whose destination is unroutable: ``_steer_towards``
-# then falls back to ``set_path`` without adopting a plan, so every tick
-# would find the bus deciding at a junction no plan contains and start
-# another whole-town search — twenty a second. Sized above the 2.1 s gap
-# between the two genuine consecutive re-plans measured on the Town03
-# reference leg, so it never blocks a useful one.
-STEER_REPLAN_COOLDOWN_S = 1.0
 
 DEFAULT_TM_PORT = 8000
 TM_PORT_SEARCH_LIMIT = 20
@@ -283,31 +266,6 @@ class CarlaBackend(SimulationBackend):
         in its junctions — see ``FULL_SIZE_BUS_ID``.
     :param repath_after_s: Seconds of no movement before the destination is
         re-issued to the traffic manager. Cheap and often enough.
-    :param replan_every_s: Simulated seconds between re-issuing the route
-        *while the bus is moving*, or None to issue it once per leg as
-        before. ``repath_after_s`` only fires on a bus that has stopped, so
-        without this nothing corrects one that is driving briskly in the
-        wrong direction — see ``_track_replan``. Pick a value longer than a
-        healthy leg on the town in question, so it never disturbs a leg that
-        is going well: 300 s was measured good on Town03 and Town05, where
-        healthy legs run 120–350 s.
-    :param closed_loop: Correct the traffic manager's junction decisions as
-        the bus drives, instead of handing it a positional list of turns for
-        the whole leg up front. The list can only be as good as our guess at
-        which junctions spend an entry, and that guess is not derivable —
-        see ``carla_steering``. Defaults to False so every result recorded
-        before it stays reproducible.
-    :param direct_drive: Drive the planned route directly with CARLA's own
-        `BasicAgent` instead of handing the traffic manager a turn list.
-        Autopilot is switched off and the backend applies the agent's control
-        each tick. This removes the entire turn-list translation — every
-        failure it caused is structurally impossible — at the cost of the bus
-        no longer being a traffic-manager vehicle. Overrides ``closed_loop``.
-
-        **The default since 2026-08-16**, on 112 legs across four towns at 0
-        and 20 NPCs: 56/56 arriving both times, no dropped routes, and 55%
-        less simulated time than the turn list, which loses 3 legs entirely.
-        Set False only to reproduce a result recorded before that date.
     :param follow_camera: Move the spectator camera to sit behind and above
         the bus on every tick, so a rendering server shows a chase view.
         Pointless with ``no_rendering=True``, where there is nothing to look
@@ -373,9 +331,6 @@ class CarlaBackend(SimulationBackend):
         seed: int = 0,
         blueprint_id: str = DEFAULT_BUS_ID,
         repath_after_s: float = 10.0,
-        replan_every_s: float | None = None,
-        closed_loop: bool = False,
-        direct_drive: bool = True,
         follow_camera: bool = False,
         debug_draw: bool = False,
         viewer: bool = False,
@@ -413,13 +368,7 @@ class CarlaBackend(SimulationBackend):
         self._speed_for = speed_for
         self._lane_changes = lane_changes
         self._repath_after_s = repath_after_s
-        self._replan_every_s = replan_every_s
-        self._direct_drive = direct_drive
         self._agent: object | None = None
-        self._steering = (
-            ClosedLoopSteering() if closed_loop and not direct_drive else None
-        )
-        self._since_steer_replan_s = 0.0
         self._follow_camera = follow_camera
         self._debug_draw = debug_draw
         self._viewer_wanted = viewer
@@ -443,16 +392,11 @@ class CarlaBackend(SimulationBackend):
         self._leg_armed = False
         self._dwell_remaining = 0.0
         self._since_repath_s = 0.0
-        self._since_replan_s = 0.0
 
-        # The last turn list handed to the traffic manager, when, and from
-        # where. Only diagnostics read these: a dropped route is about a
-        # list that ran out or slipped, so its contents, its age and the
-        # point it was planned from are the questions asked of it. The
-        # origin matters because the route is planned from wherever the bus
-        # actually is, not from the stop it nominally left — without it a
-        # drop cannot be reconstructed after the fact.
-        self._issued_turns: list[str] = []
+        # When the route was last handed to the agent, and from where. Only
+        # diagnostics read these. The origin matters because the route is
+        # planned from wherever the bus actually is, not from the stop it
+        # nominally left.
         self._issued_at_s = 0.0
         self._issued_from: tuple[float, float] | None = None
 
@@ -490,7 +434,6 @@ class CarlaBackend(SimulationBackend):
             "legs_started": 0,
             "distance_m": 0.0,
             "repaths": 0,
-            "replans": 0,
             "red_light_ticks": 0,
             "queued_ticks": 0,
             "unroutable_legs": 0,
@@ -499,12 +442,6 @@ class CarlaBackend(SimulationBackend):
             # ``carla_stdout``: the message itself carries no context, and
             # the tagged line on stdout is where the detail lives.
             "route_drops": 0,
-            # Closed-loop steering only: junctions where the traffic
-            # manager's own decision disagreed with the plan and was
-            # overridden, and times the bus was found deciding at a junction
-            # the plan does not contain and had to re-plan.
-            "steer_corrections": 0,
-            "steer_replans": 0,
             "walkers_spawned": 0,
             "walkers_removed": 0,
             "walker_spawn_failures": 0,
@@ -699,7 +636,6 @@ class CarlaBackend(SimulationBackend):
 
         self._destination = stop_id
         self._leg_armed = True
-        self._since_replan_s = 0.0
         # Restarted here rather than on arrival, because the leg the overlay
         # counts is the one the bus is driving, and a bus that dwells at a
         # stop has not started the next leg until it is given one.
@@ -1323,10 +1259,9 @@ class CarlaBackend(SimulationBackend):
         is a map query, and at twenty ticks a simulated second over a
         campaign it would cost far more than the diagnostic is worth.
 
-        The road fields are the whole point. A message raised while the bus
-        sits *inside* a junction says the turn list was re-issued from a
-        place ``turns_along`` cannot describe, and the lane says whether the
-        bus had drifted off the one its route was planned along.
+        The road fields are the whole point: they say where the bus was
+        standing, and whether it had drifted off the lane its route was
+        planned along.
         :return: One line of context, for the front of the message.
         """
         now = self._stats["ticks"] * self._delta
@@ -1340,14 +1275,11 @@ class CarlaBackend(SimulationBackend):
             # on arrival.
             f"armed={self._leg_armed}",
             f"t={now:.2f}s",
-            f"since_replan={self._since_replan_s:.1f}s",
-            f"issued={len(self._issued_turns)}",
             f"issued_ago={now - self._issued_at_s:.1f}s",
-            # The list itself and the point it was planned from, so a drop
-            # can be reconstructed offline instead of guessed at. The route
-            # is planned from where the bus stood, which is not the stop it
+            # The point the route was planned from, so a message can be
+            # reconstructed offline instead of guessed at. The route is
+            # planned from where the bus stood, which is not the stop it
             # left, so the destination alone does not identify it.
-            f"turns={','.join(self._issued_turns) or '-'}",
             f"planned_from={self._as_point(self._issued_from)}",
         ]
         bus = self._bus()
@@ -1360,7 +1292,7 @@ class CarlaBackend(SimulationBackend):
             parts.append(f"road={waypoint.road_id}")
             parts.append(f"lane={waypoint.lane_id}")
             parts.append(f"at=({here.x:.1f},{here.y:.1f})")
-            parts += self._lookahead(bus, waypoint)
+            parts += self._lookahead()
         return " ".join(parts)
 
     @staticmethod
@@ -1376,67 +1308,19 @@ class CarlaBackend(SimulationBackend):
             return "none"
         return f"({position[0]:.1f},{position[1]:.1f})"
 
-    def _lookahead(self, bus: "carla.Actor",
-                   waypoint: "carla.Waypoint") -> list[str]:
+    def _lookahead(self) -> list[str]:
         """
-        Describe the road in front of the bus, not the road under it.
+        Say that there is nothing to report about the traffic manager.
 
-        This is the correction the first round of tagging asked for. The
-        traffic manager validates the turn list against a buffer that runs
-        *ahead* of the vehicle, so where the bus is says little about which
-        junction the missing turn belonged to — measured 2026-08-14, 26 of
-        30 messages fired with the bus on open road.
-        :param bus: The bus actor.
-        :param waypoint: The bus's own snapped waypoint.
-        :return: Tag fields naming what the traffic manager intends to do
-            next and where the next junction along the lane is.
+        This used to describe the buffer the traffic manager validates a
+        turn list against, which was the only way to tell which junction a
+        dropped route belonged to. The bus is no longer an autopilot
+        vehicle, so the traffic manager holds no buffer for it and asking
+        would be meaningless at best. The field is kept so a captured
+        message still reads the same shape as the ones on record.
+        :return: The one tag field left to say.
         """
-        if self._direct_drive:
-            # The bus is not an autopilot vehicle, so the traffic manager
-            # holds no buffer for it and asking would be meaningless at best.
-            return ["tm_next=n/a(direct_drive)"]
-
-        action, target = self._traffic_manager.get_next_action(bus)
-        gap = target.transform.location.distance(bus.get_location())
-        parts = [
-            f"tm_next={action}",
-            f"tm_next_at={gap:.0f}m",
-            f"tm_buffer={len(self._traffic_manager.get_all_actions(bus))}",
-        ]
-
-        ahead = self._junction_ahead(waypoint)
-        if ahead is None:
-            parts.append("next_junction=none")
-        else:
-            junction, distance = ahead
-            parts.append(f"next_junction={junction.road_id}@{distance:.0f}m")
-        return parts
-
-    def _junction_ahead(
-        self, waypoint: "carla.Waypoint", limit_m: float = 80.0
-    ) -> "tuple[carla.Waypoint, float] | None":
-        """
-        Find the first junction along the lane in front of the bus.
-
-        Follows the first continuation at each step rather than every
-        branch. That is enough for the question being asked — which junction
-        is coming — because every branch out of a lane enters the same
-        junction; it would not be enough to plan with.
-        :param waypoint: Where to start looking from.
-        :param limit_m: How far ahead to bother looking.
-        :return: The junction's first waypoint and its distance, or None if
-            there is no junction within the limit.
-        """
-        step, travelled, current = 2.0, 0.0, waypoint
-        while travelled < limit_m:
-            following = current.next(step)
-            if not following:
-                return None
-            current = following[0]
-            travelled += step
-            if current.is_junction:
-                return current, travelled
-        return None
+        return ["tm_next=n/a(direct_drive)"]
 
     def _tick_once(self) -> None:
         """Advance the world one step and accumulate diagnostics."""
@@ -1449,10 +1333,8 @@ class CarlaBackend(SimulationBackend):
             return
 
         if self._dwell_remaining > 0.0:
-            # Hold the bus still for the dwell. Autopilot is left on so the
-            # traffic manager keeps its route; the brake simply overrides it.
-            # Under ``direct_drive`` nothing else is driving anyway, so the
-            # same brake is the whole story and the agent is simply not
+            # Hold the bus still for the dwell. Nothing else is driving it,
+            # so the brake is the whole story and the agent is simply not
             # stepped this tick.
             bus.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0))
             self._dwell_remaining -= self._delta
@@ -1460,7 +1342,7 @@ class CarlaBackend(SimulationBackend):
                 self._dwell_remaining = 0.0
                 bus.apply_control(carla.VehicleControl(brake=0.0))
                 self._replan_after_dwell(bus)
-        elif self._direct_drive:
+        else:
             self._drive_agent(bus)
 
         if self._follow_camera:
@@ -1475,8 +1357,6 @@ class CarlaBackend(SimulationBackend):
             self._track_stall(bus, step)
         self._last_location = here
 
-        self._track_replan(bus)
-        self._track_steering(bus)
 
     def _replan_after_dwell(self, bus: "carla.Actor") -> None:
         """
@@ -1488,11 +1368,10 @@ class CarlaBackend(SimulationBackend):
         then brakes for its full length, and the bus rolls several metres
         past the point that route was planned from.
 
-        Under the traffic manager that cost nothing — a turn list does not
-        care where it was computed. Under ``direct_drive`` the plan is the
-        trajectory, so those opening waypoints are now *behind* the bus by
-        more than the local planner's purge radius. They are never popped,
-        the agent steers at a target 180 degrees astern, and the bus
+        The plan is the trajectory, so those opening waypoints are now
+        *behind* the bus by more than the local planner's purge radius. They
+        are never popped, the agent steers at a target 180 degrees astern,
+        and the bus
         pirouettes at full lock until something rescues it. Measured on a
         Town01 trial: 306 m driven in 3360 s, 330 stall re-paths, every
         request cancelled.
@@ -1501,7 +1380,7 @@ class CarlaBackend(SimulationBackend):
         by construction, because the bus is stationary when it happens.
         :param bus: The bus actor.
         """
-        if not self._direct_drive or not self._leg_armed:
+        if not self._leg_armed:
             return
         if self._destination is None or self._traffic_manager is None:
             return
@@ -1521,78 +1400,6 @@ class CarlaBackend(SimulationBackend):
         if self._agent is None or not self._leg_armed:
             return
         bus.apply_control(self._agent.run_step())
-
-    def _track_steering(self, bus: "carla.Actor") -> None:
-        """
-        Correct the junction the traffic manager is about to decide at.
-
-        Skipped while dwelling, like ``_track_replan``: a bus held at a stop
-        is not approaching anything, and the junction still in its buffer
-        would be re-decided pointlessly on every tick of the dwell.
-        :param bus: The bus actor.
-        """
-        if self._steering is None or not self._leg_armed:
-            return
-        if self._destination is None or self._dwell_remaining > 0.0:
-            return
-
-        self._since_steer_replan_s += self._delta
-        reason = self._steering.step(self._traffic_manager, bus)
-        if reason is not None and (self._since_steer_replan_s
-                                   >= STEER_REPLAN_COOLDOWN_S):
-            self._since_steer_replan_s = 0.0
-            # The bus is deciding at a junction its route does not contain,
-            # so it has left that route. Re-planning from where it actually
-            # is discards the drift rather than trying to unwind it.
-            self._steer_towards(bus, self._destination)
-            self._stats["steer_replans"] += 1
-        self._stats["steer_corrections"] = self._steering.corrections
-
-    def _track_replan(self, bus: "carla.Actor") -> None:
-        """
-        Re-issue the route periodically, for a bus that is still moving.
-
-        `set_destination` hands the traffic manager one turn list per leg and
-        never refreshes it, and `_track_stall` only reacts to a bus that has
-        *stopped*. Between them there is a gap: the turn list is consumed one
-        entry per junction, and when it runs out or slips out of step,
-        `ImportRoute` drops the route and the vehicle reverts to random
-        navigation — driving briskly, so nothing notices. Measured on Town03,
-        a 474 m leg lost its list at the fourth of four turns and then
-        crossed 125 more junctions, covering 10 km without arriving.
-
-        Re-issuing does not correct any individual turn. It re-establishes
-        the alignment from wherever the bus actually is, so accumulated drift
-        is discarded rather than compounding for the rest of the leg.
-        Measured over full tours: Town03 −67% and Town05 −50% of simulated
-        time, with Town05 going from 12/14 legs arriving to 14/14.
-
-        The period wants to be **longer than a healthy leg**, so a leg that
-        is going well finishes untouched — at 300 s on Town05 the four legs
-        shorter than that came out bit-identical to leaving it alone, while
-        30 s and 120 s made one of them three times slower.
-        :param bus: The bus actor.
-        """
-        if self._direct_drive:
-            # Nothing to re-establish. This exists because `set_route` hands
-            # the traffic manager one turn list per leg and never refreshes
-            # it, so a list that ran out or slipped left the bus navigating
-            # at random. Under ``direct_drive`` there is no list: the agent
-            # follows the planned waypoints and cannot take a turn we did not
-            # plan, so a periodic re-plan corrects nothing and only resets
-            # the agent's queue mid-drive. ``_track_stall`` remains as the
-            # net for a bus displaced by a collision.
-            return
-        if self._replan_every_s is None or not self._leg_armed:
-            return
-        if self._destination is None or self._dwell_remaining > 0.0:
-            return
-
-        self._since_replan_s += self._delta
-        if self._since_replan_s >= self._replan_every_s:
-            self._steer_towards(bus, self._destination)
-            self._stats["replans"] += 1
-            self._since_replan_s = 0.0
 
     def _point_camera_at(self, bus: "carla.Actor") -> None:
         """
@@ -1710,17 +1517,13 @@ class CarlaBackend(SimulationBackend):
             and that light is red. A green light reads as False, so a bus
             that sits still on green is still treated as stalled.
         """
-        if self._direct_drive:
-            return self._agent_holds_for_hazard(bus)
-        if not bus.is_at_traffic_light():
-            return False
-        return bus.get_traffic_light_state() == carla.TrafficLightState.Red
+        return self._agent_holds_for_hazard(bus)
 
     def _agent_holds_for_hazard(self, bus: "carla.Actor") -> bool:
         """
         Ask the driving agent whether it is deliberately holding the bus.
 
-        ``is_at_traffic_light`` is the wrong question under ``direct_drive``:
+        ``is_at_traffic_light`` is the wrong question here:
         `BasicAgent` brakes ``_base_tlight_threshold`` short of the light,
         which is **outside** its trigger volume, so CARLA reports no light
         and the bus reads as stalled. Measured on Town01, where reds run
@@ -1785,48 +1588,25 @@ class CarlaBackend(SimulationBackend):
             self._lane_changes,
         )
         self._remember_debug_route(route)
-        if self._direct_drive and route is not None:
-            # The waypoints are the trajectory. RoadOption is bookkeeping for
-            # the agent's own planner here, not a decision CARLA re-derives,
-            # so LANEFOLLOW throughout is both honest and sufficient.
-            self._issued_turns = []
-            self._issued_at_s = self._stats["ticks"] * self._delta
-            self._agent.set_global_plan(
-                [(waypoint, RoadOption.LANEFOLLOW) for waypoint in route]
-            )
-            return
         if route is None:
-            # Nothing sensible to say, so fall back to the old behaviour of
-            # simply aiming at the stop. It is poor, but an instruction the
-            # traffic manager may mishandle still beats none at all.
+            # Nothing sensible to say, so fall back to simply aiming at the
+            # stop. It is poor, but an instruction beats none at all.
             self._stats["unroutable_legs"] += 1
             self._traffic_manager.set_path(
                 bus, [self._location_of(stop_id)]
             )
             return
 
+        # The waypoints are the trajectory. RoadOption is bookkeeping for
+        # the agent's own planner here, not a decision CARLA re-derives, so
+        # LANEFOLLOW throughout is both honest and sufficient.
         self._issued_at_s = self._stats["ticks"] * self._delta
-        if self._steering is not None:
-            # Nothing is handed over up front: every junction is decided
-            # just in time, so there is no list to fall out of step with.
-            #
-            # ``_issued_turns`` is deliberately left empty rather than
-            # filled from ``turns_along``. It feeds the diagnostic tag on a
-            # dropped route, and a list we computed but never sent would
-            # read there as the list CARLA was refusing — which it is not.
-            self._issued_turns = []
-            self._steering.set_plan(junction_turns(route))
-            return
-
-        turns = turns_along(route)
-        self._issued_turns = turns
-        if turns:
-            self._traffic_manager.set_route(bus, turns)
-        # An empty list means the route crosses no junction where there is
-        # anything to decide, and lane following already goes the right way.
+        self._agent.set_global_plan(
+            [(waypoint, RoadOption.LANEFOLLOW) for waypoint in route]
+        )
 
     def _repath(self, bus: "carla.Actor") -> None:
-        """Re-plan from where the bus is now and re-issue its turns."""
+        """Re-plan from where the bus is now and re-issue its route."""
         if self._destination is None or self._traffic_manager is None:
             return
         self._steer_towards(bus, self._destination)
@@ -1884,12 +1664,9 @@ class CarlaBackend(SimulationBackend):
             )
 
         self._bus_id = bus.id
-        if self._direct_drive:
-            # We apply control ourselves every tick; autopilot would fight it.
-            bus.set_autopilot(False)
-            self._agent = self._make_agent(bus, carla_map)
-        else:
-            bus.set_autopilot(True, self._traffic_manager.get_port())
+        # We apply control ourselves every tick; autopilot would fight it.
+        bus.set_autopilot(False)
+        self._agent = self._make_agent(bus, carla_map)
         self._last_location = bus.get_location()
 
         # Let the vehicle settle onto its suspension before anything reads

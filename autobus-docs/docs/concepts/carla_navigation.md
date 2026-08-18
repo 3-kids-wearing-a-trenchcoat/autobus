@@ -3,14 +3,14 @@
 ## Overview
 
 CARLA has no "drive to this place" API. Getting a bus from one stop to another
-is therefore something this project implements, in `src/simulation/carla_routing.py`
-and `src/simulation/carla_steering.py`, and it is the single component that has
-cost the most debugging effort. This page exists so the next person does not
+is therefore something this project implements, in
+`src/simulation/carla_routing.py`, and it is the single component that has cost
+the most debugging effort. This page exists so the next person does not
 rediscover any of it.
 
 !!! success "Current design: the bus drives the route itself"
-    Since 2026-08-16 `CarlaBackend` **defaults to `direct_drive=True`**. The
-    planned waypoints go straight to CARLA's own
+    Since 2026-08-16, and the only scheme since 2026-08-18, `CarlaBackend`
+    drives the route itself. The planned waypoints go straight to CARLA's own
     `agents.navigation.BasicAgent`, which follows them and handles red lights
     and vehicles ahead:
 
@@ -27,13 +27,22 @@ rediscover any of it.
     routes**, and 55% less simulated time than the turn list — which loses
     three legs entirely.
 
-    Everything below documents the **superseded** `set_route` scheme. It is
-    kept because it is still reachable (`direct_drive=False`), because the
-    campaign results recorded before that date were produced by it, and
-    because its failure modes took a month to understand and should not be
-    rediscovered. See [Direct drive](#direct-drive) at the foot of this page.
+!!! warning "Everything below the overview is history, not code"
+    The `set_route` turn list and closed-loop steering were **deleted from
+    the source on 2026-08-18**, along with `carla_steering.py`,
+    `turns_along`, `junction_turns`, `plan_turns` and the `direct_drive`,
+    `closed_loop` and `replan_every_s` switches. Nothing in the repository
+    can drive that way any more, and the code samples below no longer name
+    anything that exists.
 
-There are two ways to do it. The original hands over the whole leg up front:
+    The account is kept because the campaign results archived under
+    `results/archive/` were produced by that scheme, and because its failure
+    modes took a month to understand and should not be rediscovered. Read it
+    as a record. See [Direct drive](#direct-drive) at the foot of this page
+    for what actually runs.
+
+The removed scheme had two variants. The original handed over the whole leg
+up front:
 
 ```
 plan_route(map, origin, destination)   ->  waypoints along lanes
@@ -41,8 +50,8 @@ turns_along(route)                     ->  ["Left", "Straight", "Right", ...]
 TrafficManager.set_route(bus, turns)   ->  CARLA drives it
 ```
 
-The other, `CarlaBackend(closed_loop=True)`, hands over nothing up front and
-corrects one junction at a time as the bus drives:
+The other, selected by the removed `CarlaBackend(closed_loop=True)`, handed
+over nothing up front and corrected one junction at a time as the bus drove:
 
 ```
 plan_route(map, origin, destination)   ->  waypoints along lanes
@@ -53,11 +62,10 @@ each tick:
   disagrees with the plan?             ->  set_route(bus, [turn], True)
 ```
 
-The rest of this page explains why the second exists: the first is only ever as
-good as a prediction that turned out not to be derivable. **Start at
-[Closed-loop steering](#closed-loop-steering) if you only want the current
-design**; the sections before it are the history that justifies it, and two of
-their conclusions are now marked refuted.
+The rest of this page explains why the second existed: the first was only ever
+as good as a prediction that turned out not to be derivable. Two of the
+conclusions along the way are marked refuted. **For the design in force, skip
+to [Direct drive](#direct-drive).**
 
 The bus stays an ordinary autopilot vehicle throughout, under either scheme. We
 never write throttle or steering — we only tell the traffic manager which way to
@@ -254,8 +262,9 @@ routing is the only variable:
 
 ## Closed-loop steering
 
-`CarlaBackend(closed_loop=True)` removes the prediction rather than improving
-it, in `src/simulation/carla_steering.py`. Three properties, and each one
+`CarlaBackend(closed_loop=True)` removed the prediction rather than improving
+it, in the since-deleted `src/simulation/carla_steering.py`. Three
+properties, and each one
 kills a specific failure above:
 
 * **Keyed by junction, not by list position.** `junction_turns` returns
@@ -388,7 +397,7 @@ Two limits are known and accepted:
 ## The safety net: re-issuing the route
 
 Even with a correct list, a leg can drift — a lane change, a nudge from
-traffic, an unlucky junction. `CarlaBackend(replan_every_s=...)` re-issues the
+traffic, an unlucky junction. `CarlaBackend(replan_every_s=...)` re-issued the
 route periodically from wherever the bus actually is. It corrects no
 individual turn; it re-establishes the *alignment*, so drift is discarded
 instead of compounding.
@@ -455,7 +464,8 @@ When adding or debugging a town:
 
 ## Direct drive
 
-The scheme in force. `CarlaBackend(direct_drive=True)`, the default.
+The scheme in force, and since 2026-08-18 the only one: there is no switch
+because there is nothing left to switch to.
 
 Autopilot is switched off, `plan_route`'s waypoints are handed to
 `agents.navigation.BasicAgent` via `set_global_plan`, and the backend applies

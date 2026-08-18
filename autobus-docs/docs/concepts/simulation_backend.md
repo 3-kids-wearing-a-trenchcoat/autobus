@@ -149,16 +149,12 @@ the routing helper it uses, and nothing above the backend imports either.
 
 #### Getting to a stop
 
-Steering is CARLA's own driving, as the design review expected. Since
-2026-08-16 that means `direct_drive=True`, the default: the bus is **not** an
-autopilot vehicle, and `plan_route`'s waypoints are handed to
-`agents.navigation.BasicAgent`, which drives them. See
-[Navigating in CARLA](carla_navigation.md#direct-drive).
-
-The rest of this section describes the superseded scheme, where the bus was
-an ordinary autopilot vehicle told which turns to take. *How* it was told is
-the subtle part, and it is documented because that path is still reachable
-with `direct_drive=False`.
+Steering is CARLA's own driving, as the design review expected. The bus is
+**not** an autopilot vehicle: `plan_route` searches `waypoint.next()` for a
+lane-level, travel-time-shortest route to the stop, those waypoints go to
+`agents.navigation.BasicAgent` via `set_global_plan`, and the backend applies
+`agent.run_step()` every tick. The agent obeys traffic lights and brakes for
+vehicles ahead. See [Navigating in CARLA](carla_navigation.md#direct-drive).
 
 !!! warning "The review predicts this; it does not require it"
     §4 lists **CARLA vehicle control** as a risk — *"stop sequences must be
@@ -169,83 +165,31 @@ with `direct_drive=False`.
     algorithm correctness"*. Nothing in §1.1 or §1.2 mandates the traffic
     manager, so replacing how the bus is driven is in scope.
 
-`TrafficManager.set_path` reads like a destination API and is not one. It is a
-**junction-decision** API: at each junction the traffic manager picks the exit
-that best advances towards the next point it has been given. Handed a single
-point half a town away, that choice is greedy, and on a grid it can cycle
-forever. Measured on Town01, a bus told only where its stop was drove a
-ten-road loop indefinitely, came within 78 m, and never once entered the road
-the stop was on.
+**CARLA ships an equivalent planner** — `agents.navigation.GlobalRoutePlanner`
+— but the pip wheel is client bindings only and does not include it, so it
+would have to be copied into this repository either way. Ours was measured
+against it and reproduces it exactly, in a fraction of the code and with no
+extra dependency.
 
-So `carla_routing` plans the leg instead: a breadth-first search over
-`waypoint.next()` finds a lane-level route, and the junction manoeuvres are
-read off it and handed to `set_route`, which takes exactly that.
+Until 2026-08-16 the bus was instead an autopilot vehicle handed a positional
+list of junction manoeuvres through `TrafficManager.set_route`, kept fresh by
+a periodic re-issue. That scheme and its failure modes were deleted on
+2026-08-18; [Navigating in CARLA](carla_navigation.md) keeps the account,
+because the runs under `results/archive/` were produced by it.
 
-That loop is not merely slow — it is closed. Given 600 seconds the same bus
-drove 3 km and still came no closer than 78 m, exactly the distance it
-reached in the first 150. With turns it arrives in 142 s. For legs that do
-not cycle, routing is a speed-up of roughly 16%, which matters mainly
-because Town01 legs already run to minutes.
+#### Re-planning after a dwell
 
-Two things fall out of this that are easy to get wrong:
+The route for a leg is planned the instant the bus *arrives* at the previous
+stop, while it is still doing ~8 m/s, and the dwell then brakes for its full
+length. The bus rolls several metres past the point that route was planned
+from, which puts the opening waypoints *behind* it by more than the local
+planner's purge radius: they are never popped, the agent steers at a target
+180 degrees astern, and the bus pirouettes at full lock. Measured on a Town01
+trial before the fix: 306 m driven in 3360 s, 330 stall re-paths, every
+request cancelled.
 
-- **Which junctions get an entry is not obvious, and getting it wrong is
-  silent.** `set_route` consumes the list in order, so one entry too many *or
-  too few* throws every later turn onto the wrong junction. The rule is
-  CARLA's, not a plausible stand-in for it — see
-  [Navigating in CARLA](carla_navigation.md), which is required reading before
-  touching `turns_along`.
-- **CARLA ships an equivalent** — `agents.navigation.GlobalRoutePlanner` — but
-  the pip wheel is client bindings only and does not include it, so it would
-  have to be copied into this repository either way. Ours was measured against
-  it and reproduces it exactly, in a fraction of the code and with no extra
-  dependency.
-
-#### Keeping the instructions fresh
-
-`set_destination` hands the traffic manager one turn list per leg and never
-refreshes it. That is enough on a simple town and not enough on a complex
-one, because the list is consumed as the bus goes — an entry at a time,
-whenever it crosses into a stretch of road labelled with the manoeuvre being
-asked for ([the exact rule](carla_navigation.md#how-carla-consumes-the-turn-list)).
-When the list runs out or slips out of step, the route is dropped and the
-vehicle reverts to *random navigation*.
-
-Nothing notices, and that is the crux. `_track_stall` reacts only to a bus
-that has **stopped**, with red lights and queues exempted — so a bus driving
-briskly in the wrong direction is invisible to every correction path, and
-`repaths` stays at zero while it wanders. Measured on Town03: a 474 m leg
-lost its list at the fourth of four turns, then crossed **125 more
-junctions** and covered 10 km without arriving.
-
-`replan_every_s` closes that gap by re-issuing the route periodically from
-wherever the bus actually is. It does not correct any individual turn — it
-re-establishes the *alignment*, so accumulated drift is discarded instead of
-compounding for the rest of the leg. Over full tours:
-
-| | legs arrived | simulated time |
-|---|---|---|
-| Town03, once per leg | 14/14 | 6802 s |
-| Town03, every 300 s | 14/14 | **2257 s (−67%)** |
-| Town05, once per leg | 12/14 | 10205 s |
-| Town05, every 300 s | **14/14** | **5110 s (−50%)** |
-
-Two things about the period are worth knowing, both measured rather than
-reasoned:
-
-- **Make it longer than a healthy leg.** At 300 s on Town05 every leg
-  shorter than that came out *bit-identical* to leaving it alone, so a leg
-  going well is never disturbed. At 30 s and 120 s the same tour turned a
-  233 s leg into a 778 s one.
-- **Do not keep the old buffer.** `set_route` takes an `empty_buffer`
-  argument that defaults to True, and that default is correct. Passing False
-  lets the stale buffer's junctions consume entries from the *new* list
-  before the bus reaches the junctions they were computed for — which is the
-  very desynchronisation being cured. It measured 28% *worse* than doing
-  nothing at all.
-
-It defaults to `None`, meaning the original once-per-leg behaviour, so
-nothing changes unless a run asks for it.
+Re-planning once the dwell ends costs one search per stop and removes the
+failure by construction, because the bus is stationary when it happens.
 
 #### Knowing it has arrived
 

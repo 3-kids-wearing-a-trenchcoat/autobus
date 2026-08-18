@@ -2,7 +2,8 @@
 /practice
 /autobus-docs/site
 /.claude
-__pycache__/.ipynb_checkpoints/
+__pycache__/
+.ipynb_checkpoints/
 
 # Experiment runs: large, regenerable, and deliberately not backed up.
 # Decision 2026-08-11 -- the volume produced makes tracking them impractical.

@@ -34,6 +34,7 @@ from src.simulation import carla_debug_text, carla_stdout
 from agents.navigation.basic_agent import BasicAgent
 from agents.navigation.local_planner import RoadOption
 
+from src.simulation import carla_world
 from src.simulation.carla_routing import plan_route
 from src.simulation.SimulationBackend import AdvanceResult, SimulationBackend
 
@@ -366,6 +367,10 @@ class CarlaBackend(SimulationBackend):
         self._seed = seed
         self._blueprint_id = blueprint_id
         self._speed_for = speed_for
+        # Whether this town is built from OpenDRIVE rather than baked into
+        # CARLA. Decided once, because it changes how the world is loaded
+        # and how the agent is told what speed to drive.
+        self._generated_map = carla_world.is_generated(town)
         self._lane_changes = lane_changes
         self._repath_after_s = repath_after_s
         self._agent: object | None = None
@@ -504,11 +509,18 @@ class CarlaBackend(SimulationBackend):
         simply always on — a map load costs seconds, and re-running a cell
         would pay it every time for nothing.
 
+        A **generated** map ignores all of that and is always rebuilt. CARLA
+        reports the same map name for every world built from OpenDRIVE, so
+        the "is the right town up?" test below cannot answer the question
+        for one — see ``carla_world.load``.
+
         Called before the traffic manager is created, and that ordering is
         load-bearing: a traffic manager caches the road network when it is
         built and never re-caches it. See ``_acquire_traffic_manager``.
         :return: The world, freshly loaded or the one already up.
         """
+        if carla_world.is_generated(self._town):
+            return carla_world.load(self._client, self._town)
         world = self._client.get_world()
         if self._reload_world or self._town not in world.get_map().name:
             return self._client.load_world(self._town)
@@ -1399,7 +1411,29 @@ class CarlaBackend(SimulationBackend):
         """
         if self._agent is None or not self._leg_armed:
             return
+        self._match_target_speed(bus)
         bus.apply_control(self._agent.run_step())
+
+    def _match_target_speed(self, bus: "carla.Actor") -> None:
+        """
+        Drive the road's own limit on a map CARLA publishes no limits for.
+
+        Only generated maps need this — a baked town carries speed-limit
+        landmarks and the agent follows them itself. See ``_make_agent`` for
+        why following them is not an option here.
+
+        The lookup is by road, and roads are long, so this re-states the
+        same number on most ticks. That is cheaper than tracking the last
+        road and getting the bookkeeping wrong at a junction.
+        :param bus: The bus actor.
+        """
+        if not self._generated_map or self._speed_for is None:
+            return
+        waypoint = self._world.get_map().get_waypoint(
+            bus.get_location(), lane_type=carla.LaneType.Driving
+        )
+        if waypoint is not None:
+            self._agent.set_target_speed(self._speed_for(waypoint.road_id))
 
     def _point_camera_at(self, bus: "carla.Actor") -> None:
         """
@@ -1698,7 +1732,17 @@ class CarlaBackend(SimulationBackend):
             # Drive at the posted limit rather than the agent's flat 20 km/h
             # default, which is what the traffic manager did and what the
             # calibrated travel model expects.
-            "follow_speed_limits": True,
+            #
+            # A generated map is the exception. ``follow_speed_limits`` reads
+            # ``Vehicle.get_speed_limit()``, which CARLA feeds from
+            # ``traffic.speed_limit.*`` actors spawned off type-274
+            # landmarks — and a generated map has none, so it reports a flat
+            # 30 km/h on every road. Measured, that made the bus drive 30
+            # while the model priced the same legs off the OpenDRIVE's 50,
+            # and leg times came out a median 3x longer than predicted. The
+            # target speed is instead set per road in ``_drive_agent``, from
+            # the same table the planner and the policy use.
+            "follow_speed_limits": not self._generated_map,
         })
         return agent
 

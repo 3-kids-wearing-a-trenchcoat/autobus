@@ -16,8 +16,12 @@ town's roads cannot invalidate stop authoring.
 import argparse
 import sys
 
+from dataclasses import replace
+
 import carla
 
+from src.map.carla_stops import town_name
+from src.simulation import carla_world
 from src.map.carla_topology import (
     DEFAULT_TRAFFIC_EFFICIENCY,
     DEFAULT_TOWN_SPEED_LIMIT_KPH,
@@ -356,14 +360,26 @@ def main(argv: list[str] | None = None) -> int:
     client.set_timeout(arguments.timeout)
     world = client.get_world()
 
+    generated = carla_world.is_generated(arguments.town)
     if not arguments.keep_loaded_map and (
-            arguments.town not in world.get_map().name):
+            generated or arguments.town not in world.get_map().name):
         print(f"loading {arguments.town} ...")
-        world = client.load_world(arguments.town)
+        world = carla_world.load(client, arguments.town)
 
+    # A generated map publishes no type-274 landmarks at all, so the limits
+    # have to come from its OpenDRIVE instead — see
+    # ``carla_world.speed_limits``. Passing them as overrides skips the
+    # landmark read entirely, which would otherwise return nothing.
+    overrides = (carla_world.speed_limits(arguments.town)
+                 if generated else None)
     topology = dump_world(
-        world, default_speed_limit_kph=arguments.speed_limit
+        world, default_speed_limit_kph=arguments.speed_limit,
+        overrides=overrides,
     )
+    if generated:
+        # Every generated world reports the same map name, so the dump would
+        # be filed under that rather than under the town asked for.
+        topology = replace(topology, map=town_name(arguments.town))
     signed = len(topology.speed_limit_overrides)
     path = save_topology(
         topology,

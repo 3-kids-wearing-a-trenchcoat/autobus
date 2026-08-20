@@ -56,6 +56,26 @@ OPENDRIVE_PARAMETERS = carla.OpendriveGenerationParameters(
 )
 
 
+# Ceiling applied to every limit read out of a generated map's OpenDRIVE.
+#
+# The converter writes a limit onto every road, but only a handful of them
+# come from OpenStreetMap: the Tel Aviv extract carries **29** ``maxspeed``
+# tags against the **479** roads in its OpenDRIVE. The rest are the
+# converter's own per-highway-type defaults, and they are motorway numbers —
+# 9.2 km of the campus priced at 100 km/h and a further 7.6 km at 80, which
+# is 70% of its length.
+#
+# That went unnoticed while the agent drove CARLA's flat 30 km/h and the
+# error showed up only as the model being optimistic. Once the agent started
+# driving the table, it became a bus doing 100 km/h past a lecture hall, and
+# a ``traffic_efficiency`` that would silently absorb "these limits are
+# fiction" instead of "traffic costs time".
+#
+# 50 km/h is the urban default the invented values should have been. Roads
+# whose limit is genuinely lower keep it; the fiction is what gets capped.
+GENERATED_SPEED_CEILING_KPH = 50.0
+
+
 def xodr_path(town: str, directory: Path | None = None) -> Path:
     """
     Return the path an OpenDRIVE file for this town would occupy.
@@ -123,7 +143,9 @@ def _lane_speed_kph(speed: ET.Element) -> float:
 
 
 def speed_limits(
-    town: str, directory: Path | None = None
+    town: str,
+    directory: Path | None = None,
+    ceiling_kph: float = GENERATED_SPEED_CEILING_KPH,
 ) -> dict[int, float]:
     """
     Read per-road speed limits out of a generated town's OpenDRIVE.
@@ -138,9 +160,14 @@ def speed_limits(
     element. A road is one edge in ``TransitGraph``, so one number per road
     is all the model can carry; where a road's driving lanes disagree the
     fastest wins, since that is the lane a bus would use.
+
+    Every limit is capped — see ``GENERATED_SPEED_CEILING_KPH`` for why most
+    of them are invented rather than surveyed.
     :param town: Town name, with or without CARLA's path prefix.
     :param directory: Directory holding the maps. Defaults to the packaged
         ``carla_maps`` directory.
+    :param ceiling_kph: Cap applied to every limit read. Defaults to
+        ``GENERATED_SPEED_CEILING_KPH``.
     :return: Speed limit in km/h per OpenDRIVE road ID, omitting roads that
         declare none.
     :raises FileNotFoundError: If the town has no OpenDRIVE file.
@@ -159,5 +186,5 @@ def speed_limits(
                 if speed.get("max"):
                     fastest = max(fastest, _lane_speed_kph(speed))
         if fastest > 0.0:
-            table[int(road.get("id"))] = fastest
+            table[int(road.get("id"))] = min(fastest, ceiling_kph)
     return table

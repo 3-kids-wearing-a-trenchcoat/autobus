@@ -113,6 +113,20 @@ DEBUG_ROUTE_LIFETIME_S = 5.0
 # One segment per this many metres. ``plan_route`` steps every 2 m, so a
 # 900 m leg is ~450 waypoints and a line each would be 450 calls per redraw.
 DEBUG_ROUTE_STEP_M = 10.0
+# How far along its lane a bus is placed when it has to be unwedged. Far
+# enough to clear whatever it was caught on -- the bus itself is 4.5 m long
+# -- and short enough that it cannot skip a junction it still has to drive.
+UNWEDGE_AHEAD_M = 8.0
+
+# Ceiling on that escalation. Beyond this the bus would be skipping enough
+# of its own route that the leg stops being the leg that was planned.
+UNWEDGE_MAX_AHEAD_M = 60.0
+
+# Clearance the bus is given above the lane when unwedged. It arrives there
+# with its wheels already through the surface, so setting it exactly on the
+# lane leaves it stuck in the same way it started.
+UNWEDGE_LIFT_M = 0.5
+
 # Ceiling on segments, so a pathological route cannot stall the tick.
 DEBUG_MAX_SEGMENTS = 250
 # Lift shapes off the road surface, or they z-fight with it.
@@ -267,6 +281,12 @@ class CarlaBackend(SimulationBackend):
         in its junctions — see ``FULL_SIZE_BUS_ID``.
     :param repath_after_s: Seconds of no movement before the destination is
         re-issued to the traffic manager. Cheap and often enough.
+    :param unwedge_after_s: Seconds of unbroken stalling before the bus is
+        lifted back onto its lane. Re-planning cannot free a bus that is
+        physically stuck, so this is the backstop for the case it cannot
+        answer. Defaults to 30 s — three helpings of ``repath_after_s``,
+        which is long enough that anything re-planning can fix has already
+        been fixed.
     :param follow_camera: Move the spectator camera to sit behind and above
         the bus on every tick, so a rendering server shows a chase view.
         Pointless with ``no_rendering=True``, where there is nothing to look
@@ -332,6 +352,7 @@ class CarlaBackend(SimulationBackend):
         seed: int = 0,
         blueprint_id: str = DEFAULT_BUS_ID,
         repath_after_s: float = 10.0,
+        unwedge_after_s: float = 30.0,
         follow_camera: bool = False,
         debug_draw: bool = False,
         viewer: bool = False,
@@ -373,6 +394,7 @@ class CarlaBackend(SimulationBackend):
         self._generated_map = carla_world.is_generated(town)
         self._lane_changes = lane_changes
         self._repath_after_s = repath_after_s
+        self._unwedge_after_s = unwedge_after_s
         self._agent: object | None = None
         self._follow_camera = follow_camera
         self._debug_draw = debug_draw
@@ -397,6 +419,13 @@ class CarlaBackend(SimulationBackend):
         self._leg_armed = False
         self._dwell_remaining = 0.0
         self._since_repath_s = 0.0
+        # Unbroken stall time. Unlike ``_since_repath_s`` this is **not**
+        # cleared by re-planning, so a bus that re-plans uselessly every ten
+        # seconds still accumulates towards being unwedged.
+        self._stalled_s = 0.0
+        # Unwedge attempts on the current leg, so a trap that keeps catching
+        # the bus is reached past rather than retried at the same distance.
+        self._unwedges_this_leg = 0
 
         # When the route was last handed to the agent, and from where. Only
         # diagnostics read these. The origin matters because the route is
@@ -447,6 +476,11 @@ class CarlaBackend(SimulationBackend):
             # ``carla_stdout``: the message itself carries no context, and
             # the tagged line on stdout is where the detail lives.
             "route_drops": 0,
+            # Times the bus had to be physically lifted back onto its lane
+            # because re-planning could not free it. Any non-zero value is
+            # worth looking at: it means the map has somewhere a vehicle
+            # cannot drive through. See ``_unwedge``.
+            "unwedges": 0,
             "walkers_spawned": 0,
             "walkers_removed": 0,
             "walker_spawn_failures": 0,
@@ -653,6 +687,8 @@ class CarlaBackend(SimulationBackend):
         # stop has not started the next leg until it is given one.
         self._leg_started_s = self._stats["ticks"] * self._delta
         self._stats["legs_started"] += 1
+        # A new leg is a fresh start for the escalation in ``_unwedge``.
+        self._unwedges_this_leg = 0
 
         bus = self._bus()
         if bus is not None and self._traffic_manager is not None:
@@ -1474,6 +1510,7 @@ class CarlaBackend(SimulationBackend):
             return
         if step > 0.05:
             self._since_repath_s = 0.0
+            self._stalled_s = 0.0
             return
 
         if self._is_held_at_red(bus):
@@ -1505,9 +1542,85 @@ class CarlaBackend(SimulationBackend):
         # given up on is commanded *zero* throttle, so gating on throttle
         # above zero was measured to never fire at all.
         self._since_repath_s += self._delta
+        self._stalled_s += self._delta
+
+        if self._stalled_s >= self._unwedge_after_s:
+            self._unwedge(bus)
+            self._since_repath_s = 0.0
+            self._stalled_s = 0.0
+            return
+
         if self._since_repath_s >= self._repath_after_s:
             self._repath(bus)
             self._since_repath_s = 0.0
+
+    def _unwedge(self, bus: "carla.Actor") -> None:
+        """
+        Lift a physically stuck bus back onto its lane and send it on.
+
+        Re-planning moves nothing, so it cannot answer the one case where
+        the road itself is at fault. Measured on the TAU campus map: the bus
+        entered one junction, ended up rolled 16 degrees onto its side edge
+        and sunk 19 cm into the surface, and sat there at 75% throttle for
+        the rest of the leg. Twenty-one consecutive legs failed from that
+        single spot, because nothing ever got it out again.
+
+        Where it is put matters, and the obvious choice is wrong.
+        Projecting a beached bus onto the road with ``get_waypoint`` returns
+        a point on the *road it is standing on*, which inside a junction is
+        that road's beginning — measured, 51 m **behind** the bus. Recovering
+        to there sent it forward into the same trap and round again.
+
+        So the bus is placed along its **planned route** instead, far enough
+        on to clear what caught it. That is on a real lane by construction,
+        and it is forward. Velocity is zeroed too, or the momentum it had
+        while beached carries into the new position.
+
+        This is a simulator guard, not driving, so it is counted rather than
+        hidden — ``stats()["unwedges"]`` is how a run admits it happened.
+        :param bus: The bus actor.
+        """
+        if self._destination is None:
+            return
+        route = plan_route(
+            self._world.get_map(),
+            bus.get_location(),
+            self._location_of(self._destination),
+            self._speed_for,
+            self._lane_changes,
+        )
+        if not route:
+            return
+
+        # Reach further each time the same leg needs rescuing. One trap on
+        # the TAU map is a whole junction wide, so a short hop lands the bus
+        # back inside it and it beaches again on the next tick; measured, it
+        # took four legs' worth of attempts to escape at a fixed 8 m.
+        self._unwedges_this_leg += 1
+        wanted = min(UNWEDGE_AHEAD_M * self._unwedges_this_leg,
+                     UNWEDGE_MAX_AHEAD_M)
+
+        travelled = 0.0
+        target = route[-1]
+        for previous, waypoint in zip(route, route[1:]):
+            travelled += previous.transform.location.distance(
+                waypoint.transform.location
+            )
+            if travelled >= wanted:
+                target = waypoint
+                break
+
+        bus.set_transform(carla.Transform(
+            target.transform.location + carla.Location(z=UNWEDGE_LIFT_M),
+            target.transform.rotation,
+        ))
+        bus.set_target_velocity(carla.Vector3D(0.0, 0.0, 0.0))
+        bus.set_target_angular_velocity(carla.Vector3D(0.0, 0.0, 0.0))
+        self._stats["unwedges"] += 1
+
+        # The route was planned from where the bus used to be, which is no
+        # longer where it is.
+        self._repath(bus)
 
     def _is_queued_behind_traffic(self, bus: "carla.Actor") -> bool:
         """

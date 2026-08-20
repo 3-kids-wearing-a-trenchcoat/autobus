@@ -118,6 +118,12 @@ DEBUG_ROUTE_STEP_M = 10.0
 # -- and short enough that it cannot skip a junction it still has to drive.
 UNWEDGE_AHEAD_M = 8.0
 
+# Depth below the road at which the bus is treated as having left the world
+# rather than as driving badly. A generated map is a ribbon of road with
+# nothing beside it, so a lane departure is a fall, and a falling bus is
+# *moving* -- the stall detector never fires for it.
+FALLEN_BELOW_M = -5.0
+
 # Ceiling on that escalation. Beyond this the bus would be skipping enough
 # of its own route that the leg stops being the leg that was planned.
 UNWEDGE_MAX_AHEAD_M = 60.0
@@ -481,12 +487,19 @@ class CarlaBackend(SimulationBackend):
             # worth looking at: it means the map has somewhere a vehicle
             # cannot drive through. See ``_unwedge``.
             "unwedges": 0,
+            # Times the bus left the road surface altogether and had to be
+            # put back. Distinct from an unwedge on purpose: a wedge means
+            # the map has a lip, a fall means it has a hole.
+            "falls_recovered": 0,
             "walkers_spawned": 0,
             "walkers_removed": 0,
             "walker_spawn_failures": 0,
             "stops_without_shoulder": 0,
         }
         self._last_location: carla.Location | None = None
+        # Where the bus last stood on the road, used as the origin when
+        # planning its way back after a fall.
+        self._last_on_road: carla.Location | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -1404,6 +1417,10 @@ class CarlaBackend(SimulationBackend):
             self._stats["distance_m"] += step
             self._track_stall(bus, step)
         self._last_location = here
+        if here.z > FALLEN_BELOW_M:
+            # Remembered while the bus is still on the road, so a recovery
+            # after a fall has somewhere sensible to plan from.
+            self._last_on_road = here
 
 
     def _replan_after_dwell(self, bus: "carla.Actor") -> None:
@@ -1508,6 +1525,19 @@ class CarlaBackend(SimulationBackend):
         """
         if self._dwell_remaining > 0.0:
             return
+
+        if bus.get_location().z < FALLEN_BELOW_M:
+            # Checked before the movement test below, because a bus in
+            # free fall is moving faster than any driving it will ever do,
+            # and nothing here would otherwise notice. Left alone it never
+            # comes back, and every subsequent leg starts already lost --
+            # measured on TAU, one fall cost the twenty legs after it.
+            self._stats["falls_recovered"] += 1
+            self._unwedge(bus)
+            self._since_repath_s = 0.0
+            self._stalled_s = 0.0
+            return
+
         if step > 0.05:
             self._since_repath_s = 0.0
             self._stalled_s = 0.0
@@ -1582,9 +1612,16 @@ class CarlaBackend(SimulationBackend):
         """
         if self._destination is None:
             return
+        # A fallen bus is nowhere near its lane, and projecting from under
+        # the map gives a meaningless origin. The last place it was on the
+        # road is the honest one.
+        here = bus.get_location()
+        origin = (self._last_on_road
+                  if here.z < FALLEN_BELOW_M and self._last_on_road is not None
+                  else here)
         route = plan_route(
             self._world.get_map(),
-            bus.get_location(),
+            origin,
             self._location_of(self._destination),
             self._speed_for,
             self._lane_changes,

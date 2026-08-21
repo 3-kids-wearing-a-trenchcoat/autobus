@@ -1,9 +1,9 @@
 {
  "schema_version": 2,
  "map": "TAU",
- "note": "OSM campus crop of Tel-Aviv-University.osm",
+ "note": "traffic_efficiency 0.7613 calibrated over 75 legs at 20 NPCs; previous factor 1.0",
  "default_speed_limit_kph": 30.0,
- "traffic_efficiency": 1.0,
+ "traffic_efficiency": 0.7613,
  "speed_limit_overrides": {
   "3319": 29.988,
   "3324": 29.988,

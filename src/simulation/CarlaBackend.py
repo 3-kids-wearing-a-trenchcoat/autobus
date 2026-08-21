@@ -40,17 +40,36 @@ from src.simulation.SimulationBackend import AdvanceResult, SimulationBackend
 
 import carla
 
-# The only blueprint CARLA 0.9.16 tags base_type=Bus, at 10.3 x 3.9 m
-# against Town01's 3.5 m lanes. It does get round the town, but it wedges in
-# junctions doing it: measured over three tours it needed 20 recoveries where
-# the minibus below needed none, and it cannot route out of five of the
-# positions it ends up in. Since recovery was removed it is **not supported**
-# on Town01; it is kept named here because "why not the actual bus?" is the
-# first question anyone asks.
+# The only blueprint CARLA 0.9.16 tags base_type=Bus, measured at
+# 10.27 x 3.94 x 4.25 m.
+#
+# It used to be unusable on Town01, and the reason recorded here was that it
+# was wider than the lanes. **That was wrong.** Re-measured 2026-08-21 over
+# every town's full tour, against the shuttle below:
+#
+#   town     lane width   shuttle          full-size bus
+#   Town01       4.00 m   15/15, 0         15/15, 0 recoveries
+#   Town02       4.00 m   15/15, 1 repath  13/15, 88 repaths, 28 unwedges
+#   Town03       3.50 m   15/15, 0         15/15, 0 recoveries
+#   Town05       3.50 m   15/15, 0         15/15, 0 recoveries
+#   TAU          3.35 m   25/25, 0         1/25, 973 falls
+#
+# Town01's lanes are 4.00 m, not the 3.5 m claimed before, so the bus is
+# *narrower* than the lane; and it now drives Town01 with no recoveries at
+# all. Width does not predict failure either way -- the bus drives Town03
+# and Town05's 3.50 m lanes flawlessly while struggling on Town02's 4.00 m
+# ones. What changed in between is most likely direct drive replacing the
+# turn-list steering, but that cannot be confirmed: the old code is gone.
+#
+# So it is **supported on Town01, Town03 and Town05**, marginal on Town02,
+# and unusable on TAU -- a generated map has no ground off the lane, and a
+# 10.27 m vehicle on campus geometry leaves the lane and falls through.
+# Length and the missing ground, not width.
 FULL_SIZE_BUS_ID = "vehicle.mitsubishi.fusorosa"
 
-# A shuttle, and small enough for Town01's lanes: measured over three tours
-# it completed every leg without needing a single recovery.
+# A shuttle, measured at 4.44 x 1.77 x 1.99 m. The default because it is the
+# only vehicle that drives **every** town cleanly, TAU included: 15/15 or
+# 25/25 legs per town with no recovery anywhere.
 DEFAULT_BUS_ID = "vehicle.volkswagen.t2_2021"
 
 # Above CARLA's substepping limit (max_substep_delta_time * max_substeps =
@@ -282,9 +301,10 @@ class CarlaBackend(SimulationBackend):
         took in wall time. Set False to watch it drive.
     :param npc_vehicles: Autopilot traffic to spawn. Each costs throughput.
     :param seed: Seed for the traffic manager and NPC placement.
-    :param blueprint_id: Vehicle to drive. Defaults to a shuttle, because
-        the only true bus blueprint is wider than Town01's lanes and wedges
-        in its junctions — see ``FULL_SIZE_BUS_ID``.
+    :param blueprint_id: Vehicle to drive. Defaults to a shuttle, because it
+        is the only vehicle measured to drive every town cleanly. The true
+        bus blueprint now manages Town01, Town03 and Town05 without a single
+        recovery but cannot drive TAU at all — see ``FULL_SIZE_BUS_ID``.
     :param repath_after_s: Seconds of no movement before the destination is
         re-issued to the traffic manager. Cheap and often enough.
     :param unwedge_after_s: Seconds of unbroken stalling before the bus is

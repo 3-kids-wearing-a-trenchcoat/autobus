@@ -186,8 +186,14 @@ def plan_route(
         if arrived:
             return _reconstruct(came_from, seen_at, key)
 
+        # Driving lanes only. ``next()` will happily lead off the road
+        # network -- on the TAU campus the service roads and parking aisles
+        # are `Restricted`, and a route down one had the bus drive 270 m
+        # through a car park to a dead end. ``sideways`` already filters
+        # this way; the forward expansion did not.
         moves = [(following, step_cost(current))
-                 for following in current.next(STEP_M)]
+                 for following in current.next(STEP_M)
+                 if following.lane_type == carla.LaneType.Driving]
         moves += sideways(current)
         for following, step in moves:
             onward = cost + step

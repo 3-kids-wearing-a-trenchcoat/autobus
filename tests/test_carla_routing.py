@@ -6,6 +6,8 @@ waypoints is the part that is pure bookkeeping -- lane quantisation and the
 cost the search minimises -- which is where the bugs live anyway.
 """
 
+import carla
+
 from src.simulation.carla_routing import _lane_key, plan_route
 
 
@@ -40,11 +42,13 @@ class _LaneWaypoint:
         error `next()` accumulates.
     """
 
-    def __init__(self, s: float, road_id: int = 1) -> None:
+    def __init__(self, s: float, road_id: int = 1,
+                 lane_type: object = carla.LaneType.Driving) -> None:
         self.s = s
         self.road_id = road_id
         self.lane_id = -2
         self.is_junction = False
+        self.lane_type = lane_type
         self.transform = _SearchTransform(s)
         self.following: list["_LaneWaypoint"] = []
 
@@ -125,11 +129,13 @@ class _BranchWaypoint:
     :param road_id: OpenDRIVE road this waypoint belongs to.
     """
 
-    def __init__(self, x: float, s: float, road_id: int) -> None:
+    def __init__(self, x: float, s: float, road_id: int,
+                 lane_type: object = carla.LaneType.Driving) -> None:
         self.s = s
         self.road_id = road_id
         self.lane_id = -1
         self.is_junction = False
+        self.lane_type = lane_type
         self.transform = _SearchTransform(x)
         self.following: list["_BranchWaypoint"] = []
 
@@ -218,3 +224,45 @@ def test_a_uniform_speed_limit_changes_nothing() -> None:
 
     assert by_distance is not None and by_time is not None
     assert _road_ids(by_distance) == _road_ids(by_time)
+
+
+# ---------------------------------------------------------------------------
+# The search stays on lanes the bus is allowed to drive
+# ---------------------------------------------------------------------------
+
+def test_a_restricted_shortcut_is_not_taken() -> None:
+    """
+    The short branch is Restricted -- a service road or parking aisle -- so
+    the route must take the long Driving one instead.
+
+    Measured on the TAU campus: 8 of 25 tour legs were planned through
+    Restricted lanes, and one sent the bus 270 m down parking aisles to a
+    dead end, because the forward expansion never checked the lane type.
+    """
+    stub_map, start, goal = _forked_map()
+    for waypoint in stub_map._lane:
+        if waypoint.road_id == 2:
+            waypoint.lane_type = carla.LaneType.Restricted
+
+    route = plan_route(stub_map, start.transform.location,
+                       goal.transform.location)
+
+    assert route is not None, "the driving branch should still route"
+    assert 2 not in _road_ids(route), "must not route down a Restricted lane"
+    assert 3 in _road_ids(route)
+
+
+def test_a_route_that_needs_a_restricted_lane_is_refused() -> None:
+    """
+    With every branch Restricted there is no legal way through, and the
+    planner must say so rather than hand back a route the bus cannot use.
+    """
+    stub_map, start, goal = _forked_map()
+    for waypoint in stub_map._lane:
+        if waypoint.road_id in (2, 3):
+            waypoint.lane_type = carla.LaneType.Restricted
+
+    route = plan_route(stub_map, start.transform.location,
+                       goal.transform.location)
+
+    assert route is None

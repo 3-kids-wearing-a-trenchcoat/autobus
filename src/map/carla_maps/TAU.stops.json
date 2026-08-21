@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "map": "TAU",
-  "note": "POI-derived campus stops",
+  "note": "POI-derived campus stops; s08 and s24 moved off the roundabout rings 2026-08-21 -- a ring stop puts the bus on a circle whose island is a hole in the generated mesh",
   "stops": [
     {
       "id": "s00",
@@ -86,11 +86,11 @@
     {
       "id": "s08",
       "name": "\u05e9\u05e2\u05e8 14 - \u05dc\u05d9\u05de\u05d5\u05d3\u05d9 \u05d7\u05d5\u05e5",
-      "road_id": 3489,
+      "road_id": 3679,
       "lane_id": -1,
-      "s": 0.0,
-      "x": 1333.489,
-      "y": -932.352,
+      "s": 35.0,
+      "x": 1347.05,
+      "y": -948.52,
       "z": 0.0
     },
     {
@@ -246,11 +246,11 @@
     {
       "id": "s24",
       "name": "J",
-      "road_id": 3707,
+      "road_id": 3709,
       "lane_id": -1,
-      "s": 4.0,
-      "x": 1104.698,
-      "y": -523.902,
+      "s": 100.0,
+      "x": 1125.28,
+      "y": -518.25,
       "z": 0.0
     }
   ]

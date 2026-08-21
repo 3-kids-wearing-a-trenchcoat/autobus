@@ -1851,13 +1851,17 @@ class CarlaBackend(SimulationBackend):
         # We apply control ourselves every tick; autopilot would fight it.
         bus.set_autopilot(False)
         self._agent = self._make_agent(bus, carla_map)
-        self._last_location = bus.get_location()
 
         # Let the vehicle settle onto its suspension before anything reads
         # its position or speed.
         for _ in range(int(round(0.5 / self._delta))):
             self._world.tick()
             self._stats["ticks"] += 1
+
+        # Read only once the world has ticked. A freshly spawned actor
+        # reports the world origin until then, and the first ``_tick_once``
+        # would book the whole way back from it as distance driven.
+        self._last_location = bus.get_location()
 
     def _make_agent(self, bus: "carla.Actor",
                     carla_map: "carla.Map") -> BasicAgent:

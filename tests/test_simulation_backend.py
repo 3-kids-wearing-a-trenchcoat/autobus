@@ -1,9 +1,19 @@
-"""Tests for the SimulationBackend abstract base class."""
+"""
+Tests for the SimulationBackend interface.
+
+Covers the abstract base class itself, and the part of the contract
+every concrete backend has to honour the same way — which is tested
+here, once, rather than separately in each backend's own file.
+"""
 
 import pytest
 from unittest.mock import MagicMock
 
 from src.algorithm.RequestPool import RequestPool
+from src.map.StaticMapProvider import StaticMapProvider, StopInput
+from src.map.map_data import RoadNodeRecord
+from src.simulation.MockBackend import MockBackend
+from src.simulation.ScriptedBackend import ScriptedBackend
 from src.simulation.SimulationBackend import AdvanceResult, SimulationBackend
 
 
@@ -71,6 +81,42 @@ def test_sync_passengers_does_not_touch_the_pool() -> None:
     pool = MagicMock(spec=RequestPool)
     _MinimalBackend().sync_passengers(pool)
     assert pool.mock_calls == []
+
+
+# ---------------------------------------------------------------------------
+# The contract every concrete backend honours
+# ---------------------------------------------------------------------------
+
+# The smallest world MockBackend can be built over: one road edge, which is
+# one TransitGraph node, which is somewhere to stand.
+_LINE = StaticMapProvider(
+    stops=[StopInput("s1", "n1", "n2", 0.5)],
+    nodes=[RoadNodeRecord("n1", x=0.0, y=0.0),
+           RoadNodeRecord("n2", x=1300.0, y=0.0)],
+    edges=[("n1", "n2")],
+)
+
+# Built lazily, because a factory lets each test have an untouched backend.
+_CONCRETE = {
+    "MockBackend": lambda: MockBackend(position="n1_n2", provider=_LINE),
+    "ScriptedBackend": lambda: ScriptedBackend("n1_n2"),
+}
+
+
+@pytest.mark.parametrize("build", _CONCRETE.values(), ids=_CONCRETE.keys())
+def test_a_backend_starts_where_it_was_placed(build) -> None:
+    """Position is whatever the constructor was handed, before any leg."""
+    assert build().current_location() == "n1_n2"
+
+
+@pytest.mark.parametrize("build", _CONCRETE.values(), ids=_CONCRETE.keys())
+def test_advance_without_a_destination_consumes_the_budget(build) -> None:
+    """
+    A backend with nowhere to go must still let the clock run, or the
+    runner's movement loop would spin without ever advancing time.
+    """
+    result = build().advance(42.0)
+    assert (result.arrived_at, result.consumed) == (None, 42.0)
 
 
 # ---------------------------------------------------------------------------

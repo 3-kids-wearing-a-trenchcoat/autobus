@@ -9,10 +9,6 @@ from src.simulation.ScriptedBackend import ScriptedBackend
 # Construction
 # ---------------------------------------------------------------------------
 
-def test_starts_at_the_given_position() -> None:
-    assert ScriptedBackend("stop_A").current_location() == "stop_A"
-
-
 def test_empty_timetable_is_rejected() -> None:
     """An empty timetable has no leg to serve, so it could only stall."""
     with pytest.raises(ValueError):
@@ -95,11 +91,6 @@ def test_recommanding_the_same_stop_keeps_progress() -> None:
     backend.advance(9.0)
     backend.set_destination("stop_B")
     assert backend.advance(1.0).arrived_at == "stop_B"
-
-
-def test_advance_without_a_destination_consumes_the_budget() -> None:
-    result = ScriptedBackend("stop_A").advance(42.0)
-    assert (result.arrived_at, result.consumed) == (None, 42.0)
 
 
 def test_position_follows_arrivals() -> None:

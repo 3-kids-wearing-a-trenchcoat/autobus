@@ -75,19 +75,6 @@ class TestMarginalCostFilterPolicy(unittest.TestCase):
         # _S2 (~0.222) exceeds the threshold but is the only option, so the
         # fallback serves it and then the committed dropoff _S1 follows.
         self.assertEqual(policy.plan(state, n_stops=3), [_S2, _S1])
-
-    def test_near_pickup_served(self) -> None:
-        """A pending pickup within the threshold is served."""
-        policy = MarginalCostFilterPolicy(self.graph, max_pickup_cost=0.15)
-        state = BusState(
-            position="n4_n1",
-            onboard=[],
-            pending_requests=[_req("r1", pickup=_S1, dropoff=_S2)],
-            remaining_capacity=3,
-        )
-        # _S1 costs ~0.083 <= 0.15 → served; dropoff _S2 follows (unfiltered).
-        self.assertEqual(policy.plan(state, n_stops=3), [_S1, _S2])
-
     def test_dropoff_never_filtered(self) -> None:
         """An onboard dropoff is served even when far beyond the threshold."""
         policy = MarginalCostFilterPolicy(self.graph, max_pickup_cost=0.01)

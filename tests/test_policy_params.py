@@ -131,6 +131,15 @@ def test_a_subclass_declares_at_least_its_parent(
         )
 
 
+def test_the_base_class_cannot_be_instantiated() -> None:
+    """
+    ``DispatchPolicy`` is an interface, not a usable policy: one handed to a
+    bus would have no ``plan()`` to call.
+    """
+    with pytest.raises(TypeError):
+        DispatchPolicy(graph=None)  # type: ignore[abstract]
+
+
 def test_params_is_required_of_a_new_policy() -> None:
     """
     The whole reason it is abstract: forgetting it must fail loudly at

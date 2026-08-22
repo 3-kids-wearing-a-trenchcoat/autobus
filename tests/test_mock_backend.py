@@ -51,10 +51,6 @@ def make_backend(
 # Construction
 # ---------------------------------------------------------------------------
 
-def test_starts_at_the_given_position() -> None:
-    assert make_backend("n2_n3").current_location() == "n2_n3"
-
-
 def test_needs_a_provider_or_a_travel_model() -> None:
     with pytest.raises(ValueError):
         MockBackend(position="n1_n2")
@@ -171,11 +167,6 @@ def test_one_second_short_does_not_arrive() -> None:
     backend = make_backend()
     backend.set_destination("n2_n3")
     assert backend.advance(_SEGMENT_S - 1.0).arrived_at is None
-
-
-def test_advance_without_a_destination_consumes_the_budget() -> None:
-    result = make_backend().advance(42.0)
-    assert (result.arrived_at, result.consumed) == (None, 42.0)
 
 
 def test_position_follows_arrivals() -> None:

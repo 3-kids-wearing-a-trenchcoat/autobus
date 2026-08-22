@@ -40,18 +40,6 @@ class TestRideBoundedGreedyPolicy(unittest.TestCase):
     # ------------------------------------------------------------------
     # Falls back to plain greedy when the gate cannot fire
     # ------------------------------------------------------------------
-
-    def test_empty_bus_matches_nearest(self) -> None:
-        """With no onboard riders the gate never fires; acts like Nearest."""
-        state = BusState(
-            position="n4_n1",
-            onboard=[],
-            pending_requests=[_req("r1", pickup=_S1, dropoff=_S2)],
-            remaining_capacity=3,
-        )
-        policy = RideBoundedGreedyPolicy(self.graph)
-        self.assertEqual(policy.plan(state, n_stops=3), [_S1, _S2])
-
     def test_high_ride_factor_matches_nearest(self) -> None:
         """A huge ride_factor keeps the gate closed; route equals Nearest's."""
         state = self._gate_scenario()

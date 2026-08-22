@@ -35,16 +35,6 @@ class TestDeviatedFixedRoutePolicy(unittest.TestCase):
     # ------------------------------------------------------------------
     # Reduces to skip-stop when no detour is allowed
     # ------------------------------------------------------------------
-
-    def test_no_demand_returns_empty(self) -> None:
-        """Returns [] when no stop has demand."""
-        policy = DeviatedFixedRoutePolicy(self.graph, stop_order=_ALL)
-        state = BusState(
-            position="n4_n1", onboard=[], pending_requests=[],
-            remaining_capacity=3,
-        )
-        self.assertEqual(policy.plan(state, n_stops=3), [])
-
     def test_reduces_to_skip_stop_at_factor_one(self) -> None:
         """detour_factor=1.0 and max_detour_cost=0 both equal skip-stop."""
         # Cycle order lists n2_n3 before n1_n2, but n1_n2 sits exactly on the

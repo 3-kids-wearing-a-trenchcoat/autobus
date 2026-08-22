@@ -3,33 +3,10 @@
 import pytest
 
 from src.algorithm.TravelModel import GraphTravelModel
-from src.map.StaticMapProvider import StaticMapProvider, StopInput
 from src.map.TransitGraph import TransitGraph
-from src.map.map_data import RoadNodeRecord
 from src.simulation.MockBackend import MockBackend
 
-# Four nodes in a line, 1300 m apart. At DEFAULT_SPEED_LIMIT (130 km/h) each
-# segment takes exactly 36 s, so distances translate into round numbers.
-#
-#   n1 ──1300m──► n2 ──1300m──► n3 ──1300m──► n4
-#
-# TransitGraph nodes are the road edges: "n1_n2", "n2_n3", "n3_n4".
-_SEGMENT_S = 36.0
-
-_PROVIDER = StaticMapProvider(
-    stops=[
-        StopInput("s1", "n1", "n2", 0.5),
-        StopInput("s2", "n2", "n3", 0.5),
-        StopInput("s3", "n3", "n4", 0.5),
-    ],
-    nodes=[
-        RoadNodeRecord("n1", x=0.0, y=0.0),
-        RoadNodeRecord("n2", x=1300.0, y=0.0),
-        RoadNodeRecord("n3", x=2600.0, y=0.0),
-        RoadNodeRecord("n4", x=3900.0, y=0.0),
-    ],
-    edges=[("n1", "n2"), ("n2", "n3"), ("n3", "n4")],
-)
+from maps import LINE_MAP, LINE_SEGMENT_S
 
 
 def make_backend(
@@ -43,7 +20,7 @@ def make_backend(
     :return: A ready backend.
     """
     return MockBackend(
-        position=position, provider=_PROVIDER, dwell_s=dwell_s
+        position=position, provider=LINE_MAP, dwell_s=dwell_s
     )
 
 
@@ -57,21 +34,21 @@ def test_needs_a_provider_or_a_travel_model() -> None:
 
 
 def test_accepts_a_travel_model_instead_of_a_provider() -> None:
-    model = GraphTravelModel(TransitGraph(_PROVIDER))
+    model = GraphTravelModel(TransitGraph(LINE_MAP))
     backend = MockBackend(position="n1_n2", travel_model=model)
     backend.set_destination("n2_n3")
-    assert backend.advance(_SEGMENT_S).arrived_at == "n2_n3"
+    assert backend.advance(LINE_SEGMENT_S).arrived_at == "n2_n3"
 
 
 def test_a_supplied_model_carries_its_own_dwell() -> None:
     """dwell_s is ignored when a model is given — the model already has one."""
-    model = GraphTravelModel(TransitGraph(_PROVIDER), dwell_s=5.0)
+    model = GraphTravelModel(TransitGraph(LINE_MAP), dwell_s=5.0)
     backend = MockBackend(
         position="n1_n2", travel_model=model, dwell_s=999.0
     )
     backend.set_destination("n2_n3")
     assert backend.advance(1000.0).consumed == pytest.approx(
-        5.0 + _SEGMENT_S
+        5.0 + LINE_SEGMENT_S
     )
 
 
@@ -99,14 +76,14 @@ def test_leg_takes_the_shortest_path_time() -> None:
     backend.set_destination("n3_n4")
     result = backend.advance(1000.0)
     assert result.arrived_at == "n3_n4"
-    assert result.consumed == pytest.approx(2 * _SEGMENT_S)
+    assert result.consumed == pytest.approx(2 * LINE_SEGMENT_S)
 
 
 def test_dwell_is_added_to_the_leading_edge_of_the_leg() -> None:
     backend = make_backend(dwell_s=5.0)
     backend.set_destination("n2_n3")
     assert backend.advance(1000.0).consumed == pytest.approx(
-        5.0 + _SEGMENT_S
+        5.0 + LINE_SEGMENT_S
     )
 
 
@@ -114,7 +91,7 @@ def test_zero_dwell_reproduces_the_original_timing() -> None:
     """The default must leave existing baselines comparable."""
     backend = make_backend(dwell_s=0.0)
     backend.set_destination("n2_n3")
-    assert backend.advance(1000.0).consumed == pytest.approx(_SEGMENT_S)
+    assert backend.advance(1000.0).consumed == pytest.approx(LINE_SEGMENT_S)
 
 
 def test_dwell_is_charged_on_every_leg() -> None:
@@ -122,7 +99,7 @@ def test_dwell_is_charged_on_every_leg() -> None:
     for destination in ("n2_n3", "n3_n4"):
         backend.set_destination(destination)
         assert backend.advance(1000.0).consumed == pytest.approx(
-            5.0 + _SEGMENT_S
+            5.0 + LINE_SEGMENT_S
         )
 
 
@@ -144,7 +121,7 @@ def test_partial_progress_accumulates_across_calls() -> None:
     backend.advance(10.0)
     result = backend.advance(1000.0)
     assert result.arrived_at == "n2_n3"
-    assert result.consumed == pytest.approx(_SEGMENT_S - 20.0)
+    assert result.consumed == pytest.approx(LINE_SEGMENT_S - 20.0)
 
 
 def test_arrival_consumes_only_what_the_leg_needed() -> None:
@@ -154,19 +131,19 @@ def test_arrival_consumes_only_what_the_leg_needed() -> None:
     """
     backend = make_backend()
     backend.set_destination("n2_n3")
-    assert backend.advance(1000.0).consumed == pytest.approx(_SEGMENT_S)
+    assert backend.advance(1000.0).consumed == pytest.approx(LINE_SEGMENT_S)
 
 
 def test_exact_budget_arrives() -> None:
     backend = make_backend()
     backend.set_destination("n2_n3")
-    assert backend.advance(_SEGMENT_S).arrived_at == "n2_n3"
+    assert backend.advance(LINE_SEGMENT_S).arrived_at == "n2_n3"
 
 
 def test_one_second_short_does_not_arrive() -> None:
     backend = make_backend()
     backend.set_destination("n2_n3")
-    assert backend.advance(_SEGMENT_S - 1.0).arrived_at is None
+    assert backend.advance(LINE_SEGMENT_S - 1.0).arrived_at is None
 
 
 def test_position_follows_arrivals() -> None:
@@ -189,7 +166,7 @@ def test_next_leg_departs_from_the_stop_just_reached() -> None:
     backend.set_destination("n2_n3")
     backend.advance(1000.0)
     backend.set_destination("n3_n4")
-    assert backend.advance(1000.0).consumed == pytest.approx(_SEGMENT_S)
+    assert backend.advance(1000.0).consumed == pytest.approx(LINE_SEGMENT_S)
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +183,7 @@ def test_recommanding_the_same_stop_keeps_progress() -> None:
     backend.advance(20.0)
     backend.set_destination("n2_n3")
     assert backend.advance(1000.0).consumed == pytest.approx(
-        _SEGMENT_S - 20.0
+        LINE_SEGMENT_S - 20.0
     )
 
 
@@ -215,7 +192,7 @@ def test_changing_destination_discards_progress() -> None:
     backend.set_destination("n3_n4")
     backend.advance(20.0)
     backend.set_destination("n2_n3")
-    assert backend.advance(1000.0).consumed == pytest.approx(_SEGMENT_S)
+    assert backend.advance(1000.0).consumed == pytest.approx(LINE_SEGMENT_S)
 
 
 def test_the_same_stop_after_an_arrival_starts_a_fresh_leg() -> None:

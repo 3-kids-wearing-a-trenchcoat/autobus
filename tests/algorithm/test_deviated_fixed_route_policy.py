@@ -7,7 +7,7 @@ from src.algorithm.DispatchPolicy import BusState
 from src.algorithm.RequestPool import Request
 from src.algorithm.SkipStopFixedRoutePolicy import SkipStopFixedRoutePolicy
 from src.map.TransitGraph import TransitGraph
-from test_transit_graph import _PROVIDER
+from maps import SQUARE_MAP
 
 # All four road-edge nodes are valid graph nodes usable as an explicit cycle.
 # Relevant directed travel costs on the test map (source-side length sums;
@@ -30,7 +30,7 @@ class TestDeviatedFixedRoutePolicy(unittest.TestCase):
     """Verify DeviatedFixedRoutePolicy on the hand-authored test map."""
 
     def setUp(self) -> None:
-        self.graph = TransitGraph(_PROVIDER)
+        self.graph = TransitGraph(SQUARE_MAP)
 
     # ------------------------------------------------------------------
     # Reduces to skip-stop when no detour is allowed

@@ -38,14 +38,6 @@ _EMPTY_KPI = KPISnapshot(
 )
 
 
-@pytest.fixture(scope="module")
-def street_graph() -> PlanarStreetGraph:
-    """A small planar map, built once so the suite stays fast."""
-    return PlanarStreetGraph.generate(
-        n_seeds=12, bounds=(0.0, 0.0, 1000.0, 1000.0), seed=3
-    )
-
-
 def _policy(graph: TransitGraph) -> WindowInsertionPolicy:
     """Build the L0 policy with a window wide enough to accept most demand."""
     return WindowInsertionPolicy(graph, max_wait_s=900.0)

@@ -10,11 +10,11 @@ import pytest
 from unittest.mock import MagicMock
 
 from src.algorithm.RequestPool import RequestPool
-from src.map.StaticMapProvider import StaticMapProvider, StopInput
-from src.map.map_data import RoadNodeRecord
 from src.simulation.MockBackend import MockBackend
 from src.simulation.ScriptedBackend import ScriptedBackend
 from src.simulation.SimulationBackend import AdvanceResult, SimulationBackend
+
+from maps import LINE_MAP
 
 
 class _MinimalBackend(SimulationBackend):
@@ -82,23 +82,9 @@ def test_sync_passengers_does_not_touch_the_pool() -> None:
     _MinimalBackend().sync_passengers(pool)
     assert pool.mock_calls == []
 
-
-# ---------------------------------------------------------------------------
-# The contract every concrete backend honours
-# ---------------------------------------------------------------------------
-
-# The smallest world MockBackend can be built over: one road edge, which is
-# one TransitGraph node, which is somewhere to stand.
-_LINE = StaticMapProvider(
-    stops=[StopInput("s1", "n1", "n2", 0.5)],
-    nodes=[RoadNodeRecord("n1", x=0.0, y=0.0),
-           RoadNodeRecord("n2", x=1300.0, y=0.0)],
-    edges=[("n1", "n2")],
-)
-
 # Built lazily, because a factory lets each test have an untouched backend.
 _CONCRETE = {
-    "MockBackend": lambda: MockBackend(position="n1_n2", provider=_LINE),
+    "MockBackend": lambda: MockBackend(position="n1_n2", provider=LINE_MAP),
     "ScriptedBackend": lambda: ScriptedBackend("n1_n2"),
 }
 

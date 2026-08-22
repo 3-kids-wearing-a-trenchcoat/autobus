@@ -8,9 +8,9 @@ from src.algorithm.RequestPool import Request
 from src.map.StaticMapProvider import StaticMapProvider, StopInput
 from src.map.map_data import RoadNodeRecord
 from src.map.TransitGraph import TransitGraph
-from test_transit_graph import _PROVIDER
+from maps import SQUARE_MAP
 
-# TransitGraph node IDs (road edges) usable as pickup/dropoff in _PROVIDER.
+# TransitGraph node IDs (road edges) usable as pickup/dropoff in SQUARE_MAP.
 # Only _S1 and _S2 carry a StopRecord; the rest are plain nodes, which is fine
 # since a request's pickup/dropoff is any node ID. Relevant travel costs:
 #   n4_n1 -> n1_n2 ~0.083   n4_n1 -> n3_n4 ~0.222   n4_n1 -> n2_n3 ~0.194
@@ -31,7 +31,7 @@ class TestConstrainedInsertionPolicy(unittest.TestCase):
     """Verify ConstrainedInsertionPolicy on the hand-authored test map."""
 
     def setUp(self) -> None:
-        self.graph = TransitGraph(_PROVIDER)
+        self.graph = TransitGraph(SQUARE_MAP)
 
     def test_cheap_request_inserted_pickup_before_dropoff(self) -> None:
         """A within-bounds request is served, pickup ahead of its dropoff."""

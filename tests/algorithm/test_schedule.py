@@ -5,7 +5,7 @@ import pytest
 from src.algorithm.Schedule import Event, Schedule
 from src.algorithm.TravelModel import GraphTravelModel, TravelModel
 from src.map.TransitGraph import TransitGraph
-from test_transit_graph import _PROVIDER
+from maps import SQUARE_MAP
 
 _TRAVEL_S = 10.0
 _POSITION = "start"
@@ -133,7 +133,7 @@ def test_timeline_composes_with_real_graph_costs() -> None:
     Uses the hand-authored test map rather than a stub, so the seconds the
     schedule accumulates are the same seconds the simulation would spend.
     """
-    graph = TransitGraph(_PROVIDER)
+    graph = TransitGraph(SQUARE_MAP)
     model = GraphTravelModel(graph)
     schedule = Schedule([pickup("r1", "n1_n2"), dropoff("r1", "n3_n4")])
 
@@ -145,7 +145,7 @@ def test_timeline_composes_with_real_graph_costs() -> None:
 
 
 def test_real_graph_timeline_shifts_by_dwell() -> None:
-    graph = TransitGraph(_PROVIDER)
+    graph = TransitGraph(SQUARE_MAP)
     schedule = Schedule([pickup("r1", "n1_n2"), dropoff("r1", "n3_n4")])
 
     plain = schedule.arrival_times("n4_n1", 0.0, GraphTravelModel(graph))

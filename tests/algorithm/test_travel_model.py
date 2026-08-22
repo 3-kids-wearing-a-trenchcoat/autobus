@@ -11,7 +11,7 @@ from src.algorithm.TravelModel import (
     TravelModel,
 )
 from src.map.TransitGraph import TransitGraph
-from test_transit_graph import _PROVIDER
+from maps import SQUARE_MAP
 
 _ORIGIN = "n4_n1"
 _DESTINATION = "n1_n2"
@@ -20,7 +20,7 @@ _DESTINATION = "n1_n2"
 @pytest.fixture
 def graph() -> TransitGraph:
     """Transit graph built from the hand-authored test map."""
-    return TransitGraph(_PROVIDER)
+    return TransitGraph(SQUARE_MAP)
 
 
 # ---------------------------------------------------------------------------

@@ -15,19 +15,10 @@ from src.experiment.campaign import (
 )
 from src.experiment.store import load_runs
 from src.map.TransitGraph import TransitGraph
-from src.map.graph import PlanarStreetGraph
 from src.simulation.ScriptedBackend import ScriptedBackend
 
 _TRIAL = dict(max_requests=6, n_stops=10, max_time=20000.0)
 _WORLD = {"map": "planar", "map_seed": 3, "backend": "MockBackend"}
-
-
-@pytest.fixture(scope="module")
-def street_graph() -> PlanarStreetGraph:
-    """A small planar map, built once so the suite stays fast."""
-    return PlanarStreetGraph.generate(
-        n_seeds=12, bounds=(0.0, 0.0, 1000.0, 1000.0), seed=3
-    )
 
 
 def _policy(graph: TransitGraph) -> WindowInsertionPolicy:

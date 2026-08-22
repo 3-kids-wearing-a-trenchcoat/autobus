@@ -6,9 +6,9 @@ from src.algorithm.DispatchPolicy import BusState
 from src.algorithm.SkipStopFixedRoutePolicy import SkipStopFixedRoutePolicy
 from src.algorithm.RequestPool import Request
 from src.map.TransitGraph import TransitGraph
-from test_transit_graph import _PROVIDER
+from maps import SQUARE_MAP
 
-# TransitGraph node IDs for the two stops in _PROVIDER:
+# TransitGraph node IDs for the two stops in SQUARE_MAP:
 #   s1 lives on road edge n1→n2  →  node "n1_n2"
 #   s2 lives on road edge n3→n4  →  node "n3_n4"
 _S1 = "n1_n2"
@@ -34,7 +34,7 @@ class TestSkipStopFixedRoutePolicy(unittest.TestCase):
 
     def setUp(self) -> None:
         self.policy = SkipStopFixedRoutePolicy(
-            TransitGraph(_PROVIDER), stop_order=[_S1, _S2]
+            TransitGraph(SQUARE_MAP), stop_order=[_S1, _S2]
         )
 
     def test_no_demand_returns_empty(self) -> None:

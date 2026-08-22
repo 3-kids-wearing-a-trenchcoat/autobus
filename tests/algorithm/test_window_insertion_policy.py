@@ -6,9 +6,9 @@ from src.algorithm.DispatchPolicy import BusState
 from src.algorithm.RequestPool import Request, RequestState
 from src.algorithm.WindowInsertionPolicy import WindowInsertionPolicy
 from src.map.TransitGraph import TransitGraph
-from test_transit_graph import _PROVIDER
+from maps import SQUARE_MAP
 
-# TransitGraph node IDs (road edges) in _PROVIDER. Any node ID is usable as a
+# TransitGraph node IDs (road edges) in SQUARE_MAP. Any node ID is usable as a
 # pickup or dropoff; only _S1 and _S2 carry an actual StopRecord.
 _START = "n4_n1"
 _S1 = "n1_n2"
@@ -35,7 +35,7 @@ class TestWindowInsertionPolicy(unittest.TestCase):
     """Verify insertion and schedule persistence on the test map."""
 
     def setUp(self) -> None:
-        self.graph = TransitGraph(_PROVIDER)
+        self.graph = TransitGraph(SQUARE_MAP)
         # Travel on this map costs fractions of a second, so a window this
         # wide never binds. Window behaviour is exercised separately below.
         self.policy = WindowInsertionPolicy(self.graph, max_wait_s=1000.0)
@@ -236,7 +236,7 @@ class TestServiceWindow(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        self.graph = TransitGraph(_PROVIDER)
+        self.graph = TransitGraph(SQUARE_MAP)
 
     def _policy(self, **kwargs) -> WindowInsertionPolicy:
         """Build a policy with the given window settings."""

@@ -6,9 +6,9 @@ from src.algorithm.DispatchPolicy import BusState
 from src.algorithm.NearestUnservedPolicy import NearestUnservedPolicy
 from src.algorithm.RequestPool import Request
 from src.map.TransitGraph import TransitGraph
-from test_transit_graph import _PROVIDER
+from maps import SQUARE_MAP
 
-# TransitGraph node IDs for the two stops in _PROVIDER:
+# TransitGraph node IDs for the two stops in SQUARE_MAP:
 #   s1 lives on road edge n1→n2  →  node "n1_n2"
 #   s2 lives on road edge n3→n4  →  node "n3_n4"
 _S1 = "n1_n2"
@@ -34,7 +34,7 @@ class TestNearestUnservedPolicy(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        self.policy = NearestUnservedPolicy(TransitGraph(_PROVIDER))
+        self.policy = NearestUnservedPolicy(TransitGraph(SQUARE_MAP))
 
     # ------------------------------------------------------------------
     # Basic cases

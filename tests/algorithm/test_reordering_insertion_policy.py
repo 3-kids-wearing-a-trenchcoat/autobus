@@ -11,9 +11,9 @@ from src.algorithm.RequestPool import Request, RequestState
 from src.algorithm.Schedule import Schedule
 from src.algorithm.WindowInsertionPolicy import WindowInsertionPolicy
 from src.map.TransitGraph import TransitGraph
-from test_transit_graph import _PROVIDER
+from maps import SQUARE_MAP
 
-# TransitGraph node IDs (road edges) in _PROVIDER, matching the names used in
+# TransitGraph node IDs (road edges) in SQUARE_MAP, matching the names used in
 # test_window_insertion_policy. Travel between them costs fractions of a
 # second, so a window of 1000s never binds.
 _START = "n4_n1"
@@ -79,7 +79,7 @@ class TestParity(unittest.TestCase):
     """With repair switched off, the subclass must not perturb its parent."""
 
     def setUp(self) -> None:
-        self.graph = TransitGraph(_PROVIDER)
+        self.graph = TransitGraph(SQUARE_MAP)
 
     def _both(self) -> tuple[WindowInsertionPolicy,
                              ReorderingInsertionPolicy]:
@@ -120,7 +120,7 @@ class TestRepair(unittest.TestCase):
     """The repair pass must improve the order without breaking it."""
 
     def setUp(self) -> None:
-        self.graph = TransitGraph(_PROVIDER)
+        self.graph = TransitGraph(SQUARE_MAP)
         self.policy = ReorderingInsertionPolicy(
             self.graph, max_wait_s=_WIDE_WINDOW, retry_rejected=False,
         )
@@ -239,7 +239,7 @@ class TestOnboardRiders(unittest.TestCase):
     """A rider already aboard relocates by their dropoff alone."""
 
     def setUp(self) -> None:
-        self.graph = TransitGraph(_PROVIDER)
+        self.graph = TransitGraph(SQUARE_MAP)
         self.policy = ReorderingInsertionPolicy(
             self.graph, max_wait_s=_WIDE_WINDOW, retry_rejected=False,
         )
@@ -343,7 +343,7 @@ class TestRetry(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        self.graph = TransitGraph(_PROVIDER)
+        self.graph = TransitGraph(SQUARE_MAP)
 
     # Narrow enough that r1 is genuinely refused. Widening this to 0.2 lets
     # both requests in, at which point every test below passes vacuously.
@@ -401,7 +401,7 @@ class TestStatsAndConstruction(unittest.TestCase):
     """Counter reporting and constructor validation."""
 
     def setUp(self) -> None:
-        self.graph = TransitGraph(_PROVIDER)
+        self.graph = TransitGraph(SQUARE_MAP)
 
     def test_stats_start_at_zero_with_every_key_present(self) -> None:
         policy = ReorderingInsertionPolicy(
@@ -446,7 +446,7 @@ class TestConvergence(unittest.TestCase):
     """n_passes=None must sweep to a fixed point and then stop."""
 
     def setUp(self) -> None:
-        self.graph = TransitGraph(_PROVIDER)
+        self.graph = TransitGraph(SQUARE_MAP)
 
     def _policy(self, n_passes: int | None) -> ReorderingInsertionPolicy:
         """Build a policy with repair configured to the given pass count."""

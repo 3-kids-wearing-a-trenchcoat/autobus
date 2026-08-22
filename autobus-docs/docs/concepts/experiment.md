@@ -60,7 +60,7 @@ The counters are read **after** the run has finished, and therefore after
 not reset them: a backend that cleared its counters on `close` would hand a
 campaign a file full of zeros with nothing raised. `CarlaBackend.close` releases
 its actors and walker maps but deliberately leaves `_stats` alone, and
-`tests/test_trial.py` pins the ordering.
+`tests/experiment/test_trial.py` pins the ordering.
 
 They also replace a hack worth naming. Before the field existed, the only way to
 reach these numbers was to keep the component in a module-level dict or list and
@@ -483,7 +483,7 @@ little. `n_jobs=-1` uses every core.
 **It is a scheduling choice and nothing else.** Each trial is a pure function
 of its identity, and ordering is rebuilt from the store by seed rather than
 from completion order, so parallel and sequential runs produce identical
-records. `tests/test_campaign.py` pins that, and the benchmark above re-checked
+records. `tests/experiment/test_campaign.py` pins that, and the benchmark above re-checked
 it at every worker count.
 
 !!! warning "Only worlds that say they can be shared"

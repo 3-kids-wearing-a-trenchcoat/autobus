@@ -22,7 +22,7 @@ src/
 │   ├── carla_stops.py         # Bus stop schema and IO, addressed by OpenDRIVE
 │   ├── carla_dump.py          # Dumps a town's topology and speed limits; needs a server
 │   ├── carla_calibrate.py     # Fits traffic_efficiency by driving; needs a server
-│   ├── carla_maps/            # Per-town topology and hand-authored stops (JSON)
+│   ├── carla_maps/            # Per-town topology and stops (JSON), plus .xodr for generated maps
 │   ├── TransitGraph.py        # Routing graph
 │   ├── graph.py               # PlanarStreetGraph and supporting types
 │   └── map_data.py            # Data records: StopRecord, RoadNodeRecord, RoadEdgeRecord
@@ -49,6 +49,7 @@ src/
 │   ├── ScriptedBackend.py     # A timetable; no map at all
 │   ├── CarlaBackend.py        # A real vehicle in a CARLA town
 │   ├── carla_routing.py       # Plans a drivable route to a stop; imports carla
+│   ├── carla_world.py         # Raises a world, whether the town is shipped or generated
 │   ├── carla_viewer.py        # Chase-camera window with a 2D HUD, for watching a run
 │   ├── carla_debug_text.py    # Stroke lettering for CARLA's world-space debug drawing
 │   ├── carla_stdout.py        # Captures and attributes what the traffic manager prints

@@ -175,7 +175,7 @@ Values must be JSON-serialisable. An argument that is an object rather than a
 scalar is reported by class name, which identifies the kind of thing but not
 its own settings.
 
-`tests/test_policy_params.py` enforces all of this without anyone having to
+`tests/algorithm/test_policy_params.py` enforces all of this without anyone having to
 remember it: it discovers every concrete policy under `src/algorithm`,
 compares `inspect.signature(__init__)` against the keys of `params()`, and
 fails on any knob that is accepted but not declared. Discovery is dynamic

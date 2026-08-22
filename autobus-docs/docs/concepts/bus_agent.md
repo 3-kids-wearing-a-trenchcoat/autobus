@@ -7,7 +7,7 @@ runner and the routing policy. It owns the bus's mutable state — current
 position, onboard passengers, and the planned route — and is the only component
 that writes passenger state transitions back to the `RequestPool`.
 
-The runner interacts with `BusAgent` through four methods/properties:
+The runner interacts with `BusAgent` through five methods/properties:
 
 - **`position`** — read the bus's current TransitGraph node ID.
 - **`next_stop()`** — read the next stop to drive to. Deliberately a pure
@@ -19,6 +19,10 @@ The runner interacts with `BusAgent` through four methods/properties:
   anchor for the projected planning clock.
 - **`replan_if_idle(sim_time)`** — give a bus with an empty route a chance to
   notice work that arrived while it sat. See below.
+- **`planned_route()`** — read the whole planned route, not just its head. The
+  runner passes it to `SimulationBackend.set_planned_route`, which is a no-op
+  everywhere except `CarlaBackend`, where it feeds the overlay and the
+  viewer's minimap. Like `next_stop()`, a pure read.
 
 ### Waking a parked bus
 

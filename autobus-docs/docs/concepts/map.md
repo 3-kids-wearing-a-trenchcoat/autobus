@@ -156,10 +156,65 @@ routed, tested and experimented on with no server running.
 |---|---|---|
 | `<Town>.topology.json` | machine-dumped roads | `src.map.carla_dump` |
 | `<Town>.stops.json` | hand-authored stops | `notebooks/carla-stop-authoring.ipynb` |
+| `<Town>.xodr` | OpenDRIVE, generated maps only | converted from OpenStreetMap |
 
-They are deliberately separate. Re-dumping a town's roads must never be able
-to destroy hours of stop authoring, and re-authoring stops must never need a
-server.
+The first two are deliberately separate. Re-dumping a town's roads must never
+be able to destroy hours of stop authoring, and re-authoring stops must never
+need a server.
+
+#### Two kinds of town
+
+CARLA ships its towns baked into the server, and `load_world` names one. A map
+built from OpenStreetMap has no such presence: it exists only as an OpenDRIVE
+file, and the server builds the road procedurally from it every time.
+
+Which applies is decided by the **data, not by a list in code** — a town is
+generated when a `<Town>.xodr` sits beside its dump in `carla_maps`.
+`src/simulation/carla_world.py` owns that decision (`is_generated`) and the
+loading (`load`). Adding another campus is a matter of dropping three files
+in. The one in the repository is **TAU**, a Tel Aviv University campus crop.
+
+A generated world is rebuilt on every load rather than reused. CARLA reports
+the same map name — `OpenDriveMap` — for every one of them, so there is no way
+to ask the server which OpenDRIVE is currently up, and a stale world carried
+into the next trial is exactly the contamination this prevents. The rebuild
+measures about 2.3 s.
+
+!!! warning "Two generation parameters are load-bearing, and neither is CARLA's default"
+    A generated map is a bare ribbon of road with nothing beside it, which
+    makes the defaults actively dangerous:
+
+    * **`wall_height=0.0`** (CARLA defaults to 1.0). Walls hem the road in and
+      the bus wedges against them — 2 of 8 legs completed with walls, 6 of 8
+      without.
+    * **`additional_width=4.0`** (CARLA defaults to 0.6). With nothing beyond
+      the lane, any lane departure drops the bus out of the world. Widening
+      took one campus from 6/8 legs to 12/12.
+
+    Both live in `OPENDRIVE_PARAMETERS` in `carla_world`, with the
+    measurements beside them.
+
+#### Speed limits come from two different places
+
+A shipped town publishes type-274 landmarks, which `carla_dump` reads and
+combines per road by a length-weighted harmonic mean. A generated town
+publishes none, so the limits come from the `<speed>` elements in its
+OpenDRIVE, fastest lane winning — and those are mostly **not surveyed**. The
+Tel Aviv extract carries 29 `maxspeed` tags against the 479 roads in its
+OpenDRIVE; the rest are the converter's per-highway-type defaults, which are
+motorway numbers. 9.2 km of the campus was priced at 100 km/h and a further
+7.6 km at 80 — 70% of its length.
+
+So every limit read out of a generated map is capped at
+`GENERATED_SPEED_CEILING_KPH`, **50 km/h**, the urban default the invented
+values should have been. Roads whose limit is genuinely lower keep it; only
+the fiction is capped.
+
+Because these are two different procedures rather than two sources of the same
+thing, a run records **which one produced its limits** —
+`landmark-harmonic-v1` or `xodr-capped-50-v1` — in its world identity, so
+results from the two can never pool. The tag is built from the constant, so
+changing the cap separates runs either side of the change automatically.
 
 #### Stops are an input, not a derivation
 

@@ -24,6 +24,14 @@
 
 ::: src.simulation.carla_routing.plan_route
 
+::: src.simulation.carla_world.load
+
+::: src.simulation.carla_world.is_generated
+
+::: src.simulation.carla_world.xodr_path
+
+::: src.simulation.carla_world.speed_limits
+
 ::: src.simulation.carla_stdout.install
 
 ::: src.simulation.carla_stdout.drain

@@ -235,12 +235,56 @@ reason to keep it rather than to remove it. The counter in `stats()` is how a
 run tells you it needed help, and keeping that counter honest is why the two
 exemptions below exist.
 
-There used to be a second, cruder response: lifting a jammed vehicle bodily
-back onto the lane. It was removed once each of its justifications turned out
-to be something else — red lights, a stale traffic manager, and a `set_path`
-loop. Deleting it left the driven distances identical to the metre. A leg
-reached by teleporting is a KPI that did not happen, so a genuine wedge is now
-allowed to show up as one.
+#### When the road itself is at fault
+
+Re-planning moves nothing, which is its virtue and also its limit: it cannot
+answer a bus the geometry has trapped. There is therefore a second, cruder
+response — lifting the bus bodily back onto its lane — and the history of that
+response is worth knowing, because it has been removed once and reinstated.
+
+It was **removed** when each of its original justifications turned out to be
+something else: red lights, a stale traffic manager and a `set_path` loop.
+Deleting it left the driven distances identical to the metre.
+
+It was **reinstated** for a case none of those explain. On the TAU campus map
+the bus entered one junction, ended up rolled 16 degrees onto its side edge
+and sunk 19 cm into the surface, and sat there at 75% throttle for the rest of
+the leg. Twenty-one consecutive legs failed from that single spot, because
+nothing ever got it out again. No amount of re-planning helps a bus that
+cannot move.
+
+!!! warning "Where the bus is put back matters, and the obvious choice is wrong"
+    Projecting a beached bus onto the road with `get_waypoint` returns a point
+    on the road it is *standing on*, which inside a junction is that road's
+    beginning — measured, **51 m behind** the bus. Recovering to there sent it
+    forward into the same trap and round again.
+
+    So the bus is placed along its **planned route** instead, far enough on to
+    clear whatever caught it: on a real lane by construction, and forward.
+    Velocity is zeroed too, or the momentum it had while beached carries into
+    the new position.
+
+    The reach escalates — `UNWEDGE_AHEAD_M` (8 m) times the number of attempts
+    on this leg, capped at `UNWEDGE_MAX_AHEAD_M` (60 m) — because one TAU trap
+    is a whole junction wide, and at a fixed 8 m the bus landed back inside it
+    and beached again on the next tick.
+
+#### Falling out of the world
+
+A generated map is a bare ribbon of road (see [Map](map.md)), so a lane
+departure does not scrape a kerb — it drops the bus into nothing. Anything
+below `FALLEN_BELOW_M` (−5 m) counts as fallen and is recovered the same way.
+
+This is checked **before** the no-progress test, because a bus in free fall is
+moving faster than any driving it will ever do and the movement test would
+never notice. Left alone it never comes back and every subsequent leg starts
+already lost: measured on TAU, one fall cost the twenty legs after it.
+
+!!! danger "Both of these are counted, and a campaign must read the counters"
+    A leg reached by teleporting is a KPI that did not happen. Neither repair
+    is hidden: `stats()` reports `unwedges` and `falls_recovered`, and a run
+    carrying either is a run to look at before trusting. They are simulator
+    guards against a map defect, not driving.
 
 !!! warning "A bus at a red light looks exactly like a wedged one"
     Any tick covering less than 0.05 m counts as no progress — 1 m/s at the

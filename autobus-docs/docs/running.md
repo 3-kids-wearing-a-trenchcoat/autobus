@@ -131,9 +131,18 @@ choose to run it.
     image — but nothing below assumes Docker, or any particular way of
     bringing the server up.
 
-`tests/sanity_cehck_carla.py` confirms a server is live and usable: it
-connects, spawns a vehicle, drives it on autopilot for three seconds and
-destroys it. Run it before blaming the code.
+To confirm a server is live and usable before blaming the code:
+
+```bash
+./run.sh -c "import carla; c = carla.Client('localhost', 2000); \
+c.set_timeout(10.0); print(c.get_server_version(), \
+c.get_world().get_map().name)"
+```
+
+Section 1 of `notebooks/carla-campaign-towns.ipynb` does the fuller version —
+it loads every installed town and reports road length, junction share, speed
+signs and, decisively, whether the town has Shoulder lanes to author stops
+against.
 
 **Whatever town the server starts on is almost certainly not the one you
 want.** That matters for more than convenience — see the traffic manager

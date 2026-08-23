@@ -351,13 +351,43 @@ which case managing it becomes the caller's job. See
 `start()` loads the town when the wrong one is up. `reload_world=True` makes
 it load unconditionally, so the trial begins in a world nothing has touched.
 
-`close()` already destroys the actors this backend created, so an ordinary
-sequence of trials does not leak. The case it does not cover is a trial that
-failed part-way and left something behind, and leaked actors are the classic
-cross-trial contaminant: a stray vehicle parked across a junction changes the
-next trial's driving and nothing reports it. A campaign therefore reloads
-between trials and pays the map load — seconds — for a world with a known
-state.
+`close()` destroys the actors this backend created, so an ordinary sequence
+of trials does not leak — and neither does a broken one any more. `start()`
+spawns before it can fail, and every caller reaches it *before* its own
+`try`/`finally`, so a failure part-way through used to leave everything
+behind. Measured: a viewer that could not open left the bus standing in the
+road, and a bus that could not be placed stranded every NPC already spawned,
+so the next trial drove among five vehicles in a world its identity called
+`npc_vehicles=0`. Worse, the failed `start()` had already switched the world
+to synchronous mode, which blocks every later client and makes the *next*
+backend record synchronous as the setting to "restore" — one failure poisoned
+the rest of the server session. `start()` now closes what it opened before
+re-raising, on `BaseException`, because a Ctrl-C mid-start leaves the same
+mess.
+
+Leaked actors remain the classic cross-trial contaminant — a stray vehicle
+parked across a junction changes the next trial's driving and nothing reports
+it — so a campaign still reloads between trials and pays the map load —
+seconds — for a world with a known state.
+
+#### Scenery that blocks a lane
+
+CARLA's own towns are not all clear of their own scenery. Measured on Town02:
+a tree standing 4.8 m off the carriageway has a collision volume reaching
+1.0 m *into* a 4.00 m lane. A vehicle centred in that lane and wider than
+about 2 m overlaps it and is thrown — at any speed from 10 to 40 kph, driving
+dead straight, with no steering input at all — while the default 1.77 m
+shuttle clears it by 0.1 m and never notices it is there.
+
+`carla_world.OBSTRUCTIONS` names those objects per town, and `start()`
+switches them off through `World.enable_environment_objects` on every run.
+This is damage in the town rather than a parameter of an experiment, so it is
+not left to the caller to remember. `stats()` reports
+`obstructions_removed`, so a run says what it stripped.
+
+A disabled object still appears in `world.get_environment_objects()` — only
+its collision and its rendering go away — so that list is not how to check
+the removal worked.
 
 It defaults to `False` because a single interactive run wants the opposite:
 re-running a notebook cell would otherwise pay the load every time for

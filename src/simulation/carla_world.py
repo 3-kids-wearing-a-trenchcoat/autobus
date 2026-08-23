@@ -76,6 +76,55 @@ OPENDRIVE_PARAMETERS = carla.OpendriveGenerationParameters(
 GENERATED_SPEED_CEILING_KPH = 50.0
 
 
+# Shipped geometry whose *collision* volume reaches into a driving lane.
+#
+# CARLA's own towns are not all clear of their own scenery. Measured on
+# Town02 2026-08-23: the tree below stands 4.8 m off the carriageway, but its
+# collider reaches to within 0.8 m of the lane edge -- 1.0 m inside a 4.00 m
+# lane. A vehicle centred in that lane and wider than about 2 m overlaps it
+# and is thrown, at any speed from 10 to 40 kph, driving dead straight. The
+# default 1.77 m shuttle clears it by 0.1 m and never notices; the 3.94 m
+# full-size bus is 1.1 m into it and loses the leg every time.
+#
+# Removed for every run rather than left to the caller: it is damage in the
+# town, not a parameter of an experiment, and an examiner should not have to
+# know to switch it off.
+#
+# Measured inert for the default vehicle: the same Town02 identity driven
+# with the removal and without it is **bit-identical** -- 31547 ticks,
+# 3717.68 m, a 196.56 s mean ride either way. (Stored runs do not reproduce
+# exactly, but that is session history rather than this: the same identity
+# moves by a few hundred ticks depending on what ran before it, with or
+# without the removal.)
+#
+# Keyed by plain town name, as ``town_name`` returns it.
+OBSTRUCTIONS: dict[str, tuple[str, ...]] = {
+    "Town02": ("InstancedFoliageActor_0_Inst_27_27",),
+}
+
+
+def remove_obstructions(world: "carla.World", town: str) -> list[str]:
+    """
+    Switch off any shipped object measured to block a driving lane.
+
+    Silent when the town has none, which is every town but Town02 so far.
+    A name that no longer resolves is skipped rather than raised on: the
+    list describes CARLA's content, and content can change between versions.
+
+    :param world: The loaded world to strip.
+    :param town: Town name, with or without CARLA's path prefix.
+    :return: The names actually removed, sorted.
+    """
+    wanted = set(OBSTRUCTIONS.get(town_name(town), ()))
+    if not wanted:
+        return []
+    found = {obj.id: obj.name for obj in world.get_environment_objects()
+             if obj.name in wanted}
+    if found:
+        world.enable_environment_objects(set(found), False)
+    return sorted(found.values())
+
+
 def xodr_path(town: str, directory: Path | None = None) -> Path:
     """
     Return the path an OpenDRIVE file for this town would occupy.

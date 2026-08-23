@@ -511,6 +511,9 @@ class CarlaBackend(SimulationBackend):
             # put back. Distinct from an unwedge on purpose: a wedge means
             # the map has a lip, a fall means it has a hole.
             "falls_recovered": 0,
+            # Shipped scenery stripped because it blocks a lane; see
+            # ``carla_world.OBSTRUCTIONS``. Non-zero only on Town02 today.
+            "obstructions_removed": 0,
             "walkers_spawned": 0,
             "walkers_removed": 0,
             "walker_spawn_failures": 0,
@@ -578,6 +581,12 @@ class CarlaBackend(SimulationBackend):
         world = self._acquire_world()
         self._world = world
         self._original_settings = world.get_settings()
+
+        # Damage in the town rather than a choice about the experiment, so
+        # it is stripped for every run. See ``carla_world.OBSTRUCTIONS``.
+        self._stats["obstructions_removed"] = len(
+            carla_world.remove_obstructions(world, self._town)
+        )
 
         self._traffic_manager = self._acquire_traffic_manager()
         self._traffic_manager.set_synchronous_mode(True)

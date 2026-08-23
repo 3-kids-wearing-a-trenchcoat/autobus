@@ -186,7 +186,7 @@ Throughput:       2.37 req/m
 ## Relationship to other components
 
 ```
-run_trial / main.py
+run_trial  (called by main.py and the notebooks)
   │  constructs components, picks a backend
   ▼
 SimulationRunner ──► DemandGenerator ──► RequestPool

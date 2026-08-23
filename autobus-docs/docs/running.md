@@ -39,22 +39,52 @@ place the project needs Docker**, and it needs it to fetch a Python package
     pinned to, and it stays a dependency like any other. The cost is this
     extra setup step.
 
-## Running the simulation
+## Running the demo
 
-Use `run.sh` from the project root to execute Python scripts inside the correct
+`main.py` is the entry point for *seeing* the system work. It runs a single
+simulation — by default in a CARLA town, with a chase-camera window following
+the bus — and prints a summary when the bus is done.
+
+Use `run.sh` from the project root, which runs the script inside the correct
 Conda environment:
 
 ```bash
 bash run.sh main.py
 ```
 
-The script is a thin wrapper around `python`, so any arguments that would
-normally follow `python` on the command line can be passed after the script
-name:
+That on its own is a complete demo. Every option has a default defined at the
+top of `main.py`, and every default can be overridden by a flag; a flag you do
+not pass keeps its default, so this changes the routing policy and nothing
+else:
 
 ```bash
-bash run.sh main.py --some-flag value
+bash run.sh main.py --policy fixed
 ```
+
+`bash run.sh main.py --help` lists every flag with its default. The ones worth
+knowing:
+
+| flag | what it does |
+|---|---|
+| `--backend carla\|mock` | `carla` drives a real bus and needs a live server; `mock` simulates travel times on the graph and needs neither a server nor the CARLA client |
+| `--town` | which town to drive in; `--list-towns` prints the ones with authored stops |
+| `--policy` | how the bus decides where to go next; `--list-policies` prints them with a one-line description each |
+| `--no-viewer` | skip the chase-camera window, which is faster but leaves nothing to watch |
+| `--npc-vehicles` | how much other traffic shares the town |
+| `--max-requests`, `--demand-interval` | how many passengers appear, and how often |
+
+With `--backend carla` the server must already be up — see
+[The CARLA server](#the-carla-server) below. If it is not, the demo says so and
+prints the command to start it rather than raising a traceback.
+
+**The demo records nothing.** It calls `run_trial` directly rather than
+`run_campaign`, so it writes nothing to `results/runs` and cannot collide with
+a campaign's run identities. It is a demonstration, not a measurement:
+reproducible numbers come from the notebooks below.
+
+`run.sh` is a thin wrapper around `python`, so it works for any script in the
+project, not just this one — anything that would normally follow `python` on
+the command line goes after the script name.
 
 ## Running experiments (Jupyter)
 

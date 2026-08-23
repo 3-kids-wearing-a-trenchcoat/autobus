@@ -350,7 +350,6 @@ def describe_setup(args: argparse.Namespace, provider: MapProvider) -> None:
         print(f"  traffic      {args.npc_vehicles} other vehicles")
         print("  watching     "
               + ("no (--no-viewer)" if args.no_viewer else "yes"))
-    print()
 
 
 def _seconds(value: float | None) -> str:
@@ -389,8 +388,11 @@ def report(result: TrialResult, args: argparse.Namespace) -> None:
 
     if result.backend_stats:
         print("\nWhat the bus did")
+        # Width from the longest name present, so a counter added to the
+        # backend later cannot silently push the column out of line.
+        width = max(len(name) for name in result.backend_stats)
         for name, value in sorted(result.backend_stats.items()):
-            print(f"  {name:<18} {value:>10.1f}")
+            print(f"  {name:<{width}} {value:>10.1f}")
 
     # run_trial ticks at dt = 1.0 s, so one tick is one simulated second.
     sim_time_s = result.tick_count * TICK_S

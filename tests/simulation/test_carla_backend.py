@@ -483,3 +483,63 @@ def test_one_blocker_among_many_is_enough() -> None:
 def test_queued_ticks_starts_at_zero() -> None:
     """The counter has to exist before anything can report on it."""
     assert _backend().stats()["queued_ticks"] == 0
+
+
+# ----------------------------------------------------------------------
+# A start that fails part-way
+#
+# ``start`` spawns before it can fail, and every caller reaches it before
+# its own try/finally, so nothing else can tidy up. Measured 2026-08-23: a
+# viewer that could not open left the bus in the road and the world
+# synchronous, which blocks every later client for the rest of the session.
+# ----------------------------------------------------------------------
+
+
+def _explode(message: str):
+    """Return a no-argument callable that raises."""
+    def raiser(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError(message)
+    return raiser
+
+
+def test_a_failed_start_closes_what_it_opened(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Whatever was spawned must not outlive the failure."""
+    backend = _backend()
+    closed: list[bool] = []
+    monkeypatch.setattr(backend, "_start", _explode("spawning blew up"))
+    monkeypatch.setattr(backend, "close", lambda: closed.append(True))
+
+    with pytest.raises(RuntimeError, match="spawning blew up"):
+        backend.start()
+
+    assert closed == [True]
+
+
+def test_a_failed_start_still_raises_what_went_wrong(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cleanup is a courtesy; the caller still has to learn what happened."""
+    backend = _backend()
+    monkeypatch.setattr(backend, "_start", _explode("the real problem"))
+    monkeypatch.setattr(backend, "close", _explode("cleanup also failed"))
+
+    with pytest.raises(RuntimeError, match="the real problem"):
+        backend.start()
+
+
+def test_a_viewer_that_cannot_open_does_not_take_the_trial_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A window is a convenience: SDL finding no display is not a failure."""
+    from src.simulation import carla_viewer
+
+    backend = _backend(viewer=True)
+    monkeypatch.setattr(carla_viewer, "CarlaViewer",
+                        _explode("no display here"))
+    monkeypatch.setattr(backend, "_bus", lambda: object())
+
+    backend._open_viewer()
+
+    assert backend._viewer is None

@@ -66,8 +66,10 @@ class SimulationRunner:
 
         :return: KPISnapshot computed from the final simulation state.
         """
-        self._backend.start()
         try:
+            # Inside the guard, not before it: a failure part-way through
+            # ``start`` leaves actors alive and the world synchronous.
+            self._backend.start()
             while not self.is_done() and self._sim_time < self._max_time:
                 self.step(self._dt)
         finally:

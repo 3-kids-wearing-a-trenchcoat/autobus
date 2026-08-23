@@ -532,6 +532,37 @@ class CarlaBackend(SimulationBackend):
         Separate from ``__init__`` precisely because this can fail and take
         seconds: there is no vehicle to place until there is a server.
 
+        **Cleans up after itself.** Callers reach ``start`` before their own
+        ``try``/``finally`` — ``SimulationRunner.run`` does, and so does
+        ``carla_calibrate`` — so nothing else can tidy a half-built world.
+        Measured 2026-08-23: a viewer that failed to open left the bus
+        standing in the road, and left the world **synchronous**, which
+        blocks every later client and makes the next backend record
+        synchronous mode as the setting to "restore". One failure poisoned
+        the whole server session.
+        :raises Exception: Whatever went wrong, re-raised once the world is
+            back as it was found.
+        """
+        try:
+            self._start()
+        except BaseException:
+            # Deliberately BaseException: a Ctrl-C mid-start leaves exactly
+            # the same mess as an error.
+            try:
+                self.close()
+            except Exception:                   # noqa: BLE001
+                # Never let the cleanup hide what actually failed.
+                pass
+            raise
+
+    def _start(self) -> None:
+        """
+        Do the work of ``start``, with no cleanup of its own.
+
+        Split out so a single guard in ``start`` covers every step: the
+        world settings, the traffic manager, the NPCs and the bus are all
+        left behind if any later step raises.
+
         Order matters here: the town is loaded before the traffic manager is
         created, so the traffic manager caches the right map. See
         ``_acquire_traffic_manager`` — getting this wrong drives the bus into
@@ -844,11 +875,20 @@ class CarlaBackend(SimulationBackend):
             return
         from src.simulation.carla_viewer import CarlaViewer
 
-        self._viewer = CarlaViewer(
-            self._world, bus, size=self._viewer_size,
-            render_size=self._render_size,
-            title=f"autobus - {self._town} seed {self._seed}",
-            minimap=self._minimap, schematic=self._schematic)
+        try:
+            self._viewer = CarlaViewer(
+                self._world, bus, size=self._viewer_size,
+                render_size=self._render_size,
+                title=f"autobus - {self._town} seed {self._seed}",
+                minimap=self._minimap, schematic=self._schematic)
+        except Exception as error:              # noqa: BLE001
+            # The same rule ``_pump_viewer`` follows, applied where the
+            # window is opened rather than only where it is drawn: a trial
+            # has no reason to care that SDL could not find a display.
+            # Measured: SDL's wayland driver raises here on a Wayland
+            # desktop, where its x11 driver works.
+            print(f"viewer unavailable, running headless: {error!r}")
+            self._viewer = None
 
     def _pump_viewer(self) -> None:
         """

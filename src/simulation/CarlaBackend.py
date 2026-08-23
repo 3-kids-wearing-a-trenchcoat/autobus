@@ -1143,13 +1143,17 @@ class CarlaBackend(SimulationBackend):
 
             if stop_id not in wanted:
                 continue
+            # The same short name the request table uses, for the same
+            # reason: a label is read at a glance from a moving bus, and
+            # ``n_s04_n0272`` is not. Diagnostics keep the full ID.
+            label = self._shorten(stop_id)
             height = self._label_height(base.distance(here))
-            half = carla_debug_text.text_width(stop_id, height) / 2
+            half = carla_debug_text.text_width(label, height) / 2
             start = carla.Location(x=base.x - right.x * half,
                                    y=base.y - right.y * half,
                                    z=base.z + DEBUG_LABEL_BASE_M)
             carla_debug_text.draw_text(
-                debug, stop_id, start, right, up, height, color,
+                debug, label, start, right, up, height, color,
                 DEBUG_ROUTE_LIFETIME_S)
 
     @staticmethod

@@ -363,11 +363,35 @@ def test_a_stop_is_a_box_and_its_name_and_nothing_else() -> None:
     backend._draw_stops(debug, _FakeSpectator())
 
     assert len(debug.boxes) == 2                    # one box per stop
-    # Only the names are lettered -- no beacon, no counts.
+    # Only the names are lettered -- no beacon, no counts. The name is the
+    # short one the request table shows, not the node ID.
     strokes = sum(carla_debug_text.stroke_count(text)
-                  for text in ("n0001_n_s01", "n0002_n_s02"))
+                  for text in ("s01", "s02"))
     assert len(debug.lines) == strokes
     assert debug.strings == []
+
+
+def test_a_stop_that_cannot_be_shortened_keeps_its_full_name() -> None:
+    """
+    The short form is abandoned wholesale when it would stop telling two
+    stops apart, and the label has to follow the table rather than invent
+    a name of its own.
+    """
+    debug = _FakeDebug()
+    backend = _drawing_backend(
+        debug,
+        stop_positions={"n0001_n0002": (0.0, 0.0, 0.0),
+                        "n0003_n0004": (10.0, 0.0, 0.0)},
+        position="n0001_n0002")
+    backend._note_stop_demand(_demand_pool(waiting=("n0001_n0002",)))
+
+    backend._draw_stops(debug, _FakeSpectator())
+
+    # Every stop is boxed and lettered, demand or not -- what is under
+    # test is the name each one carries.
+    strokes = sum(carla_debug_text.stroke_count(text)
+                  for text in ("n0001_n0002", "n0003_n0004"))
+    assert len(debug.lines) == strokes
 
 
 def test_only_the_nearest_stops_are_lettered() -> None:

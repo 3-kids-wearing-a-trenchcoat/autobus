@@ -111,6 +111,26 @@ can reach are ringed.
 The layout is deterministic and started from the geographic positions, so it
 stays recognisable and two runs can be compared.
 
+### What a stop is called on screen
+
+Every display — both tabs, the request table, and the label over the box in
+the world — names a stop by its **authored short ID**, `s04`, not by the
+`TransitGraph` node it lives on (`n_s04_n0272`). Two of the long form per
+table row leaves no width for anything else, and a name over a stop is read
+at a glance from a moving bus.
+
+The node ID is still the key everywhere underneath: the `town` tab matches
+it against the planned route to colour the next stop, and `by time` prices
+it through the graph to lay itself out. `MiniMap.labels` carries the display
+name alongside, filled by `minimap_from` from the name the map layer already
+records, and the ID is drawn whenever a stop has no name. `CarlaBackend`
+shortens its own labels the same way, abandoning the short form wholesale if
+two stops would ever collide under it.
+
+Diagnostics keep the full node ID deliberately — when a leg fails to route
+or the bus cannot spawn, the edge the planner was working with is the
+useful thing to name.
+
 ## Wiring your own
 
 The notebook does this, and it is the whole contract:

@@ -42,8 +42,10 @@ class _Edge:
 
 
 class _Stop:
-    def __init__(self, edge_id: str, x: float, y: float) -> None:
+    def __init__(self, edge_id: str, x: float, y: float,
+                 name: str | None = None) -> None:
         self.edge, self.x, self.y = _Edge(edge_id, "", ""), x, y
+        self.name = name
 
 
 class _Provider:
@@ -842,3 +844,38 @@ def test_the_plan_line_uses_the_short_stop_names() -> None:
     backend.set_planned_route(["n0002_n_s02", "n0001_n_s01"])
 
     assert "PLAN s02 > s01" in backend.hud_lines()
+
+
+def test_the_minimap_labels_stops_by_their_authored_name() -> None:
+    """
+    The panels draw "s04"; the node ID stays the key, because the map
+    matches it against the planned route and the schematic prices it
+    through the graph.
+    """
+    provider = _Provider(
+        nodes=[_Node("n1", 0.0, 0.0), _Node("n2", 10.0, 5.0)],
+        edges=[_Edge("n_s04_n0272", "n1", "n2")],
+        stops=[_Stop("n_s04_n0272", 1.0, 2.0, name="s04")])
+
+    minimap = minimap_from(provider)
+
+    assert minimap.stops == (("n_s04_n0272", 1.0, 2.0),)
+    assert minimap.labels == {"n_s04_n0272": "s04"}
+
+
+def test_a_provider_that_names_nothing_labels_nothing() -> None:
+    """A map layer with no authored names must still draw a minimap."""
+    provider = _Provider(
+        nodes=[_Node("n1", 0.0, 0.0), _Node("n2", 10.0, 5.0)],
+        edges=[_Edge("e1", "n1", "n2")],
+        stops=[_Stop("e1", 1.0, 2.0)])
+
+    assert minimap_from(provider).labels == {}
+
+
+def test_an_unlabelled_stop_is_drawn_under_its_id() -> None:
+    """The ID is the fallback, so a panel never draws a blank next to a
+    stop the map layer did not name."""
+    viewer = _fitted()
+
+    assert viewer._stop_label("s_a") == "s_a"

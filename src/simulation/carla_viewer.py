@@ -24,8 +24,8 @@ viewport.
 import atexit
 import math
 import warnings
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 
 import carla
 
@@ -180,10 +180,15 @@ class MiniMap:
 
     :param edges: Road segments as ``(x1, y1, x2, y2)`` in world metres.
     :param stops: Bus stops as ``(stop_id, x, y)``.
+    :param labels: Short display name per stop ID, for the panels to draw
+        instead of the ID. Empty by default, which draws the IDs -- the ID
+        stays the key either way, because the panels match it against the
+        planned route and the schematic prices it through the graph.
     """
 
     edges: tuple[tuple[float, float, float, float], ...]
     stops: tuple[tuple[str, float, float], ...]
+    labels: Mapping[str, str] = field(default_factory=dict)
 
 
 def format_table(
@@ -402,7 +407,14 @@ def minimap_from(provider: object) -> MiniMap:
     stops = tuple(
         (stop.edge.id, stop.x, stop.y) for stop in provider.get_stops()
     )
-    return MiniMap(edges=edges, stops=stops)
+    # CarlaMapProvider already carries the authored stop ID ("s04") as the
+    # record's name; a provider that names nothing simply labels nothing.
+    labels = {
+        stop.edge.id: stop.name
+        for stop in provider.get_stops()
+        if getattr(stop, "name", None)
+    }
+    return MiniMap(edges=edges, stops=stops, labels=labels)
 
 
 class CarlaViewer:
@@ -861,9 +873,20 @@ class CarlaViewer:
             if index in self._schematic.stranded:
                 pygame.draw.circle(self._screen, GRAPH_STRANDED, at,
                                    radius + 4, 2)
-            label = self._map_font.render(stop_id, True, MAP_LABEL_INK)
+            label = self._map_font.render(
+                self._stop_label(stop_id), True, MAP_LABEL_INK)
             self._screen.blit(
                 label, self._label_at(at, label.get_width(), radius))
+
+    def _stop_label(self, stop_id: str) -> str:
+        """
+        Give a stop the short name both panels show it under.
+        :param stop_id: The TransitGraph node ID, which stays the key.
+        :return: The minimap's label for it, or the ID when it has none.
+        """
+        if self._minimap is None:
+            return stop_id
+        return self._minimap.labels.get(stop_id, stop_id)
 
     def _draw_town(
         self, route: Sequence[str], bus: "carla.Location | None"
@@ -919,7 +942,8 @@ class CarlaViewer:
             near = (bus is not None
                     and math.hypot(bus.x - x, bus.y - y) <= MAP_LABEL_RANGE_M)
             if stop_id in planned or near:
-                label = self._map_font.render(stop_id, True, MAP_LABEL_INK)
+                label = self._map_font.render(
+                    self._stop_label(stop_id), True, MAP_LABEL_INK)
                 self._screen.blit(
                     label, self._label_at(at, label.get_width(), radius))
 

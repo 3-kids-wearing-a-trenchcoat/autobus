@@ -209,6 +209,12 @@ def build_parser() -> argparse.ArgumentParser:
              "and there is nothing to see",
     )
     watching.add_argument(
+        "--no-markers", action="store_true",
+        help="do not draw the plan into the world: the route the bus was "
+             "told to drive, a labelled box over every stop, and a marker "
+             "wherever that route was thrown away",
+    )
+    watching.add_argument(
         "--npc-vehicles", type=int, default=DEFAULT_NPC_VEHICLES,
         help="other traffic in the town; each one costs throughput",
     )
@@ -255,6 +261,32 @@ def allow_unpinned_hash() -> bool:
         return False
     os.environ[ALLOW_UNPINNED_HASH] = "1"
     return True
+
+
+def prefer_x11_on_wayland() -> None:
+    """
+    Give SDL a driver that can actually open a window, where it needs one.
+
+    Deliberately narrow, because the wrong default here is worse than none:
+    forcing "x11" on Windows or macOS would break a window that would
+    otherwise have opened. It applies only to the one combination measured
+    to fail -- a Linux Wayland session, where pygame's own default driver
+    raises ``Window framebuffer support not available`` while its x11 driver
+    (through XWayland) works. Everywhere else SDL is left to choose, and an
+    SDL_VIDEODRIVER already in the environment always wins.
+    :return: None.
+    """
+    if sys.platform != "linux" or os.environ.get("SDL_VIDEODRIVER"):
+        return
+    on_wayland = (
+        os.environ.get("XDG_SESSION_TYPE") == "wayland"
+        or bool(os.environ.get("WAYLAND_DISPLAY"))
+    )
+    # No DISPLAY means no XWayland to fall back to, and pointing SDL at an
+    # X server that is not there would turn a bad window into no window.
+    if not on_wayland or not os.environ.get("DISPLAY"):
+        return
+    os.environ["SDL_VIDEODRIVER"] = "x11"
 
 
 def build_provider(args: argparse.Namespace) -> MapProvider:
@@ -319,6 +351,10 @@ def build_carla_factory(
             # shows nothing at all.
             no_rendering=not watching,
             viewer=watching, follow_camera=watching,
+            # Drawn by the renderer, so this shows nothing without a
+            # window -- which is why it follows `watching` rather than
+            # standing on its own.
+            debug_draw=watching and not args.no_markers,
             viewer_size=tuple(args.viewer_size),
             minimap=minimap, schematic=schematic,
             # A demo is often run twice in a row, and CARLA results are not
@@ -356,7 +392,9 @@ def describe_setup(
     if args.backend == "carla":
         print(f"  traffic      {args.npc_vehicles} other vehicles")
         print("  watching     "
-              + ("no (--no-viewer)" if args.no_viewer else "yes"))
+              + ("no (--no-viewer)" if args.no_viewer else "yes")
+              + ("" if args.no_viewer or args.no_markers
+                 else ", with the plan drawn into the world"))
     if not pinned_seed:
         print("\n  Note: PYTHONHASHSEED is not pinned, so another process "
               "may serve\n  these same passengers in a different order. "
@@ -430,6 +468,8 @@ def main() -> None:
     provider = build_provider(args)
     backend_factory = None
     if args.backend == "carla":
+        if not args.no_viewer:
+            prefer_x11_on_wayland()
         backend_factory = build_carla_factory(args, provider)
 
     describe_setup(args, provider, not unpinned)

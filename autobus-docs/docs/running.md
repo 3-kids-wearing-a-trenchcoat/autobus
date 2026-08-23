@@ -52,6 +52,13 @@ Conda environment:
 bash run.sh main.py
 ```
 
+`python main.py` works too, as long as the Conda environment is already
+active — the demo does not insist on `run.sh` the way the notebooks and
+campaigns do. The difference is reproducibility: `run.sh` pins
+`PYTHONHASHSEED`, and without it another process may serve the same
+passengers in a different order. The demo says so and runs anyway, which is
+the right trade for a demonstration and the wrong one for a measurement.
+
 That on its own is a complete demo. Every option has a default defined at the
 top of `main.py`, and every default can be overridden by a flag; a flag you do
 not pass keeps its default, so this changes the routing policy and nothing

@@ -28,7 +28,9 @@ from src.algorithm.FixedRoutePolicy import FixedRoutePolicy
 from src.algorithm.NearestUnservedPolicy import NearestUnservedPolicy
 from src.algorithm.ReorderingInsertionPolicy import ReorderingInsertionPolicy
 from src.algorithm.WindowInsertionPolicy import WindowInsertionPolicy
-from src.experiment.trial import TrialResult, run_trial
+from src.experiment.trial import (
+    ALLOW_UNPINNED_HASH, TrialResult, run_trial,
+)
 from src.map.CarlaMapProvider import CarlaMapProvider
 from src.map.MapProvider import MapProvider
 from src.map.PlanarMapProvider import PlanarMapProvider
@@ -235,24 +237,24 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def check_hash_seed() -> None:
+def allow_unpinned_hash() -> bool:
     """
-    Refuse a seeded run that could not be reproduced, with the fix.
+    Let the demo run even when it could not be reproduced exactly.
 
-    ``run_trial`` raises for this itself, but a traceback is a poor greeting
-    for someone whose only mistake was running ``python main.py`` instead of
-    ``./run.sh main.py``. See ``require_pinned_hash_seed``.
-    :return: None.
-    :raises SystemExit: If PYTHONHASHSEED is unset or "random".
+    ``run_trial`` refuses a seeded trial while PYTHONHASHSEED is unpinned,
+    because several policies break ties with ``min()`` over a ``set[str]``
+    and would build a different route in another process. That matters for
+    a measurement and not for a demonstration, so this takes the escape
+    hatch ``run_trial`` already publishes rather than making the examiner
+    find the right launcher first. ``./run.sh`` still pins the seed, so a
+    demo launched that way stays reproducible and prints no warning.
+    :return: True if the warning applies, i.e. the hash seed is not pinned.
     """
     pinned = os.environ.get("PYTHONHASHSEED")
     if pinned is not None and pinned != "random":
-        return
-    sys.exit(
-        "PYTHONHASHSEED is not pinned, so this run could not be "
-        "reproduced.\nLaunch the demo through the wrapper, which pins it:\n"
-        "    ./run.sh main.py\n"
-    )
+        return False
+    os.environ[ALLOW_UNPINNED_HASH] = "1"
+    return True
 
 
 def build_provider(args: argparse.Namespace) -> MapProvider:
@@ -328,11 +330,15 @@ def build_carla_factory(
     return build
 
 
-def describe_setup(args: argparse.Namespace, provider: MapProvider) -> None:
+def describe_setup(
+    args: argparse.Namespace, provider: MapProvider, pinned_seed: bool
+) -> None:
     """
     Print what is about to run, so the summary can be read in context.
     :param args: Parsed command-line arguments.
     :param provider: The map the trial will run on.
+    :param pinned_seed: Whether PYTHONHASHSEED is pinned, so the run could
+        be reproduced in another process.
     :return: None.
     """
     where = args.town if args.backend == "carla" else "synthetic campus map"
@@ -345,11 +351,17 @@ def describe_setup(args: argparse.Namespace, provider: MapProvider) -> None:
           f"dwell {args.dwell:.0f} s")
     print(f"  demand       {args.max_requests} passengers, one every "
           f"{args.demand_interval:.0f} s")
-    print(f"  seed         {args.seed}")
+    print(f"  seed         {args.seed}"
+          + ("" if pinned_seed else "   (see the note below)"))
     if args.backend == "carla":
         print(f"  traffic      {args.npc_vehicles} other vehicles")
         print("  watching     "
               + ("no (--no-viewer)" if args.no_viewer else "yes"))
+    if not pinned_seed:
+        print("\n  Note: PYTHONHASHSEED is not pinned, so another process "
+              "may serve\n  these same passengers in a different order. "
+              "Fine for a demo; launch\n  with ./run.sh main.py if you "
+              "need the run to be reproducible.")
 
 
 def _seconds(value: float | None) -> str:
@@ -413,14 +425,14 @@ def main() -> None:
             print(f"{name:<12} {POLICY_HELP[name]}")
         return
 
-    check_hash_seed()
+    unpinned = allow_unpinned_hash()
 
     provider = build_provider(args)
     backend_factory = None
     if args.backend == "carla":
         backend_factory = build_carla_factory(args, provider)
 
-    describe_setup(args, provider)
+    describe_setup(args, provider, not unpinned)
 
     try:
         result = run_trial(

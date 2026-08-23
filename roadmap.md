@@ -442,15 +442,30 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    The two bad legs have **two different mechanisms**, diagnosed 2026-08-23
    and neither of them damage at the point where the bus lands:
 
-   * `n_s04 -> n_s06` leaves the stop through junction 252 on a connector
-     demanding a **0.59 m turn radius** — the only sub-1 m turn in the whole
-     tour. The bus cannot execute it, swings wide, and TAU has void beside
-     every lane. Moving the stop does not help: measured on scratch copies,
-     placing it on the opposite carriageway merely moves the hairpin from
-     the legs leaving to the legs arriving, and moving it 40 m back along
-     its own road changes the route not at all.
+   * `n_s04 -> n_s06` leaves the stop with a **U-turn between two opposing
+     carriageways 3.4 m apart**, through junction 252 on connector road
+     4822. Measured over the waypoints the controller actually receives, it
+     turns about **176 degrees in 6.6 m of path — an effective radius near
+     2.1 m**, against a tightest circle of **2.05 m** for the bus
+     (wheelbase 5.63 m, 70 degree lock) and **0.93 m** for the shuttle. So
+     the bus is asked for a turn at the exact limit of what it can do,
+     cannot track it, and swings **12.51 m** off the lane centre where the
+     shuttle swings 2.40 m — and TAU has void beside every lane.
+
+     *(An earlier entry called this a "0.59 m turn". **Retracted**: that
+     came from the circumradius of three consecutive waypoints, and the
+     junction's waypoints are 0.43-1.65 m apart rather than the nominal
+     2 m, which makes that formula wildly pessimistic on uneven spacing.
+     Two measures, the per-step heading change and the total turn over the
+     path, both give ~2.1 m.)*
+
+     Moving the stop does not help: placing it on the opposite carriageway
+     merely moves the U-turn from the legs leaving to the legs arriving,
+     and moving it 40 m back along its own road changes the route not at
+     all — the turn is junction geometry, not a function of where the stop
+     sits.
    * `n0102 -> n0213` is **not** the same defect, and its first reading was
-     wrong. The 15 s halts at (816.7, -1754.4) are the agent **holding for
+     wrong. **Identified 2026-08-23: the bus hits a traffic-light mast.** The 15 s halts at (816.7, -1754.4) are the agent **holding for
      a red light** — `_affected_by_traffic_light` returns True, brake 0.50,
      throttle 0 — which is correct behaviour, not a fault. The real failure
      is 15 m away at (803.6, -1758.7): the bus sits **upright** (roll
@@ -461,8 +476,20 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
      obstructed forwards only. No ray at 0.3, 1.0, 2.0 or 3.0 m finds
      anything in 8 m ahead; the one asymmetry measured is a **0.15 m step
      under the front-right corner** against 0.00 m under the other three.
-     A 10.27 m wheelbase that cannot climb a 0.15 m lip fits the evidence
-     but is not proven.
+     The cause is street furniture beside a lane too narrow for the
+     vehicle. TAU's lanes are **3.35 m** and the bus is **3.94 m wide**, so
+     it overhangs its own lane by 0.29 m on each side before it moves. At
+     this junction the traffic light's mast stands **2.24-2.45 m** from the
+     lane centre and its base **2.05-2.64 m**, against a bus half-width of
+     1.97 m — 0.08 m of clearance. Measured three ways: the bus **cannot
+     be spawned** in the stuck pose; disabling the four light objects one
+     at a time frees it only when the **mast** goes; and it cannot be
+     placed even centred on the lane at the lane's own heading. The 0.15 m
+     step under one corner is the kerb, not the blocker.
+
+     Note `cast_ray` finds **nothing** at any height here, and found
+     nothing at Town02's tree either: it does not report these props, so
+     its silence is not evidence of clear space.
 
    Town02 was re-driven leg-independently on 2026-08-23 as well: **14/15**,
    against 13/15 chained, with **all** of the damage in one leg
@@ -517,6 +544,25 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    recorded run using it must say so in its world identity. The shuttle
    never touches the tree, so the default campaign is unaffected either way.
    **Not applied.**
+
+   **Three fixes were attempted for the TAU pair, and all three measured as
+   non-fixes** (2026-08-23), so neither leg is repaired:
+
+   * Move stop `s04` to the opposite carriageway — the U-turn moves to the
+     legs arriving instead. Move it 40 m back — the route does not change.
+   * Refuse turns tighter than the bus can drive, inside `plan_route`. At a
+     2.5 m limit **four TAU legs lose their route altogether**, including
+     both failing legs, and ten more reroute. It breaks more than it fixes.
+   * Strip the offending furniture, as Town02's tree is stripped. It works
+     locally — the bus can be placed once the mast goes — but a generated
+     map **renames its props on every load** (`...291543`, `...286013`,
+     `...280485` across three loads of the same map), so a name-keyed list
+     like `OBSTRUCTIONS` cannot address them. And unlike Town02's tree,
+     this furniture sits **outside** the lane: the map is not damaged.
+
+   So TAU's two legs are not a defect to repair but a vehicle that does not
+   fit the campus — too wide for a 3.35 m lane, and a turning circle at the
+   limit of its junctions. `DEFAULT_BUS_ID` already encodes the answer.
 
    So the three surviving failures are three different things — a turn too
    tight, a forward obstruction, and a tree overhanging a lane — with one
@@ -1917,7 +1963,7 @@ on only **1 junction in 146** across both tours, so it was left alone.
 | Does running faster cause vehicles to get stuck? | **No.** Wall-clock rate has no effect at all, and a finer physics step does not help either | Measured; see below |
 | Who owns the traffic manager? | `CarlaBackend` creates its own on its own port, after the town is loaded, and shuts down only what it created | A traffic manager caches its map at creation and never re-caches it, so an inherited one steers the bus into the scenery — but it is also hosted by whichever *process* created it, so sharing or tearing down someone else's is worse. See the two traps below |
 | Unwedging (lifting a jammed bus onto the lane) | **Removed.** Re-planning on no progress stays | It teleported, and a leg saved that way is a KPI that did not happen. Once red lights, the stale traffic manager and the `set_path` loop were fixed it never fired at all: 15/15 legs over 10 km with zero lifts, and deleting it left the driven distances identical |
-| Which vehicle drives? | `vehicle.volkswagen.t2_2021`, a shuttle | Completes every leg on Town01 without needing recovery, and is indistinguishable from the Sprinter. The full-size `fusorosa` is viable on Town01, Town03 and Town05 — re-measured 2026-08-21 it drives all three 15/15 with zero recoveries, refuting the earlier "too wide for Town01" verdict — and re-measured 2026-08-23 it drives TAU 23/25 with 21 legs never leaving the road, the earlier 1/25 having been a chained-tour cascade — but it cannot be the default: it is marginal on Town02, and two TAU legs still fail on a 0.59 m turn and an unexplained stall |
+| Which vehicle drives? | `vehicle.volkswagen.t2_2021`, a shuttle | Completes every leg on Town01 without needing recovery, and is indistinguishable from the Sprinter. The full-size `fusorosa` is viable on Town01, Town03 and Town05 — re-measured 2026-08-21 it drives all three 15/15 with zero recoveries, refuting the earlier "too wide for Town01" verdict — and re-measured 2026-08-23 it drives TAU 23/25 with 21 legs never leaving the road, the earlier 1/25 having been a chained-tour cascade — but it cannot be the default: it is marginal on Town02, and two TAU legs still fail, both because the vehicle does not fit the campus: a U-turn at the limit of its 2.05 m turning circle, and a traffic-light mast 2.24 m from the centre of a 3.35 m lane |
 | Demo or campaign on CARLA? | **A persistent campaign, but not a statistical one** | Decided 2026-08-10, then **refined the same day once the pilot priced it**. The harness, store and world reload were worth building and are used. What changed is what CARLA is *for* — see the next row |
 | Where does the **CI half-width < 5%** bar apply? | **To the synthetic map, not to CARLA** | Decided 2026-08-10. The synthetic map is where many runs are produced, parameters and strategies compared, and tuning done — so that is where a statistical claim belongs and where it is cheap. CARLA stands in for a real deployment: its job is to show the result **carries over**, not to re-establish it. This is §5.1 governing the *statistics* while §3.2 governs the *synthetic* campaigns, and it is what makes the numbers affordable — the pilot priced the bar at 182 seeds and 27.5 hours on CARLA against seconds per trial on the mock |
 | What does 3.7 validate? | **Both findings, from one campaign** | Decided 2026-08-10. Three policies sharing a seed sequence costs ~1.5× a two-policy run and answers both the §3.2.2 success criteria (against fixed-route) and whether L1's ride-time advantage survives real driving |

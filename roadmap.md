@@ -198,8 +198,10 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    giving up. With rendering on for a demo the same trial is 17–33 minutes.
 
    **Bus blueprint: `vehicle.mitsubishi.fusorosa`** (`base_type=Bus`).
-   *Superseded — the default is now `vehicle.volkswagen.t2_2021`, and the
-   full-size bus is unsupported on Town01. See 3.4.*
+   *Superseded — the default is now `vehicle.volkswagen.t2_2021`. The
+   full-size bus was recorded here as unsupported on Town01; re-measured
+   2026-08-21 that was wrong, and it drives Town01, Town03 and Town05 with
+   no recoveries at all, and TAU 23/25. See 3.4.*
 
    **Steering: `traffic_manager.set_path(actor, [locations])` works**, and
    keeps CARLA's built-in driving in charge as design review §4 intended. One
@@ -386,6 +388,153 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
    and `plan_route` could not find a way out of five of the positions it
    wedged itself into. `FULL_SIZE_BUS_ID` is kept named in the source
    because "why not the actual bus?" is the first question anyone asks.
+
+   **Re-measured 2026-08-21 over every town's full tour, and that verdict
+   was wrong on three counts.** Town01's lanes are **4.00 m**, not the
+   3.5 m recorded; the bus is **3.94 m**, so it is *narrower* than the lane;
+   and it now drives Town01 **15/15 with zero recoveries**, faster than the
+   shuttle did. Width does not predict failure in either direction — the
+   same bus drives Town03 and Town05's **3.50 m** lanes flawlessly and
+   struggles on Town02's 4.00 m ones.
+
+   | town | lane width | shuttle `t2_2021` | full-size `fusorosa` |
+   |---|---|---|---|
+   | Town01 | 4.00 m | 15/15, 0 recoveries | **15/15, 0 recoveries** |
+   | Town02 | 4.00 m | 15/15, 1 repath | 13/15 chained, **14/15 leg-independent**, 0 falls |
+   | Town03 | 3.50 m | 15/15, 0 | **15/15, 0 recoveries** |
+   | Town05 | 3.50 m | 15/15, 0 | **15/15, 0 recoveries** |
+   | TAU | 3.35 m | 25/25, 0 | **1/25**, 1179 repaths, 411 unwedges, 973 falls |
+
+   Both vehicles, each town's full sorted tour, 0 NPCs, 500 s leg cap.
+   What most likely fixed Town01 is everything that changed since — direct
+   drive replacing turn-list steering, lane-change routing, time-priced
+   routes — but that is **unverified**, because the old code is gone.
+
+   So the bus is **viable on Town01, Town03 and Town05**, and marginal on
+   Town02, where it wedges and is freed but never falls. Length and the
+   missing ground, not width. It still cannot be the default, because only
+   the shuttle drives every town cleanly.
+
+   **TAU re-measured 2026-08-23, and "unusable" was the protocol, not the
+   bus.** The tour above was driven as one chained session, so a fall on an
+   early leg displaced every leg after it and the score counted one cascade
+   rather than 25 verdicts. Re-driven with **every leg in its own backend
+   session, spawned at that leg's origin** (0 NPCs, 900 s cap):
+
+   | arm | arrived | falls | legs with falls | median leg |
+   |---|---|---|---|---|
+   | TAU, full-size | **23/25** | 264 | **4** | 108.8 s |
+   | TAU, shuttle | 25/25 | 0 | 0 | 157.7 s |
+   | Town03, full-size *(control)* | 15/15 | 0 | 0 | 87.7 s |
+   | TAU, full-size, walls 1.0 | 15/25 | 12 | 8 | 152.8 s |
+
+   Town03 reproduces its chained 15/15, so the protocol is sound. **21 of
+   25 legs never leave the road**, and the bus is *faster* than the shuttle
+   on the legs it drives. Two legs carry 98% of the falls, each at one
+   point: `n_s04_n0272 -> n_s06_n0329` at (1017.1, -889.2) and
+   `n0102_n0129 -> n0213_n0194` at (786.7, -1757.4).
+
+   **Walls do not save it**: `wall_height=1.0` takes 23/25 down to 15/25,
+   trading 264 falls on 4 legs for chronic wedging on ten, and leaves one
+   stop with no room to spawn a 10.27 m vehicle at all. Walls now lose for
+   both vehicles, for opposite reasons.
+
+   The two bad legs have **two different mechanisms**, diagnosed 2026-08-23
+   and neither of them damage at the point where the bus lands:
+
+   * `n_s04 -> n_s06` leaves the stop through junction 252 on a connector
+     demanding a **0.59 m turn radius** — the only sub-1 m turn in the whole
+     tour. The bus cannot execute it, swings wide, and TAU has void beside
+     every lane. Moving the stop does not help: measured on scratch copies,
+     placing it on the opposite carriageway merely moves the hairpin from
+     the legs leaving to the legs arriving, and moving it 40 m back along
+     its own road changes the route not at all.
+   * `n0102 -> n0213` is **not** the same defect, and its first reading was
+     wrong. The 15 s halts at (816.7, -1754.4) are the agent **holding for
+     a red light** — `_affected_by_traffic_light` returns True, brake 0.50,
+     throttle 0 — which is correct behaviour, not a fault. The real failure
+     is 15 m away at (803.6, -1758.7): the bus sits **upright** (roll
+     -2.3 deg), **on the lane** (0.18 m off centre), all four corners over
+     ground, and does not move on throttle 0.75. Measured there: 0.06 m in
+     3 s at the agent's full lock, **0.03 m with the steering straightened**
+     — so it is not the steering — and **13.66 m in 3 s in reverse**. It is
+     obstructed forwards only. No ray at 0.3, 1.0, 2.0 or 3.0 m finds
+     anything in 8 m ahead; the one asymmetry measured is a **0.15 m step
+     under the front-right corner** against 0.00 m under the other three.
+     A 10.27 m wheelbase that cannot climb a 0.15 m lip fits the evidence
+     but is not proven.
+
+   Town02 was re-driven leg-independently on 2026-08-23 as well: **14/15**,
+   against 13/15 chained, with **all** of the damage in one leg
+   (`n_s02_n_s01 -> n_s03_n0063`) and the other fourteen clean, no
+   recoveries at all. That leg is a **third** mechanism: the bus is found at
+   **roll -90 deg, lying on its side**, wheels in the air, which is why it
+   moves neither forwards nor backwards and why no ray finds an obstacle.
+   Zero falls anywhere in Town02.
+
+   **RETRACTED 2026-08-23: it is not a rollover.** It is a **collision with
+   one tree**, and the tree is the whole story.
+
+   Driven manually down the lane with the agent out of the loop -- steer
+   0.00, dead straight, 0.00 m off the lane centre -- the bus is thrown at
+   **x = 81.7-81.9 at every speed tried, 10, 20, 30 and 40 kph alike**.
+   Speed is irrelevant, so nothing about cornering is involved. The shuttle
+   drives the same line at 30 and 40 kph with **roll 0.0**.
+
+   Standing the vehicle still at that spot maps the obstruction: the bus is
+   ejected with its centre anywhere from -1.5 m to +0.5 m of the lane
+   centre, and **rests quietly from +1.0 m outward**; the shuttle rests
+   quietly everywhere. So something intrudes **0.5-1.0 m into a 4.00 m
+   lane**. A 3.94 m bus is 1.1 m into it; the 1.77 m shuttle clears it by
+   about 0.1 m, which is the entire difference between the two vehicles
+   here.
+
+   The object is a single tree, `InstancedFoliageActor_0_Inst_27_27` at
+   (81.0, 100.6), whose collision volume overhangs the carriageway.
+   Switching it off with `World.enable_environment_objects` and driving
+   again, A/B/A:
+
+   | world | worst roll | outcome |
+   |---|---|---|
+   | tree present | 177.8 deg | thrown at x=81.7 |
+   | **tree disabled** | **0.0 deg** | **drives through** |
+   | tree re-enabled (control) | 177.8 deg | thrown at x=81.7 |
+
+   And on the real leg, driven by the agent over four perturbations:
+   **stock 2/4 arrivals** (roll 176-180 even on the runs that arrive)
+   against **4/4 with the tree disabled**, every one of them in 114.8-114.9 s
+   with a worst roll of 6 degrees.
+
+   This also explains why mass and the centre of mass did nothing: there was
+   no rollover to stabilise. The bus is thrown by a collision every time,
+   and the earlier 3/8 "base rate" was simply how often it happened to land
+   back on its wheels afterwards.
+
+   **So Town02 is fixable without touching the map**: `Town02` is a shipped
+   town and nothing here edits it. `World.enable_environment_objects` is
+   CARLA's own runtime API, session-scoped and reversible, and it takes the
+   full-size bus from 14/15 to **15/15**. It does change the world, so a
+   recorded run using it must say so in its world identity. The shuttle
+   never touches the tree, so the default campaign is unaffected either way.
+   **Not applied.**
+
+   So the three surviving failures are three different things — a turn too
+   tight, a forward obstruction, and a tree overhanging a lane — with one
+   property in common: they all need a wide or long vehicle, and the
+   4.44 m x 1.77 m shuttle drives all three legs clean. Town02's is the only
+   one with a fix that costs nothing.
+
+   !!! warning "Two instrument notes"
+       The falls **are** falls: `ground_projection`, `cast_ray` and a
+       dropped physics prop all agree there is no surface at any of the
+       three TAU fall points, while the same three agree the lane centre
+       beside each one is solid at z = 0.00 and a prop rests on it. The
+       props dropped at the fall points settle at **z = -131.9** and
+       **-171.2**.
+       The **collision sensor recorded nothing at all** in any of these
+       runs, including while the bus was demonstrably wedged. It was never
+       given a positive control, so its silence is not evidence of no
+       contact.
 
    **There is no remaining reachability gap. Every stop is reachable, and
    the earlier "4 of 25 legs fail" was a measurement artefact** — the tour
@@ -1768,7 +1917,7 @@ on only **1 junction in 146** across both tours, so it was left alone.
 | Does running faster cause vehicles to get stuck? | **No.** Wall-clock rate has no effect at all, and a finer physics step does not help either | Measured; see below |
 | Who owns the traffic manager? | `CarlaBackend` creates its own on its own port, after the town is loaded, and shuts down only what it created | A traffic manager caches its map at creation and never re-caches it, so an inherited one steers the bus into the scenery — but it is also hosted by whichever *process* created it, so sharing or tearing down someone else's is worse. See the two traps below |
 | Unwedging (lifting a jammed bus onto the lane) | **Removed.** Re-planning on no progress stays | It teleported, and a leg saved that way is a KPI that did not happen. Once red lights, the stale traffic manager and the `set_path` loop were fixed it never fired at all: 15/15 legs over 10 km with zero lifts, and deleting it left the driven distances identical |
-| Which vehicle drives? | `vehicle.volkswagen.t2_2021`, a shuttle | Completes every leg on Town01 without needing recovery, and is indistinguishable from the Sprinter. The full-size `fusorosa` is **not supported**: it only got round on the lift-onto-the-lane recovery that has since been removed, needing 20 lifts over three tours where the shuttle needed none |
+| Which vehicle drives? | `vehicle.volkswagen.t2_2021`, a shuttle | Completes every leg on Town01 without needing recovery, and is indistinguishable from the Sprinter. The full-size `fusorosa` is viable on Town01, Town03 and Town05 — re-measured 2026-08-21 it drives all three 15/15 with zero recoveries, refuting the earlier "too wide for Town01" verdict — and re-measured 2026-08-23 it drives TAU 23/25 with 21 legs never leaving the road, the earlier 1/25 having been a chained-tour cascade — but it cannot be the default: it is marginal on Town02, and two TAU legs still fail on a 0.59 m turn and an unexplained stall |
 | Demo or campaign on CARLA? | **A persistent campaign, but not a statistical one** | Decided 2026-08-10, then **refined the same day once the pilot priced it**. The harness, store and world reload were worth building and are used. What changed is what CARLA is *for* — see the next row |
 | Where does the **CI half-width < 5%** bar apply? | **To the synthetic map, not to CARLA** | Decided 2026-08-10. The synthetic map is where many runs are produced, parameters and strategies compared, and tuning done — so that is where a statistical claim belongs and where it is cheap. CARLA stands in for a real deployment: its job is to show the result **carries over**, not to re-establish it. This is §5.1 governing the *statistics* while §3.2 governs the *synthetic* campaigns, and it is what makes the numbers affordable — the pilot priced the bar at 182 seeds and 27.5 hours on CARLA against seconds per trial on the mock |
 | What does 3.7 validate? | **Both findings, from one campaign** | Decided 2026-08-10. Three policies sharing a seed sequence costs ~1.5× a two-policy run and answers both the §3.2.2 success criteria (against fixed-route) and whether L1's ride-time advantage survives real driving |

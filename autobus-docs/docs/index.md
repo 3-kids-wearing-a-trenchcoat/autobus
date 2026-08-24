@@ -20,8 +20,6 @@ src/
 │   ├── CarlaMapProvider.py    # MapProvider for a CARLA town; imports no carla
 │   ├── carla_topology.py      # Road topology schema and IO
 │   ├── carla_stops.py         # Bus stop schema and IO, addressed by OpenDRIVE
-│   ├── carla_dump.py          # Dumps a town's topology and speed limits; needs a server
-│   ├── carla_calibrate.py     # Fits traffic_efficiency by driving; needs a server
 │   ├── carla_maps/            # Per-town topology and stops (JSON), plus .xodr for generated maps
 │   ├── TransitGraph.py        # Routing graph
 │   ├── graph.py               # PlanarStreetGraph and supporting types
@@ -56,14 +54,17 @@ src/
 │   ├── SimulationRunner.py    # Owns the clock, tick order and orchestration
 │   ├── AnimationRecorder.py   # Per-tick frames for replaying a trial
 │   └── DemandGenerator.py     # Synthetic demand: GenerationPolicy and DemandGenerator
-└── experiment/
-    ├── trial.py               # TrialResult dataclass and run_trial()
-    ├── comparison.py          # compare_policies(): multi-strategy runner
-    ├── campaign.py            # run_campaign(): runs what is not yet recorded
-    ├── store.py               # Completed runs on disk, keyed by identity
-    ├── summary.py             # summarize_comparison/_results, ComparisonSummary
-    ├── plots.py               # KPI bars, distributions, occupancy, parameter sweeps
-    └── animation.py           # animate_trial(), show_animation(), show_animations()
+├── experiment/
+│   ├── trial.py               # TrialResult dataclass and run_trial()
+│   ├── comparison.py          # compare_policies(): multi-strategy runner
+│   ├── campaign.py            # run_campaign(): runs what is not yet recorded
+│   ├── store.py               # Completed runs on disk, keyed by identity
+│   ├── summary.py             # summarize_comparison/_results, ComparisonSummary
+│   ├── plots.py               # KPI bars, distributions, occupancy, parameter sweeps
+│   └── animation.py           # animate_trial(), show_animation(), show_animations()
+└── preparation/               # Offline tools; need a live server, nothing imports them
+    ├── carla_dump.py          # Dumps a town's topology and speed limits
+    └── carla_calibrate.py     # Fits traffic_efficiency by driving
 
 results/
 ├── runs/                      # One JSON file per completed run

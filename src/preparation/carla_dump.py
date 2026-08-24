@@ -2,11 +2,12 @@
 
 Run once per town, against a live server::
 
-    ./run.sh -m src.map.carla_dump --town Town01
+    ./run.sh -m src.preparation.carla_dump --town Town01
 
-**This is the only module under ``src/`` that imports carla.** Everything
-else in the map layer reads the file this produces, which is what lets
-``CarlaMapProvider`` and its tests run with no server and no wheel.
+**This imports carla; nothing in the map layer does.** The map layer reads
+the file this produces instead, which is what lets ``CarlaMapProvider`` and
+its tests run with no server and no wheel. Keeping that true is why this
+module sits in ``preparation`` rather than beside the provider.
 
 The dump is a pure function of the CARLA map: raw topology segments, never
 the split ones the provider derives from the authored stops. So re-dumping a

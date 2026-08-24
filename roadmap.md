@@ -228,7 +228,7 @@ as early as possible; treat everything after Phase 3.4 as optional depth.
 
    Reads two files from `src/map/carla_maps/` and **imports no carla**, so a
    CARLA town is routable, testable and experimentable with no server:
-   `<Town>.topology.json` (machine-dumped by `src.map.carla_dump`) and
+   `<Town>.topology.json` (machine-dumped by `src.preparation.carla_dump`) and
    `<Town>.stops.json` (hand-authored). Separate on purpose — re-dumping
    roads must never destroy stop authoring.
 

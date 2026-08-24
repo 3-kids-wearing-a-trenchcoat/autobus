@@ -195,8 +195,8 @@ run_trial(policy_factory=..., provider=CarlaMapProvider("Town01"))
 
 Only three things need a live server: driving the bus with
 [`CarlaBackend`](concepts/simulation_backend.md#carlabackend), re-dumping a
-town's roads and speed limits with `src.map.carla_dump`, and fitting a town's
-`traffic_efficiency` with `src.map.carla_calibrate` — which measures it *by
+town's roads and speed limits with `src.preparation.carla_dump`, and fitting a town's
+`traffic_efficiency` with `src.preparation.carla_calibrate` — which measures it *by
 driving*, so it must be re-run after any change to how the bus is driven.
 
 To watch the bus drive, use `notebooks/carla-single-run.ipynb`, which runs one

@@ -2,10 +2,10 @@
 
 Run once per town, against a live server, after ``carla_dump``::
 
-    ./run.sh -m src.map.carla_calibrate --town Town01 --write
+    ./run.sh -m src.preparation.carla_calibrate --town Town01 --write
 
-**This module imports carla**, like ``carla_dump`` and unlike everything else
-in the map layer.
+**This module imports carla**, like ``carla_dump``. Both sit in
+``preparation`` so that the map layer itself never has to.
 
 ## What it measures, and why both halves are needed
 

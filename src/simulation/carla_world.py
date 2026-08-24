@@ -10,10 +10,10 @@ town is *generated* when a ``<town>.xodr`` sits beside its dump in
 ``carla_maps``. Adding another such map is a matter of dropping three files
 in, with no code change.
 
-Lives under ``simulation`` rather than ``map`` on purpose. ``map`` already
-depends on ``simulation`` -- ``carla_calibrate`` imports ``CarlaBackend`` --
-so putting it here keeps the dependency flowing one way. Both
-``CarlaBackend`` and ``carla_dump`` read it.
+Lives under ``simulation`` rather than ``map`` on purpose: it imports
+``carla`` and talks to a live server, which is what the ``simulation``
+package is for and what ``map`` deliberately avoids. Both ``CarlaBackend``
+and ``preparation.carla_dump`` read it.
 """
 
 import xml.etree.ElementTree as ET

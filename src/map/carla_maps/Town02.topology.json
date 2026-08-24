@@ -1,9 +1,9 @@
 {
  "schema_version": 2,
  "map": "Town02",
- "note": "traffic_efficiency 0.4478 calibrated over 45 legs at 20 NPCs; previous factor 0.458",
+ "note": "traffic_efficiency 0.4645 calibrated over 45 legs at 20 NPCs; previous factor 0.4478",
  "default_speed_limit_kph": 30.0,
- "traffic_efficiency": 0.4478,
+ "traffic_efficiency": 0.4645,
  "speed_limit_overrides": {
   "18": 30.0,
   "13": 31.98,

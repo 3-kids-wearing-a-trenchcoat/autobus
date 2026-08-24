@@ -30,7 +30,7 @@ from collections.abc import Sequence
 from typing import Callable
 
 from src.algorithm.RequestPool import RequestPool
-from src.simulation import carla_debug_text, carla_stdout
+from src.simulation import carla_debug_text, carla_scenery, carla_stdout
 from agents.navigation.basic_agent import BasicAgent
 from agents.navigation.local_planner import RoadOption
 
@@ -388,6 +388,7 @@ class CarlaBackend(SimulationBackend):
         schematic: object | None = None,
         tm_port: int | None = None,
         reload_world: bool = False,
+        scenery: bool = False,
     ) -> None:
         if fixed_delta_s > MAX_SAFE_DELTA_S:
             raise ValueError(
@@ -484,6 +485,11 @@ class CarlaBackend(SimulationBackend):
         self._stop_demand: dict[str, tuple[int, int]] = {}
 
         # Request ID to walker actor ID, and to the stop it waits at.
+        # Display only: draws the generated road mesh and stands blocks
+        # beside it. Measured render-only, and every prop is placed clear
+        # of a lane -- see ``carla_scenery``.
+        self._scenery = scenery
+        self._scenery_ids: list[int] = []
         self._walkers: dict[str, int] = {}
         self._walker_stops: dict[str, str] = {}
         self._walker_rng = random.Random(seed)
@@ -588,6 +594,16 @@ class CarlaBackend(SimulationBackend):
             carla_world.remove_obstructions(world, self._town)
         )
 
+        # Decoration, for someone watching. Done before the traffic manager
+        # so the NPCs are spawned into the dressed world, and every actor is
+        # recorded so ``close`` takes them away again.
+        if self._scenery:
+            carla_scenery.clear_the_air(world)
+            self._scenery_ids = [
+                actor.id for actor in
+                carla_scenery.dress(world, self._town, self._stop_positions)
+            ]
+
         self._traffic_manager = self._acquire_traffic_manager()
         self._traffic_manager.set_synchronous_mode(True)
         self._traffic_manager.set_random_device_seed(self._seed)
@@ -627,7 +643,9 @@ class CarlaBackend(SimulationBackend):
         :return: The world, freshly loaded or the one already up.
         """
         if carla_world.is_generated(self._town):
-            return carla_world.load(self._client, self._town)
+            return carla_world.load(
+                self._client, self._town, visible=self._scenery
+            )
         world = self._client.get_world()
         if self._reload_world or self._town not in world.get_map().name:
             return self._client.load_world(self._town)
@@ -710,7 +728,8 @@ class CarlaBackend(SimulationBackend):
             return
         actor_ids = [
             i for i in ([self._bus_id] + self._npc_ids
-                        + list(self._walkers.values()))
+                        + list(self._walkers.values())
+                        + self._scenery_ids)
             if i is not None
         ]
         if actor_ids:
@@ -719,6 +738,7 @@ class CarlaBackend(SimulationBackend):
             )
         self._bus_id = None
         self._npc_ids = []
+        self._scenery_ids = []
         self._walkers = {}
         self._walker_stops = {}
 

@@ -20,6 +20,7 @@ src/
 │   ├── CarlaMapProvider.py    # MapProvider for a CARLA town; imports no carla
 │   ├── carla_topology.py      # Road topology schema and IO
 │   ├── carla_stops.py         # Bus stop schema and IO, addressed by OpenDRIVE
+│   ├── carla_props.py         # Scenery blocks that dress a generated town
 │   ├── carla_maps/            # Per-town topology and stops (JSON), plus .xodr for generated maps
 │   ├── TransitGraph.py        # Routing graph
 │   ├── graph.py               # PlanarStreetGraph and supporting types
@@ -51,6 +52,7 @@ src/
 │   ├── carla_viewer.py        # Chase-camera window with a 2D HUD, for watching a run
 │   ├── carla_debug_text.py    # Stroke lettering for CARLA's world-space debug drawing
 │   ├── carla_stdout.py        # Captures and attributes what the traffic manager prints
+│   ├── carla_scenery.py       # Ground, buildings and stop posts for a generated town
 │   ├── SimulationRunner.py    # Owns the clock, tick order and orchestration
 │   ├── AnimationRecorder.py   # Per-tick frames for replaying a trial
 │   └── DemandGenerator.py     # Synthetic demand: GenerationPolicy and DemandGenerator
@@ -64,6 +66,7 @@ src/
 │   └── animation.py           # animate_trial(), show_animation(), show_animations()
 └── preparation/               # Offline tools; need a live server, nothing imports them
     ├── carla_dump.py          # Dumps a town's topology and speed limits
+    ├── osm_buildings.py       # Scenery blocks from an OSM extract's buildings
     └── carla_calibrate.py     # Fits traffic_efficiency by driving
 
 results/

@@ -193,11 +193,25 @@ tested and experimented on with nothing running:
 run_trial(policy_factory=..., provider=CarlaMapProvider("Town01"))
 ```
 
-Only three things need a live server: driving the bus with
+Only four things need a live server: driving the bus with
 [`CarlaBackend`](concepts/simulation_backend.md#carlabackend), re-dumping a
-town's roads and speed limits with `src.preparation.carla_dump`, and fitting a town's
-`traffic_efficiency` with `src.preparation.carla_calibrate` — which measures it *by
-driving*, so it must be re-run after any change to how the bus is driven.
+town's roads and speed limits with `src.preparation.carla_dump`, fitting a
+town's `traffic_efficiency` with `src.preparation.carla_calibrate` — which
+measures it *by driving*, so it must be re-run after any change to how the bus
+is driven — and re-deriving a generated town's scenery with
+`src.preparation.osm_buildings`.
+
+The scenery step is a one-off, and its output is committed:
+
+```bash
+./run.sh -m src.preparation.osm_buildings --town TAU \
+    --osm map_osm/TelAvivUniversity.osm --write
+```
+
+That writes `src/map/carla_maps/TAU.props.json`, which the demo reads with no
+server involvement beyond the one it is already driving in. **Nothing needs
+re-running to see the scenery** — `./run.sh main.py --town TAU` picks it up
+as it stands. Pass `--no-scenery` to turn it off.
 
 To watch the bus drive, use `notebooks/carla-single-run.ipynb`, which runs one
 trial with the [viewer](concepts/watching_a_run.md) on.

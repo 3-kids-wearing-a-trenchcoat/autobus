@@ -21,3 +21,7 @@ neither is used at trial time — a town's roads and its
 ::: src.preparation.carla_calibrate.check_speed_limits
 
 ::: src.preparation.carla_calibrate.report
+
+## Scenery for a generated town
+
+::: src.preparation.osm_buildings.blocks_from_osm

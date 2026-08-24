@@ -67,3 +67,9 @@
 ::: src.simulation.AnimationRecorder.AnimationFrame
 
 ::: src.simulation.AnimationRecorder.AnimationRecorder
+
+## Scenery
+
+::: src.simulation.carla_scenery.dress
+
+::: src.simulation.carla_scenery.clear_the_air

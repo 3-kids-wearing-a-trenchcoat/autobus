@@ -157,6 +157,7 @@ routed, tested and experimented on with no server running.
 | `<Town>.topology.json` | machine-dumped roads | `src.preparation.carla_dump` |
 | `<Town>.stops.json` | hand-authored stops | `notebooks/carla-stop-authoring.ipynb` |
 | `<Town>.xodr` | OpenDRIVE, generated maps only | converted from OpenStreetMap |
+| `<Town>.props.json` | scenery blocks, generated maps only | `src.preparation.osm_buildings` |
 
 The first two are deliberately separate. Re-dumping a town's roads must never
 be able to destroy hours of stop authoring, and re-authoring stops must never
@@ -193,6 +194,53 @@ measures about 2.3 s.
 
     Both live in `OPENDRIVE_PARAMETERS` in `carla_world`, with the
     measurements beside them.
+
+#### A generated town has no scenery, and that is only a display problem
+
+`get_environment_objects` returns **52** things for TAU against **14,670** for
+Town01. There is no terrain, no building and no street furniture — only the
+road ribbon. Worse, `enable_mesh_visibility` defaults to off, so the road
+itself is not drawn either: a viewer sees the bus, the other traffic and the
+debug markers over an empty sky.
+
+`src/simulation/carla_scenery.py` dresses a generated town for the demo. It
+lays a ground plane under the network, stands a block where each building is,
+and puts a post beside each stop. The blocks come from the OpenStreetMap
+building footprints the town was converted from, baked once into
+`<Town>.props.json` by `src.preparation.osm_buildings`, so a demo run needs
+no OSM file and no fitting — it reads a small JSON and spawns.
+
+CARLA ships **no building mesh**. A block is `/Engine/BasicShapes/Cube`
+scaled through `static.prop.mesh`, whose `scale` attribute is a single
+uniform float — so a block is **sunk** until only its intended height shows,
+which is the only way to draw something wider than it is tall.
+
+!!! note "None of this can affect a measurement"
+    `enable_mesh_visibility` is render-only, measured rather than assumed:
+    an identical scripted control sequence driven for 500 ticks of road
+    contact gave **bit-identical** trajectories under both settings, on a
+    probe that saw `vertex_distance` move the bus 0.24 mm and
+    `additional_width` move it 10.2 m. Every prop is placed clear of the
+    driving lanes, and any building whose block would come within half a
+    cube of a lane is dropped rather than shrunk.
+
+    It is still kept out of campaign runs, which have nobody watching: the
+    props cost roughly a third of the tick budget for nothing. `main.py`
+    turns it on whenever it opens a window, and `--no-scenery` turns it off.
+
+!!! warning "The block positions are approximate, and cannot be made exact"
+    `TAU.xodr`'s `<geoReference>` element is **empty** — the projection string
+    survives only in a netconvert comment — so CARLA assumes world (0, 0) is
+    the projection origin. netconvert had also shifted the roads to start at
+    the origin. Together those put buildings about **2 km off the map**, in a
+    render that otherwise looks perfectly reasonable.
+
+    `osm_buildings` recovers the shift by registering the OSM road nodes onto
+    CARLA's road network. It settles at roughly **27 m median** node error and
+    no translation does better, because netconvert also ran `geometry.remove`
+    and `edges.join` and reshaped the geometry. Blocks land between the right
+    roads, which is all a demonstration needs. **They are not survey
+    accurate.**
 
 #### Speed limits come from two different places
 

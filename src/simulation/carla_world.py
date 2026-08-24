@@ -43,8 +43,14 @@ GENERATED_MAP_NAME = "OpenDriveMap"
 #   bus out of the world. Widening to 4.0 m took Ben-Gurion from 6/8 legs to
 #   12/12.
 #
-# ``enable_mesh_visibility`` is off because the bus is driven headless and
-# the mesh only costs memory; it does not affect physics.
+# ``enable_mesh_visibility`` defaults off: a measured run has nobody
+# watching it, and the mesh only costs memory. It is **render-only** --
+# measured 2026-08-24 by driving an identical scripted control sequence for
+# 500 ticks of road contact under both settings, the trajectories came back
+# bit-identical. The same probe saw ``vertex_distance`` move the bus 0.24 mm
+# and ``additional_width`` move it 10.2 m, so it was sensitive to real
+# changes in the road surface. Turn it on to look at the world; it cannot
+# change what a run measures.
 OPENDRIVE_PARAMETERS = carla.OpendriveGenerationParameters(
     vertex_distance=2.0,
     max_road_length=500.0,
@@ -54,6 +60,32 @@ OPENDRIVE_PARAMETERS = carla.OpendriveGenerationParameters(
     enable_mesh_visibility=False,
     enable_pedestrian_navigation=False,
 )
+
+
+def generation_parameters(
+    visible: bool = False
+) -> "carla.OpendriveGenerationParameters":
+    """
+    The generation parameters, optionally with the road mesh rendered.
+
+    A fresh object each time: ``OpendriveGenerationParameters`` is mutable,
+    and handing out the module constant would let one caller's choice leak
+    into every later world.
+
+    :param visible: Whether the generated road mesh should be drawn.
+    :return: Parameters to pass to ``generate_opendrive_world``.
+    """
+    return carla.OpendriveGenerationParameters(
+        vertex_distance=OPENDRIVE_PARAMETERS.vertex_distance,
+        max_road_length=OPENDRIVE_PARAMETERS.max_road_length,
+        wall_height=OPENDRIVE_PARAMETERS.wall_height,
+        additional_width=OPENDRIVE_PARAMETERS.additional_width,
+        smooth_junctions=OPENDRIVE_PARAMETERS.smooth_junctions,
+        enable_mesh_visibility=visible,
+        enable_pedestrian_navigation=(
+            OPENDRIVE_PARAMETERS.enable_pedestrian_navigation
+        ),
+    )
 
 
 # Ceiling applied to every limit read out of a generated map's OpenDRIVE.
@@ -150,7 +182,10 @@ def is_generated(town: str, directory: Path | None = None) -> bool:
 
 
 def load(
-    client: "carla.Client", town: str, directory: Path | None = None
+    client: "carla.Client",
+    town: str,
+    directory: Path | None = None,
+    visible: bool = False,
 ) -> "carla.World":
     """
     Load a town, generating it from OpenDRIVE when that is what it is.
@@ -165,6 +200,9 @@ def load(
     :param town: Town to load, with or without CARLA's path prefix.
     :param directory: Directory holding the maps. Defaults to the packaged
         ``carla_maps`` directory.
+    :param visible: Whether a generated town's road mesh should be drawn.
+        Ignored for a shipped town, which brings its own art. Render-only --
+        see ``OPENDRIVE_PARAMETERS``.
     :return: The loaded world.
     :raises FileNotFoundError: If a generated town's OpenDRIVE is missing.
     """
@@ -172,7 +210,7 @@ def load(
     if not path.is_file():
         return client.load_world(town_name(town))
     return client.generate_opendrive_world(
-        path.read_text(encoding="utf-8"), OPENDRIVE_PARAMETERS
+        path.read_text(encoding="utf-8"), generation_parameters(visible)
     )
 
 

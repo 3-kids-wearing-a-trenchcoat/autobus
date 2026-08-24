@@ -69,8 +69,8 @@ TICK_S = 1.0                    # run_trial's step; one tick, one sim second
 
 # Watching, and CARLA itself.
 DEFAULT_NPC_VEHICLES = 20
-DEFAULT_VIEWER_WIDTH = 1280
-DEFAULT_VIEWER_HEIGHT = 720
+DEFAULT_VIEWER_WIDTH = 1920
+DEFAULT_VIEWER_HEIGHT = 1080
 DEFAULT_FIXED_DELTA_S = 0.05    # never above 0.1: CARLA's substepping limit
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 2000
@@ -215,6 +215,12 @@ def build_parser() -> argparse.ArgumentParser:
              "wherever that route was thrown away",
     )
     watching.add_argument(
+        "--no-scenery", action="store_true",
+        help="do not dress a generated town: no ground, no buildings and "
+             "no posts at the stops. Shipped CARLA towns bring their own "
+             "art and ignore this either way",
+    )
+    watching.add_argument(
         "--npc-vehicles", type=int, default=DEFAULT_NPC_VEHICLES,
         help="other traffic in the town; each one costs throughput",
     )
@@ -356,6 +362,10 @@ def build_carla_factory(
             # standing on its own.
             debug_draw=watching and not args.no_markers,
             viewer_size=tuple(args.viewer_size),
+            # A generated town is a bare ribbon of road with no terrain and
+            # no buildings; without this there is nothing on screen but the
+            # bus. Pointless with no window open, so it follows `watching`.
+            scenery=watching and not args.no_scenery,
             minimap=minimap, schematic=schematic,
             # A demo is often run twice in a row, and CARLA results are not
             # independent of server history. Reloading costs a few seconds

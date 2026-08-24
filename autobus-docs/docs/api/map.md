@@ -38,4 +38,14 @@
 
 ::: src.map.carla_topology.topology_path
 
+::: src.map.carla_props.SceneryBlock
+
+::: src.map.carla_props.props_path
+
+::: src.map.carla_props.has_props
+
+::: src.map.carla_props.load_props
+
+::: src.map.carla_props.save_props
+
 ::: src.map.TransitGraph.TransitGraph

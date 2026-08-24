@@ -14,3 +14,7 @@ __pycache__/
 # Kept out of the store so `load_runs` cannot pool them with current results,
 # and out of git for the same reason `/results/runs/` is.
 /results/archive/
+
+# CARLA server compose files: GPU passthrough is host-specific, so these
+# are local to each machine rather than shipped. See the README.
+/compose*.yml

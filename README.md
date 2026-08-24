@@ -132,26 +132,33 @@ generated from docstrings.
 
 ## Running CARLA
 
+The client talks to a CARLA **0.9.16** server on `localhost:2000`. Nothing in
+this repository starts one for you — run the pinned image whichever way suits
+your machine:
+
 ```bash
-docker compose up -d           # start the server
-docker compose down            # stop it, when finished
+docker run -d --name carla --network host \
+    carlasim/carla:0.9.16 bash CarlaUE4.sh -nosound -RenderOffScreen
+
+docker stop carla && docker rm carla        # when finished
 ```
 
-The server is **shared**: there is one per machine, and loading a town
-replaces whatever world is up. Check nobody else is mid-run before starting
-or stopping it.
+**GPU passthrough is the part that varies, and the part that fails.** It
+depends on your hardware, not on this project: an NVIDIA host wants
+`--gpus all`, others pass the render node through with `--device /dev/dri`
+and may need the host's own Vulkan ICD and driver libraries mounted into the
+container. If the server exits or segfaults within seconds of starting, that
+is almost always what is missing — it is not a problem with the simulation.
 
-> **If the server segfaults on startup**, `compose.yml` is asking for
-> software Vulkan (`lvp_icd`), which does not survive on every host. The
-> alternative is to give the container the host's own GPU drivers — bind
-> mounting `/usr/lib`, `libvulkan.so.1` and `/usr/share/vulkan`, with
-> `SDL_VIDEODRIVER=x11`. That configuration is host-specific (the working
-> one here names AMD driver paths) which is why it is not the committed
-> default.
+Two things are worth knowing once it is up:
 
-Watching a run needs a server that can *render*, though not one showing a
-window of its own: the chase camera is a CARLA sensor, so it renders
-server-side and is shipped to the client. `-RenderOffScreen` is fine.
+* **The server is shared.** There is one per machine, and loading a town
+  replaces whatever world is currently up. Check nobody else is mid-run
+  before starting, stopping or loading anything.
+* **It must be able to render, but need not show you anything.** The chase
+  camera is a CARLA sensor, so it renders server-side and ships frames to the
+  client; `-RenderOffScreen` is fine and a headless server is fine. A server
+  started with rendering disabled entirely produces no frames at all.
 
 ### Preparing a town
 

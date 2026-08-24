@@ -29,8 +29,10 @@ bash install-carla-agents.sh
 It pulls the pinned `carlasim/carla:0.9.16` image if it is not already
 present, copies `agents/` out of it into the environment's `site-packages`,
 and imports it to check. Re-running replaces the copy. **This is the one
-place the project needs Docker**, and it needs it to fetch a Python package
-— not to run anything.
+place the project itself invokes Docker**, and it does so to fetch a Python
+package rather than to run anything. Running the CARLA server usually means
+Docker too, but that is your choice and outside this project — see
+[The CARLA server](#the-carla-server).
 
 !!! note "Why it is installed rather than copied into the repository"
     Vendoring it would put ~1,800 lines of someone else's code under this
@@ -43,7 +45,14 @@ place the project needs Docker**, and it needs it to fetch a Python package
 
 `main.py` is the entry point for *seeing* the system work. It runs a single
 simulation — by default in a CARLA town, with a chase-camera window following
-the bus — and prints a summary when the bus is done.
+the bus.
+
+It prints the parameters it is about to run under, then a live progress line
+while it runs, then a summary. The progress line bars requests that have
+reached a final state and carries the clock beside them, because those are
+the two ways a run can end; the closing block says which of them actually
+stopped it. **The progress line goes to stderr**, so redirecting stdout to
+capture the report leaves it on screen (and vice versa).
 
 Use `run.sh` from the project root, which runs the script inside the correct
 Conda environment:

@@ -359,10 +359,26 @@ files is a pure addition that changes nothing about how they are stored.
     it means a change to the backend, a policy, or the runner leaves records
     that look current and are not.
 
-    **Purge or re-run the affected runs when you change simulation
-    behaviour.** `run_campaign(..., overwrite=True)` re-runs and replaces
-    them. Each record's `provenance.git_commit` says which commit produced
-    it, so what is stale is at least identifiable after the fact.
+    **The usual answer is to version the behaviour in the identity, not to
+    purge.** The CARLA campaign notebooks put a tag in the `world` block for
+    each thing that changes how a run turns out — `steering`, `routing`,
+    `speed_limits`, plus `traffic_efficiency` itself. Bumping one changes the
+    identity hash, so new runs file separately: `run_campaign` no longer
+    skips them as "already recorded", and a collect cell filtering on the tag
+    cannot pool the two generations. The old records stay on disk, still
+    valid as records of the behaviour they were driven under.
+
+    That is worth preferring because purging is irreversible and re-running a
+    CARLA campaign costs hours.
+
+    Bump the tag in **both** places: the identity being written, and the
+    read-back filter that collects it again. Missing the filter fails
+    quietly — the notebook simply finds nothing.
+
+    `run_campaign(..., overwrite=True)` re-runs and replaces in place, which
+    suits a change too small to deserve a tag. Each record's
+    `provenance.git_commit` says which commit produced it, so what is stale
+    is at least identifiable after the fact.
 
     This has already bitten once: fixing the stall detector's
     queued-behind-traffic false positive changed the `repaths` counter, and

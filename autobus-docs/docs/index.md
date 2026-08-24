@@ -69,6 +69,8 @@ src/
     ├── osm_buildings.py       # Scenery blocks from an OSM extract's buildings
     └── carla_calibrate.py     # Fits traffic_efficiency by driving
 
+main.py                        # The demo: one trial, watched, with a summary
+
 results/
 ├── runs/                      # One JSON file per completed run
 └── archive/                   # Runs retired because the code that produced them changed

@@ -74,6 +74,8 @@
 
 ## Scenery
 
+::: src.simulation.carla_world.generation_parameters
+
 ::: src.simulation.carla_scenery.dress
 
 ::: src.simulation.carla_scenery.clear_the_air

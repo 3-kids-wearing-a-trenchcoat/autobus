@@ -198,3 +198,30 @@ SimulationRunner ──► DemandGenerator ──► RequestPool
   │  └─ set_destination() / advance() ──►  SimulationBackend
   ▼
 ```
+
+## Watching a run happen
+
+`SimulationRunner` takes an optional `on_tick` observer, called once per tick
+with a `TickProgress`. It is passive in the same sense `metrics_tracker` is:
+it runs *after* `record_tick`, so it sees exactly the state the KPI snapshot
+was taken from, and nothing reads what it returns. It cannot change what a
+trial measures.
+
+`TickProgress` carries the clock and the pool broken down by state —
+`created`, `pending`, `on_bus`, `fulfilled`, `cancelled`, plus
+`demand_exhausted` and a `settled` convenience. That is enough to describe
+**both** of a run's ending conditions, which is the point: a run stops when
+`sim_time` reaches `max_time`, *or* when demand is exhausted and nothing is
+left in play. A progress display that only counted requests would say nothing
+about a run quietly running out of clock.
+
+!!! note "`created` is summed, not read from the pool"
+    `len(pool)` and `get_all()` return only what is still *active* — pending
+    plus on-bus. Reading either would report a run as having created nothing
+    the moment its last passenger was delivered. `TickProgress.created` sums
+    all four states instead.
+
+`run_trial` passes `on_tick` straight through. Note that it also redirects
+stdout under `silent=True`, and under CARLA the traffic manager's output has
+fd 1 rerouted through a pipe — so **an observer that prints should write to
+stderr**. `main.py`'s progress bar does.

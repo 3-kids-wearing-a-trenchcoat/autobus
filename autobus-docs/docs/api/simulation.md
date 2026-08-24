@@ -1,5 +1,7 @@
 # Simulation — API Reference
 
+::: src.simulation.SimulationRunner.TickProgress
+
 ::: src.simulation.SimulationRunner.SimulationRunner
 
 ::: src.simulation.SimulationBackend.AdvanceResult

@@ -24,7 +24,7 @@ from src.simulation.AnimationRecorder import AnimationFrame, AnimationRecorder
 from src.simulation.DemandGenerator import DemandGenerator, PeriodicPolicy
 from src.simulation.MockBackend import MockBackend
 from src.simulation.SimulationBackend import SimulationBackend
-from src.simulation.SimulationRunner import SimulationRunner
+from src.simulation.SimulationRunner import SimulationRunner, TickProgress
 
 # Mirrors policy_factory: the harness supplies the graph and where the bus
 # starts, and the caller decides what world answers for them.
@@ -177,6 +177,7 @@ def run_trial(
     noise_seed: int | None = None,
     backend_factory: BackendFactory | None = None,
     provider: MapProvider | None = None,
+    on_tick: Callable[[TickProgress], None] | None = None,
 ) -> TrialResult:
     """
     Run one simulation trial and return the results.
@@ -241,6 +242,12 @@ def run_trial(
         ScriptedBackend with no map at all. ``travel_noise``, ``noise_seed``
         and ``dwell_s`` describe the *default* world only; a caller who
         brings their own backend owns its physics.
+    :param on_tick: Optional observer called once per tick with a
+        ``TickProgress``, for showing progress while a long run happens.
+        Passive: it is called after the tick is complete and its return
+        value is ignored, so it cannot change what the trial measures.
+        Note that ``silent`` redirects stdout, so an observer that prints
+        should write to stderr. Defaults to None.
     :param provider: Map source to simulate on. Defaults to None, which wraps
         ``graph`` in a PlanarMapProvider — the synthetic map every experiment
         so far has used. Pass a CarlaMapProvider to run the same trial on a
@@ -319,6 +326,7 @@ def run_trial(
         max_time=max_time,
         recorder=recorder,
         max_wait_s=max_wait_s,
+        on_tick=on_tick,
     )
 
     if silent:

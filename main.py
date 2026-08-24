@@ -21,7 +21,10 @@ measurement -- reproducible numbers come from the notebooks.
 import argparse
 import os
 import sys
+import time
 from typing import Callable
+
+from tqdm.auto import tqdm
 
 from src.algorithm.DispatchPolicy import DispatchPolicy
 from src.algorithm.FixedRoutePolicy import FixedRoutePolicy
@@ -31,6 +34,7 @@ from src.algorithm.WindowInsertionPolicy import WindowInsertionPolicy
 from src.experiment.trial import (
     ALLOW_UNPINNED_HASH, TrialResult, run_trial,
 )
+from src.simulation.SimulationRunner import TickProgress
 from src.map.CarlaMapProvider import CarlaMapProvider
 from src.map.MapProvider import MapProvider
 from src.map.PlanarMapProvider import PlanarMapProvider
@@ -431,6 +435,9 @@ def describe_setup(
           f"dwell {args.dwell:.0f} s")
     print(f"  demand       {args.max_requests} passengers, one every "
           f"{args.demand_interval:.0f} s")
+    print(f"  planning     {args.n_stops} stops ahead, "
+          f"{args.commitment} locked in")
+    print(f"  ceiling      {args.max_time:.0f} simulated seconds")
     print(f"  seed         {args.seed}"
           + ("" if pinned_seed else "   (see the note below)"))
     if args.backend == "carla":
@@ -456,7 +463,119 @@ def _percent(value: float | None) -> str:
     return "--" if value is None else f"{100 * value:7.1f} %"
 
 
-def report(result: TrialResult, args: argparse.Namespace) -> None:
+class ProgressLine:
+    """
+    A one-line live view of a run, redrawn as it goes.
+
+    Bars the requests that have reached a final state, because that is the
+    quantity a run is normally trying to exhaust. The clock rides in the
+    postfix beside it, since the other way a run can end is by reaching
+    ``--max-time`` with demand still outstanding.
+
+    **Writes to stderr on purpose.** ``run_trial(silent=True)`` redirects
+    stdout to swallow the runner's own summary, and under CARLA the traffic
+    manager's diagnostics have fd 1 rerouted through a pipe -- so a progress
+    line on stdout would be captured rather than shown.
+
+    :param total_requests: Passengers the run will create in all.
+    :param max_time_s: The simulated-time ceiling.
+    """
+
+    # Redraw at most this often, in wall-clock seconds. The observer is
+    # called every tick -- thousands of times in a long run -- and repainting
+    # a terminal line that fast costs more than the simulation does.
+    REDRAW_INTERVAL_S = 0.2
+
+    def __init__(self, total_requests: int, max_time_s: float) -> None:
+        self._max_time_s = max_time_s
+        self._settled = 0
+        self._last_drawn = 0.0
+        self.last: TickProgress | None = None
+        self._bar = tqdm(
+            total=total_requests, unit="req", desc="serving",
+            file=sys.stderr, dynamic_ncols=True, leave=True,
+        )
+
+    def observe(self, progress: TickProgress) -> None:
+        """
+        Take one tick's progress and redraw if it is time to.
+
+        :param progress: The tick just completed.
+        :return: None.
+        """
+        self.last = progress
+        self._bar.update(progress.settled - self._settled)
+        self._settled = progress.settled
+
+        now = time.monotonic()
+        if now - self._last_drawn < self.REDRAW_INTERVAL_S:
+            return
+        self._last_drawn = now
+        self._bar.set_postfix_str(self._postfix(progress), refresh=True)
+
+    def _postfix(self, progress: TickProgress) -> str:
+        """
+        Describe the tick beside the bar.
+
+        :param progress: The tick to describe.
+        :return: The postfix text.
+        """
+        return (
+            f"t={progress.sim_time:.0f}/{self._max_time_s:.0f}s "
+            f"waiting {progress.pending} aboard {progress.on_bus}"
+            + ("" if progress.cancelled == 0
+               else f" gave up {progress.cancelled}")
+        )
+
+    def close(self) -> None:
+        """Finish the bar, leaving the terminal usable."""
+        if self.last is not None:
+            self._bar.update(self.last.settled - self._settled)
+            self._settled = self.last.settled
+            # Unthrottled, or a run that finishes between redraws leaves a
+            # postfix from seconds ago standing as if it were the result.
+            self._bar.set_postfix_str(self._postfix(self.last), refresh=True)
+        self._bar.close()
+
+
+def why_it_ended(
+    progress: TickProgress | None, args: argparse.Namespace
+) -> str:
+    """
+    Say which of the two ending conditions actually stopped the run.
+
+    :param progress: The last tick observed, or None if none was.
+    :param args: Parsed command-line arguments, for the ceiling.
+    :return: A sentence for the report.
+    """
+    if progress is None:
+        return "the run ended."
+    if progress.sim_time >= args.max_time - TICK_S:
+        outstanding = progress.pending + progress.on_bus
+        unborn = args.max_requests - progress.created
+        return (
+            f"the run hit its --max-time ceiling of {args.max_time:.0f} s "
+            f"with {outstanding} passenger(s) still in play and "
+            f"{unborn} never created. Unserved demand may simply have run "
+            f"out of clock."
+        )
+    if progress.created < args.max_requests:
+        return (
+            f"the run ended early: only {progress.created} of "
+            f"{args.max_requests} passengers were created."
+        )
+    return (
+        f"every one of the {args.max_requests} passengers reached a final "
+        f"state, so the run ended on its own."
+    )
+
+
+def report(
+    result: TrialResult,
+    args: argparse.Namespace,
+    progress: TickProgress | None = None,
+    wall_seconds: float | None = None,
+) -> None:
     """
     Print what the run achieved, and what the bus actually did.
 
@@ -465,6 +584,8 @@ def report(result: TrialResult, args: argparse.Namespace) -> None:
     because the bus was rescued repeatedly.
     :param result: The completed trial.
     :param args: Parsed command-line arguments, for the ceiling check.
+    :param progress: The last tick observed, used to say why the run ended.
+    :param wall_seconds: Real seconds the run took, if it was timed.
     :return: None.
     """
     kpi = result.kpi
@@ -490,9 +611,18 @@ def report(result: TrialResult, args: argparse.Namespace) -> None:
 
     # run_trial ticks at dt = 1.0 s, so one tick is one simulated second.
     sim_time_s = result.tick_count * TICK_S
-    if sim_time_s >= args.max_time - TICK_S:
-        print("\nNote: the run hit its --max-time ceiling, so unserved "
-              "demand may simply have run out of clock.")
+    print("\nHow it went")
+    print(f"  simulated        {_seconds(sim_time_s)}")
+    if wall_seconds is not None:
+        # The ratio is only worth printing when the run took long enough for
+        # it to mean anything; a mock trial finishes in milliseconds and
+        # reports a five-figure speed-up that says nothing.
+        ratio = ("" if wall_seconds < 1.0
+                 else f"   ({sim_time_s / wall_seconds:.0f}x real time)")
+        shown = ("under a second" if wall_seconds < 1.0
+                 else _seconds(wall_seconds).strip())
+        print(f"  real time        {shown}{ratio}")
+    print(f"  why it stopped   {why_it_ended(progress, args)}")
 
 
 def main() -> None:
@@ -518,6 +648,8 @@ def main() -> None:
 
     describe_setup(args, provider, not unpinned)
 
+    progress = ProgressLine(args.max_requests, args.max_time)
+    started = time.monotonic()
     try:
         result = run_trial(
             policy_factory=lambda graph: POLICIES[args.policy](
@@ -535,18 +667,24 @@ def main() -> None:
             commitment=args.commitment,
             max_time=args.max_time,
             silent=True,
+            on_tick=progress.observe,
         )
     except (RuntimeError, OSError) as error:
+        progress.close()
         # The overwhelmingly likely cause is no server, and a bare traceback
         # does not say so. Anything else still raises with its traceback.
         if args.backend != "carla":
             raise
         sys.exit(
             f"the CARLA run failed: {error}\n\n"
-            "If the server is not running, start it from the project root:"
-            "\n    docker compose -f compose_backup.yml up -d\n"
+            "If the server is not running, start one with:\n"
+            "    docker run -d --name carla --network host \\\n"
+            "        carlasim/carla:0.9.16 bash CarlaUE4.sh -nosound "
+            "-RenderOffScreen\n"
         )
-    report(result, args)
+    finally:
+        progress.close()
+    report(result, args, progress.last, time.monotonic() - started)
 
 
 if __name__ == "__main__":

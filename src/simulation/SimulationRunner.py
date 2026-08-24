@@ -1,11 +1,47 @@
 """SimulationRunner: orchestrates the simulation tick loop."""
 
+from dataclasses import dataclass
+from typing import Callable
+
 from src.algorithm.BusAgent import BusAgent
 from src.algorithm.RequestPool import RequestPool
 from src.metrics.MetricsTracker import KPISnapshot, MetricsTracker
 from src.simulation.AnimationRecorder import AnimationRecorder
 from src.simulation.DemandGenerator import DemandGenerator
 from src.simulation.SimulationBackend import SimulationBackend
+
+
+@dataclass(frozen=True)
+class TickProgress:
+    """
+    What a run looks like from outside, one tick in.
+
+    Everything a caller needs to say how far along a run is, without
+    reaching into the pool or the clock itself. Both of a run's two ending
+    conditions are visible here: it stops when ``sim_time`` reaches the
+    ceiling, or when demand is exhausted and nothing is left in play.
+
+    :param sim_time: Simulated seconds elapsed.
+    :param created: Requests generated so far.
+    :param pending: Requests waiting at a stop.
+    :param on_bus: Requests currently riding.
+    :param fulfilled: Requests delivered.
+    :param cancelled: Requests whose passenger gave up waiting.
+    :param demand_exhausted: Whether the generator has nothing more to emit.
+    """
+
+    sim_time: float
+    created: int
+    pending: int
+    on_bus: int
+    fulfilled: int
+    cancelled: int
+    demand_exhausted: bool
+
+    @property
+    def settled(self) -> int:
+        """How many requests have reached a final state."""
+        return self.fulfilled + self.cancelled
 
 
 class SimulationRunner:
@@ -31,6 +67,11 @@ class SimulationRunner:
     :param max_wait_s: Maximum time a request may stay PENDING before the
         passenger gives up and the request is cancelled. None disables
         abandonment (requests wait indefinitely). Defaults to None.
+    :param on_tick: Optional observer called once per tick with a
+        ``TickProgress``, for a caller that wants to show progress while the
+        run happens. Passive, like ``metrics_tracker``: it is called after
+        the tick is complete and nothing reads what it returns, so it cannot
+        influence the simulation. Defaults to None, which calls nothing.
     """
 
     def __init__(
@@ -44,6 +85,7 @@ class SimulationRunner:
         max_time: float,
         recorder: AnimationRecorder | None = None,
         max_wait_s: float | None = None,
+        on_tick: Callable[["TickProgress"], None] | None = None,
     ) -> None:
         self._backend = backend
         self._agent = agent
@@ -54,6 +96,7 @@ class SimulationRunner:
         self._max_time = max_time
         self._recorder = recorder
         self._max_wait_s = max_wait_s
+        self._on_tick = on_tick
         self._sim_time: float = 0.0
 
     # ------------------------------------------------------------------
@@ -98,6 +141,33 @@ class SimulationRunner:
         self._backend.sync_passengers(self._pool)
         self._process_movement(dt)
         self._metrics_tracker.record_tick(self._sim_time)
+        # Last, so an observer sees exactly the state the metrics snapshot
+        # was taken from rather than a half-finished tick.
+        if self._on_tick is not None:
+            self._on_tick(self._progress())
+
+    def _progress(self) -> TickProgress:
+        """
+        Describe the run as it stands, for ``on_tick``.
+
+        :return: A snapshot of the clock and the pool.
+        """
+        pending = len(self._pool.get_pending())
+        on_bus = len(self._pool.get_on_bus())
+        fulfilled = len(self._pool.get_fulfilled())
+        cancelled = len(self._pool.get_cancelled())
+        return TickProgress(
+            sim_time=self._sim_time,
+            # Summed rather than taken from ``len(pool)``, which counts only
+            # what is still in play -- it reads 0 once the last passenger is
+            # delivered, which is the opposite of "created so far".
+            created=pending + on_bus + fulfilled + cancelled,
+            pending=pending,
+            on_bus=on_bus,
+            fulfilled=fulfilled,
+            cancelled=cancelled,
+            demand_exhausted=self._demand_generator.is_exhausted(),
+        )
 
     def is_done(self) -> bool:
         """

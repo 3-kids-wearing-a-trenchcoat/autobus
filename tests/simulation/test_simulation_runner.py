@@ -10,7 +10,7 @@ from src.simulation.AnimationRecorder import AnimationRecorder
 from src.simulation.DemandGenerator import DemandGenerator
 from src.simulation.ScriptedBackend import ScriptedBackend
 from src.simulation.SimulationBackend import AdvanceResult
-from src.simulation.SimulationRunner import SimulationRunner
+from src.simulation.SimulationRunner import SimulationRunner, TickProgress
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +66,7 @@ def make_runner(
     backend: ScriptedBackend | None = None,
     dt: float = 1.0,
     max_time: float = 1000.0,
+    on_tick=None,  # noqa: ANN001
 ) -> tuple[SimulationRunner, MagicMock, MagicMock, MagicMock, object]:
     """
     Build a SimulationRunner over a real ScriptedBackend and mocked parts.
@@ -107,6 +108,7 @@ def make_runner(
         max_time=max_time,
         recorder=recorder,
         max_wait_s=max_wait_s,
+        on_tick=on_tick,
     )
     return runner, agent, demand_gen, metrics, pool
 
@@ -520,3 +522,86 @@ def test_backend_consuming_the_whole_budget_ends_the_tick() -> None:
     runner, agent, *_ = make_runner(backend=backend)
     runner.step(1000.0)
     agent.on_arrival.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# on_tick — the passive progress observer
+# ---------------------------------------------------------------------------
+
+def test_no_observer_is_the_default_and_ticks_still_run() -> None:
+    """Nothing is called, and the run is unaffected."""
+    runner, _, _, metrics, _ = make_runner()
+    runner.step(1.0)
+    assert metrics.record_tick.called
+
+
+def test_the_observer_is_called_once_per_tick() -> None:
+    seen: list[TickProgress] = []
+    runner, _, _, _, _ = make_runner(on_tick=seen.append)
+    for _ in range(3):
+        runner.step(1.0)
+    assert len(seen) == 3
+    assert [p.sim_time for p in seen] == [1.0, 2.0, 3.0]
+
+
+def test_the_observer_sees_the_pool_as_the_metrics_snapshot_does() -> None:
+    """
+    It runs after record_tick, so both read the same completed tick.
+
+    An observer that fired mid-tick would report a state no KPI was ever
+    computed from.
+    """
+    order: list[str] = []
+    pool = RequestPool()
+    runner, _, _, metrics, _ = make_runner(
+        pool=pool, on_tick=lambda _p: order.append("observer"))
+    metrics.record_tick.side_effect = lambda _t: order.append("metrics")
+    runner.step(1.0)
+    assert order == ["metrics", "observer"]
+
+
+def test_progress_counts_every_state_of_the_pool() -> None:
+    pool = RequestPool()
+    pool.add(_pending("waiting", 0.0))
+    pool.add(_pending("riding", 0.0))
+    pool.add(_pending("done", 0.0))
+    pool.add(_pending("gaveup", 0.0))
+    pool.update_state("riding", RequestState.ON_BUS)
+    pool.update_state("done", RequestState.ON_BUS)
+    pool.update_state("done", RequestState.FULFILLED)
+    pool.cancel("gaveup")
+
+    seen: list[TickProgress] = []
+    runner, _, _, _, _ = make_runner(pool=pool, on_tick=seen.append)
+    runner.step(1.0)
+
+    p = seen[-1]
+    assert (p.pending, p.on_bus, p.fulfilled, p.cancelled) == (1, 1, 1, 1)
+    assert p.settled == 2
+    assert p.created == 4
+
+
+def test_created_counts_requests_that_have_already_left_the_pool() -> None:
+    """
+    `len(pool)` counts only what is still in play.
+
+    Reading it directly would say a run had created nothing once its last
+    passenger was delivered, which is the opposite of what it means.
+    """
+    pool = RequestPool()
+    pool.add(_pending("done", 0.0))
+    pool.update_state("done", RequestState.ON_BUS)
+    pool.update_state("done", RequestState.FULFILLED)
+    assert len(pool) == 0
+
+    seen: list[TickProgress] = []
+    runner, _, _, _, _ = make_runner(pool=pool, on_tick=seen.append)
+    runner.step(1.0)
+    assert seen[-1].created == 1
+
+
+def test_the_observers_return_value_is_ignored() -> None:
+    """It is passive; nothing it returns may reach the simulation."""
+    runner, _, _, _, _ = make_runner(on_tick=lambda _p: "nonsense")
+    runner.step(1.0)
+    assert runner.sim_time == 1.0

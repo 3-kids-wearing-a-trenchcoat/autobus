@@ -1,4 +1,7 @@
-name: carla-env
+# Must match ENV_NAME in run.sh, jupyter-run.sh, docs.sh and
+# install-carla-agents.sh -- they all hardcode it, so a mismatch
+# makes every entry point fail to find the environment it just built.
+name: autobus
 
 channels:
   - conda-forge

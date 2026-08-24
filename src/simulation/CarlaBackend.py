@@ -83,6 +83,15 @@ MAX_SAFE_DELTA_S = 0.1
 # own body. This pushes them properly out of the road.
 WALKER_LATERAL_OFFSET_M = 1.0
 
+# How far beyond the lane edge a passenger stands when the stop has no
+# shoulder to put them on. A generated map has no shoulder anywhere -- it
+# is a bare ribbon of driving lanes -- so on TAU this is every stop, and
+# the old fallback stood them on the lane centre, in front of the bus.
+# Kept small so they still read as waiting *at* the stop: the generated
+# apron (``additional_width``) extends 4 m past the lane, so this stays on
+# solid ground.
+WALKER_VERGE_OFFSET_M = 1.4
+
 # Where CARLA looks for a traffic manager by default, and how far past it to
 # search for one nobody else is using.
 # What counts as "queued behind that vehicle rather than wedged". All three
@@ -389,6 +398,7 @@ class CarlaBackend(SimulationBackend):
         tm_port: int | None = None,
         reload_world: bool = False,
         scenery: bool = False,
+        stop_labels: dict[str, str] | None = None,
     ) -> None:
         if fixed_delta_s > MAX_SAFE_DELTA_S:
             raise ValueError(
@@ -473,6 +483,9 @@ class CarlaBackend(SimulationBackend):
         # and only when something is going to show them.
         self._request_rows: list[tuple[str, ...]] = []
         self._request_hidden = 0
+        # Authored display names, keyed by node ID. Supplied rather
+        # than derived: see ``_shorten``.
+        self._stop_labels = dict(stop_labels or {})
         self._short_stops: dict[str, str] | None = None
         self._since_debug_draw_s = 0.0
         # When the current leg began, for the overlay's per-leg counter.
@@ -1250,15 +1263,27 @@ class CarlaBackend(SimulationBackend):
 
     def _shorten(self, stop_id: str) -> str:
         """
-        Give a stop a short name for the table, if one is unambiguous.
+        Give a stop the short name every panel and label shows it under.
 
-        Stop IDs run to ``n_s15_n_s13``, and two of those per row leaves no
-        width for anything else. The ``sNN`` inside is what anyone reads
-        anyway — but only if it still tells the stops apart, so the short
-        form is abandoned wholesale the moment any two would collide.
+        Node IDs run to ``n_s15_n_s13``, and two of those per row leaves no
+        width for anything else. The authored ``sNN`` is what anyone reads.
+
+        **Prefers the table passed in**, which the provider fills from the
+        authored stop IDs. Reading ``sNN`` back out of the node ID instead
+        is a guess, and on TAU it is a wrong one: ``n0257_n_s04`` is stop
+        **s02**, and the guess collides with the real ``s04``. That
+        collision then tripped the ambiguity guard below and sent *every*
+        stop back to its full node ID -- which is why long names filled the
+        viewer.
+
+        The guess survives only as a fallback for a caller that supplies no
+        table, and it is still abandoned wholesale if any two would collide.
         :param stop_id: The full TransitGraph node ID.
-        :return: The short name, or the full ID when shortening is unsafe.
+        :return: The short name, or the full ID when no safe one exists.
         """
+        authored = self._stop_labels.get(stop_id)
+        if authored:
+            return authored
         if self._short_stops is None:
             candidates = {}
             for full in self._stop_positions:
@@ -2002,10 +2027,12 @@ class CarlaBackend(SimulationBackend):
         no AI controller will not move aside — which would hand back the
         stall problem the driving already had to solve.
 
-        Every authored stop has a Shoulder immediately to its right: that was
-        the pull-over test the authoring notebook applied, so this is
-        guaranteed rather than hoped for. If one is ever missing the stop
-        position is used and the failure is counted, not hidden.
+        Every authored stop in a *shipped* town has a Shoulder immediately
+        to its right: that was the pull-over test the authoring notebook
+        applied. A **generated** town has no shoulder anywhere -- it is a
+        bare ribbon of driving lanes -- so there the passenger is stood off
+        the lane edge instead, onto the apron the map generation adds.
+        Either way they are counted, and never left on the lane centre.
         :param stop_id: TransitGraph node ID of the stop.
         :return: Transform where the first passenger at this stop stands.
         """
@@ -2016,14 +2043,32 @@ class CarlaBackend(SimulationBackend):
         shoulder = waypoint.get_right_lane()
         if shoulder is None or shoulder.lane_type != carla.LaneType.Shoulder:
             self._stats["stops_without_shoulder"] += 1
-            return waypoint.transform
+            # No shoulder to stand on, so step off the lane's own edge.
+            # Returning the waypoint itself would put a pedestrian in the
+            # middle of the road, which is where the bus is about to be.
+            return self._beside_lane(
+                waypoint, waypoint.lane_width / 2 + WALKER_VERGE_OFFSET_M
+            )
 
-        base = shoulder.transform
+        return self._beside_lane(shoulder, WALKER_LATERAL_OFFSET_M)
+
+    @staticmethod
+    def _beside_lane(
+        waypoint: "carla.Waypoint", offset_m: float
+    ) -> "carla.Transform":
+        """
+        Step a waypoint's transform to its right, keeping its heading.
+
+        :param waypoint: The lane waypoint to step off.
+        :param offset_m: Metres to the right of that lane's centre.
+        :return: The stepped transform.
+        """
+        base = waypoint.transform
         right = base.get_right_vector()
         return carla.Transform(
             carla.Location(
-                x=base.location.x + right.x * WALKER_LATERAL_OFFSET_M,
-                y=base.location.y + right.y * WALKER_LATERAL_OFFSET_M,
+                x=base.location.x + right.x * offset_m,
+                y=base.location.y + right.y * offset_m,
                 z=base.location.z,
             ),
             base.rotation,
@@ -2106,6 +2151,25 @@ def stop_positions_from(provider: object) -> dict[str, tuple[float, float,
     return {
         stop.edge.id: (stop.x, stop.y, stop.z)
         for stop in provider.get_stops()
+    }
+
+
+def stop_labels_from(provider: object) -> dict[str, str]:
+    """
+    Build the display-name table CarlaBackend labels stops with.
+
+    ``CarlaMapProvider`` records the authored stop ID (``s04``) as each
+    stop's name, so this is exact where reading the ID back out of the node
+    name is a guess. Keeps the backend free of any map-layer import: it only
+    ever sees plain strings keyed by TransitGraph node ID.
+    :param provider: Any MapProvider whose stops carry a name.
+    :return: Mapping from stop node ID to its short display name. Stops with
+        no name are left out, and fall back to the node ID.
+    """
+    return {
+        stop.edge.id: stop.name
+        for stop in provider.get_stops()
+        if getattr(stop, "name", None)
     }
 
 

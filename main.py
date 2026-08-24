@@ -71,6 +71,15 @@ TICK_S = 1.0                    # run_trial's step; one tick, one sim second
 DEFAULT_NPC_VEHICLES = 20
 DEFAULT_VIEWER_WIDTH = 1920
 DEFAULT_VIEWER_HEIGHT = 1080
+
+# Resolution the chase camera actually renders at, before its frame is
+# scaled into the window. ``None`` follows the window exactly -- whatever
+# --viewer-size says, including its defaults above -- which is the right
+# answer unless the two should deliberately differ, and costs no scaling at
+# all. Set them below the window to buy back tick rate on a large display,
+# or above it for a sharper picture than the window alone would give.
+DEFAULT_RENDER_WIDTH: int | None = None
+DEFAULT_RENDER_HEIGHT: int | None = None
 DEFAULT_FIXED_DELTA_S = 0.05    # never above 0.1: CARLA's substepping limit
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 2000
@@ -230,6 +239,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="size of the chase-camera window",
     )
     watching.add_argument(
+        "--render-size", type=int, nargs=2, metavar=("WIDTH", "HEIGHT"),
+        default=[DEFAULT_RENDER_WIDTH, DEFAULT_RENDER_HEIGHT],
+        help="resolution the camera renders at before the frame is scaled "
+             "into the window; defaults to matching --viewer-size exactly",
+    )
+    watching.add_argument(
         "--host", default=DEFAULT_HOST, help="CARLA server host",
     )
     watching.add_argument(
@@ -312,6 +327,19 @@ def build_provider(args: argparse.Namespace) -> MapProvider:
     return CarlaMapProvider(args.town)
 
 
+def render_size(args: argparse.Namespace) -> tuple[int, int] | None:
+    """
+    Work out what resolution the chase camera should render at.
+
+    :param args: Parsed command-line arguments.
+    :return: The camera resolution, or None to match the window exactly.
+    """
+    width, height = args.render_size
+    if width is None or height is None:
+        return None
+    return int(width), int(height)
+
+
 def build_carla_factory(
     args: argparse.Namespace, provider: CarlaMapProvider
 ) -> Callable[[TransitGraph, str], object]:
@@ -326,11 +354,16 @@ def build_carla_factory(
     :return: A callable of (graph, start stop) returning a CarlaBackend.
     """
     from src.simulation.CarlaBackend import (
-        CarlaBackend, speed_limits_from, stop_positions_from,
+        CarlaBackend, speed_limits_from, stop_labels_from,
+        stop_positions_from,
     )
 
     positions = stop_positions_from(provider)
     speed_for = speed_limits_from(provider)
+    # The authored stop IDs, so every label and table row reads "s04"
+    # rather than "n0257_n_s04". Passed rather than guessed at -- reading
+    # the ID back out of the node name gets TAU wrong.
+    labels = stop_labels_from(provider)
     watching = not args.no_viewer
 
     minimap = None
@@ -362,6 +395,7 @@ def build_carla_factory(
             # standing on its own.
             debug_draw=watching and not args.no_markers,
             viewer_size=tuple(args.viewer_size),
+            render_size=render_size(args), stop_labels=labels,
             # A generated town is a bare ribbon of road with no terrain and
             # no buildings; without this there is nothing on screen but the
             # bus. Pointless with no window open, so it follows `watching`.

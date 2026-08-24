@@ -821,6 +821,47 @@ def test_stop_names_are_shortened_when_that_stays_unambiguous() -> None:
     assert backend._shorten("n0001_n_s01") == "s01"
 
 
+def test_authored_labels_win_over_reading_the_node_id() -> None:
+    """
+    The authored table is exact where the node ID is a guess.
+
+    TAU's ``n0257_n_s04`` is stop **s02**: the ``sNN`` inside a node ID is
+    the *other* end of the edge as often as not.
+    """
+    backend = _backend(viewer=True, stop_positions={
+        "n0257_n_s04": (0.0, 0.0, 0.0), "n_s04_n0272": (1.0, 1.0, 0.0)},
+        position="n0257_n_s04",
+        stop_labels={"n0257_n_s04": "s02", "n_s04_n0272": "s04"})
+
+    assert backend._shorten("n0257_n_s04") == "s02"
+    assert backend._shorten("n_s04_n0272") == "s04"
+
+
+def test_authored_labels_survive_a_collision_in_the_guess() -> None:
+    """
+    Guessing gives both these stops "s04", which used to abandon shortening
+    for the whole town and fill the viewer with node IDs. The table has no
+    such problem, so the short names must still appear.
+    """
+    backend = _backend(viewer=True, stop_positions={
+        "n0257_n_s04": (0.0, 0.0, 0.0), "n_s04_n0272": (1.0, 1.0, 0.0)},
+        position="n0257_n_s04",
+        stop_labels={"n0257_n_s04": "s02", "n_s04_n0272": "s04"})
+
+    for stop_id in ("n0257_n_s04", "n_s04_n0272"):
+        assert backend._shorten(stop_id) != stop_id
+
+
+def test_a_stop_missing_from_the_table_still_falls_back() -> None:
+    """A partial table names what it can and does not invent the rest."""
+    backend = _backend(viewer=True, stop_positions={
+        "depot": (0.0, 0.0, 0.0), "yard": (1.0, 1.0, 0.0)},
+        position="depot", stop_labels={"depot": "s00"})
+
+    assert backend._shorten("depot") == "s00"
+    assert backend._shorten("yard") == "yard"
+
+
 def test_colliding_short_names_fall_back_to_the_full_id() -> None:
     """A short name that names two stops is worse than a long one."""
     backend = _backend(viewer=True, stop_positions={

@@ -20,6 +20,8 @@
 
 ::: src.simulation.CarlaBackend.stop_positions_from
 
+::: src.simulation.CarlaBackend.stop_labels_from
+
 ::: src.simulation.CarlaBackend.speed_limits_from
 
 ::: src.simulation.carla_routing.plan_route

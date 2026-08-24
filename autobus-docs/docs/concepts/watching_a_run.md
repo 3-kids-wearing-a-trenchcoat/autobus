@@ -87,6 +87,12 @@ and shipping frames, not the drawing. Never leave it on for anything you are
 timing. `render_size` decouples the camera's resolution from the window's,
 so a large window need not cost a large render.
 
+`render_size=None` — the default, and `main.py`'s `DEFAULT_RENDER_WIDTH` /
+`DEFAULT_RENDER_HEIGHT` — makes the camera match the window exactly, whatever
+the window is set to, and costs no scaling at all. `main.py --render-size`
+sets it apart from the window: below, to buy back tick rate on a large
+display; above, for a sharper picture than the window alone would give.
+
 Because the camera renders server-side, the server must be able to render —
 but it does not have to render *for you*. A server drawing no viewport of its
 own still produces frames for the camera, so watching a run needs a rendering
@@ -121,11 +127,22 @@ at a glance from a moving bus.
 
 The node ID is still the key everywhere underneath: the `town` tab matches
 it against the planned route to colour the next stop, and `by time` prices
-it through the graph to lay itself out. `MiniMap.labels` carries the display
-name alongside, filled by `minimap_from` from the name the map layer already
-records, and the ID is drawn whenever a stop has no name. `CarlaBackend`
-shortens its own labels the same way, abandoning the short form wholesale if
-two stops would ever collide under it.
+it through the graph to lay itself out. The display name travels alongside
+it, in `MiniMap.labels` for the panels and in `CarlaBackend`'s `stop_labels`
+for the table and the world labels. Both are filled from the name the map
+layer already records — `CarlaMapProvider` stores the authored stop ID as
+each stop's name — by `minimap_from` and `stop_labels_from` respectively.
+
+!!! warning "The short name is looked up, never read out of the node ID"
+    `n_s04_n0272` does contain `s04`, and taking it from there looks like it
+    works. It is a guess about which end of the edge the stop sits on, and on
+    TAU it is wrong: **`n0257_n_s04` is stop `s02`**. That guess also
+    *collides* with the real `s04`, which used to trip the ambiguity guard
+    and send **every** stop in the town back to its full node ID — which is
+    what filled the viewer with `n0102_n0129` instead of `s07`.
+
+    The guess survives only as a fallback for a caller that passes no table,
+    and is still abandoned wholesale if two stops would collide under it.
 
 Diagnostics keep the full node ID deliberately — when a leg fails to route
 or the bus cannot spawn, the edge the planner was working with is the

@@ -21,7 +21,9 @@ from src.simulation.CarlaBackend import (
     FULL_SIZE_BUS_ID,
     MAX_SAFE_DELTA_S,
     WALKER_LATERAL_OFFSET_M,
+    WALKER_VERGE_OFFSET_M,
     CarlaBackend,
+    stop_labels_from,
     stop_positions_from,
 )
 from src.simulation.SimulationBackend import SimulationBackend
@@ -274,6 +276,109 @@ def test_walkers_stand_clear_of_the_driving_lane() -> None:
     not move aside.
     """
     assert WALKER_LATERAL_OFFSET_M > 0.0
+
+
+class _FakeLaneWaypoint:
+    """A driving lane, with or without a shoulder beside it."""
+
+    def __init__(self, shoulder: "object | None" = None,
+                 lane_width: float = 3.35) -> None:
+        self.transform = carla.Transform(
+            carla.Location(x=0.0, y=0.0, z=0.0), carla.Rotation(yaw=0.0)
+        )
+        self.lane_width = lane_width
+        self._shoulder = shoulder
+
+    def get_right_lane(self) -> "object | None":
+        return self._shoulder
+
+
+class _FakeShoulder:
+    def __init__(self) -> None:
+        self.lane_type = carla.LaneType.Shoulder
+        self.transform = carla.Transform(
+            carla.Location(x=0.0, y=2.15, z=0.0), carla.Rotation(yaw=0.0)
+        )
+
+
+def _spot(backend: CarlaBackend, waypoint: object) -> "carla.Transform":
+    """Run _waiting_spot against a fixed waypoint."""
+    class _Map:
+        def get_waypoint(self, _location, lane_type=None):  # noqa: ANN001
+            return waypoint
+
+    class _World:
+        def get_map(self):  # noqa: ANN201
+            return _Map()
+
+    backend._world = _World()
+    return backend._waiting_spot("n0001_n_s01")
+
+
+def test_a_stop_with_a_shoulder_puts_the_walker_on_it() -> None:
+    """Town01's case, unchanged: shoulder centre plus the lateral offset."""
+    backend = _backend()
+    spot = _spot(backend, _FakeLaneWaypoint(shoulder=_FakeShoulder()))
+    assert spot.location.y == pytest.approx(2.15 + WALKER_LATERAL_OFFSET_M)
+    assert backend._stats["stops_without_shoulder"] == 0
+
+
+def test_a_stop_with_no_shoulder_steps_off_the_lane_edge() -> None:
+    """
+    A generated map has no shoulder anywhere, so this is every TAU stop.
+    The old fallback returned the lane centre, which stood the passenger
+    in the road with the bus driving at them.
+    """
+    backend = _backend()
+    waypoint = _FakeLaneWaypoint(shoulder=None, lane_width=3.35)
+    spot = _spot(backend, waypoint)
+
+    assert spot.location.y == pytest.approx(
+        3.35 / 2 + WALKER_VERGE_OFFSET_M
+    )
+    # Clear of the lane by a whole body, not standing on its centre.
+    assert spot.location.y > 3.35 / 2
+    assert backend._stats["stops_without_shoulder"] == 1
+
+
+def test_a_shoulder_of_the_wrong_type_is_not_treated_as_one() -> None:
+    """A driving lane to the right is not somewhere to stand."""
+    class _NotAShoulder:
+        lane_type = carla.LaneType.Driving
+        transform = carla.Transform(carla.Location(), carla.Rotation())
+
+    backend = _backend()
+    spot = _spot(backend, _FakeLaneWaypoint(shoulder=_NotAShoulder()))
+    assert spot.location.y == pytest.approx(
+        3.35 / 2 + WALKER_VERGE_OFFSET_M
+    )
+
+
+# ---------------------------------------------------------------------------
+# stop_labels_from — the authored names the viewer shows
+# ---------------------------------------------------------------------------
+
+def test_stop_labels_come_from_the_authored_ids() -> None:
+    """`CarlaMapProvider` records the authored stop ID as the stop's name."""
+    labels = stop_labels_from(CarlaMapProvider("TAU"))
+    assert len(labels) == 25
+    assert set(labels.values()) == {f"s{i:02d}" for i in range(25)}
+    # The one the old guess got wrong.
+    assert labels["n0257_n_s04"] == "s02"
+
+
+def test_stop_labels_leave_out_stops_with_no_name() -> None:
+    """A provider that names nothing labels nothing, and does not crash."""
+    class _Stop:
+        def __init__(self) -> None:
+            self.edge = type("E", (), {"id": "x"})()
+            self.name = None
+
+    class _Provider:
+        def get_stops(self):  # noqa: ANN201
+            return [_Stop()]
+
+    assert stop_labels_from(_Provider()) == {}
 
 
 # ---------------------------------------------------------------------------

@@ -219,9 +219,18 @@ when it stops, whether it was picked up or gave up. The pool stays
 authoritative and nothing feeds back, so a failed spawn costs a visual and
 never a result.
 
-Walkers stand on the **shoulder**, not at the stop coordinate. Stops are
-lane-centre positions, and a pedestrian standing in the road makes the traffic
-manager brake for someone who will never move.
+Walkers stand **clear of the driving lane**, never at the stop coordinate.
+Stops are lane-centre positions, and a pedestrian standing in the road makes
+the traffic manager brake for someone who will never move — and, watching it,
+looks like the bus driving straight at them.
+
+Where they stand depends on the town. A shipped town has a Shoulder beside
+every authored stop, which is what the authoring notebook's pull-over test
+checked for; the passenger stands on it. A **generated** town has no shoulder
+anywhere — it is a bare ribbon of driving lanes — so there they step off the
+lane's own edge onto the apron `additional_width` adds, 1.4 m past the edge.
+`stops_without_shoulder` counts the second case, which on TAU is every
+stop.
 
 #### When the bus stops moving
 

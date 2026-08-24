@@ -1,0 +1,257 @@
+{
+  "schema_version": 1,
+  "map": "TAU",
+  "note": "POI-derived campus stops; s08 and s24 moved off the roundabout rings 2026-08-21 -- a ring stop puts the bus on a circle whose island is a hole in the generated mesh",
+  "stops": [
+    {
+      "id": "s00",
+      "name": "\u05e9\u05e2\u05e8 5 - \u05d9\u05d5\u05e1\u05e3 \u05e7\u05e8\u05d9\u05e1",
+      "road_id": 3858,
+      "lane_id": -1,
+      "s": 0.0,
+      "x": 952.439,
+      "y": -951.469,
+      "z": 0.0
+    },
+    {
+      "id": "s01",
+      "name": "\u05e9\u05e2\u05e8 1 - \u05d0\u05d5\u05e1\u05d8\u05e8\u05d9\u05d4",
+      "road_id": 3669,
+      "lane_id": -2,
+      "s": 36.0,
+      "x": 1343.755,
+      "y": -1526.691,
+      "z": 0.0
+    },
+    {
+      "id": "s02",
+      "name": "\u05e9\u05e2\u05e8 16 - \u05e2\u05d1\u05d5\u05d3\u05d4 \u05e1\u05d5\u05e6\u05d9\u05d0\u05dc\u05d9\u05ea",
+      "road_id": 3434,
+      "lane_id": -1,
+      "s": 0.0,
+      "x": 1001.242,
+      "y": -838.634,
+      "z": 0.0
+    },
+    {
+      "id": "s03",
+      "name": "\u05e9\u05e2\u05e8 8 - \u05d3\u05df \u05d1\u05d5\u05db\u05e0\u05e8",
+      "road_id": 3653,
+      "lane_id": -2,
+      "s": 0.0,
+      "x": 797.082,
+      "y": -1419.902,
+      "z": 0.0
+    },
+    {
+      "id": "s04",
+      "name": "\u05e9\u05e2\u05e8 4 - \u05e8\u05de\u05e0\u05e1\u05d9\u05d0\u05e0\u05d5",
+      "road_id": 3434,
+      "lane_id": -1,
+      "s": 88.0,
+      "x": 1012.987,
+      "y": -925.769,
+      "z": 0.0
+    },
+    {
+      "id": "s05",
+      "name": "\u05e9\u05e2\u05e8 3",
+      "road_id": 3330,
+      "lane_id": -1,
+      "s": 0.0,
+      "x": 1367.531,
+      "y": -1128.061,
+      "z": 0.0
+    },
+    {
+      "id": "s06",
+      "name": "G5",
+      "road_id": 3826,
+      "lane_id": -1,
+      "s": 44.0,
+      "x": 1228.583,
+      "y": -620.067,
+      "z": 0.0
+    },
+    {
+      "id": "s07",
+      "name": "\u05e9\u05e2\u05e8 9 - \u05d9\u05d5\u05e1\u05e3 \u05e1\u05d0\u05e4\u05e8",
+      "road_id": 3654,
+      "lane_id": -2,
+      "s": 0.0,
+      "x": 797.317,
+      "y": -1603.687,
+      "z": 0.0
+    },
+    {
+      "id": "s08",
+      "name": "\u05e9\u05e2\u05e8 14 - \u05dc\u05d9\u05de\u05d5\u05d3\u05d9 \u05d7\u05d5\u05e5",
+      "road_id": 3679,
+      "lane_id": -1,
+      "s": 35.0,
+      "x": 1347.05,
+      "y": -948.52,
+      "z": 0.0
+    },
+    {
+      "id": "s09",
+      "name": "Anu - Museum of the Jewish People +5",
+      "road_id": 3725,
+      "lane_id": -2,
+      "s": 0.0,
+      "x": 1360.16,
+      "y": -1303.814,
+      "z": 0.0
+    },
+    {
+      "id": "s10",
+      "name": "Wolfson Faculty of Engineering +5",
+      "road_id": 3408,
+      "lane_id": -1,
+      "s": 56.0,
+      "x": 1329.231,
+      "y": -827.037,
+      "z": 0.0
+    },
+    {
+      "id": "s11",
+      "name": "Machinery Building \u2013 North +3",
+      "road_id": 3737,
+      "lane_id": -2,
+      "s": 44.0,
+      "x": 1340.556,
+      "y": -1598.546,
+      "z": 0.0
+    },
+    {
+      "id": "s12",
+      "name": "\u05d7\u05e0\u05d9\u05d5\u05df \u05e1\u05de\u05d5\u05dc\u05e8\u05e9 +4",
+      "road_id": 3436,
+      "lane_id": -1,
+      "s": 48.0,
+      "x": 978.664,
+      "y": -783.097,
+      "z": 0.0
+    },
+    {
+      "id": "s13",
+      "name": "School of Music - Buchmann-Mehta +3",
+      "road_id": 3823,
+      "lane_id": -2,
+      "s": 188.0,
+      "x": 811.695,
+      "y": -1143.835,
+      "z": 0.0
+    },
+    {
+      "id": "s14",
+      "name": "Dormitories (9 blocks)",
+      "road_id": 3701,
+      "lane_id": -1,
+      "s": 92.0,
+      "x": 990.643,
+      "y": -512.855,
+      "z": 0.0
+    },
+    {
+      "id": "s15",
+      "name": "Gitter-Smolarz Library of Life Sciences and Medicine +3",
+      "road_id": 3665,
+      "lane_id": -2,
+      "s": 152.0,
+      "x": 1202.188,
+      "y": -1692.959,
+      "z": 0.0
+    },
+    {
+      "id": "s16",
+      "name": "Susan and Henry Samueli Engineering (Broadcom) Building +1",
+      "road_id": 3408,
+      "lane_id": -1,
+      "s": 188.0,
+      "x": 1274.237,
+      "y": -707.258,
+      "z": 0.0
+    },
+    {
+      "id": "s17",
+      "name": "Biotechnology - Green +1",
+      "road_id": 3726,
+      "lane_id": -1,
+      "s": 68.0,
+      "x": 1354.923,
+      "y": -1400.106,
+      "z": 0.0
+    },
+    {
+      "id": "s18",
+      "name": "Dormitories (3 blocks)",
+      "road_id": 3689,
+      "lane_id": -1,
+      "s": 156.0,
+      "x": 803.351,
+      "y": -1072.661,
+      "z": 0.0
+    },
+    {
+      "id": "s19",
+      "name": "Goldschleger School of Dental Medicine +1",
+      "road_id": 3665,
+      "lane_id": -2,
+      "s": 36.0,
+      "x": 1088.438,
+      "y": -1715.313,
+      "z": 0.0
+    },
+    {
+      "id": "s20",
+      "name": "Dormitories (3 blocks)",
+      "road_id": 3689,
+      "lane_id": -1,
+      "s": 24.0,
+      "x": 794.371,
+      "y": -1204.355,
+      "z": 0.0
+    },
+    {
+      "id": "s21",
+      "name": "Students Center - Mitchell +1",
+      "road_id": 3652,
+      "lane_id": -2,
+      "s": 36.0,
+      "x": 803.188,
+      "y": -1289.217,
+      "z": 0.0
+    },
+    {
+      "id": "s22",
+      "name": "Inter-discilplinary - Exact Scienses-Engineering",
+      "road_id": 3679,
+      "lane_id": -1,
+      "s": 4.0,
+      "x": 1359.355,
+      "y": -976.152,
+      "z": 0.0
+    },
+    {
+      "id": "s23",
+      "name": "Desenberg Wolff \u2013 Registration Center",
+      "road_id": 3746,
+      "lane_id": -1,
+      "s": 24.0,
+      "x": 1275.304,
+      "y": -1686.425,
+      "z": 0.0
+    },
+    {
+      "id": "s24",
+      "name": "J",
+      "road_id": 3709,
+      "lane_id": -1,
+      "s": 100.0,
+      "x": 1125.28,
+      "y": -518.25,
+      "z": 0.0
+    }
+  ]
+}

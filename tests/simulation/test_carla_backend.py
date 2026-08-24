@@ -20,7 +20,6 @@ from src.simulation.CarlaBackend import (
     DEFAULT_BUS_ID,
     FULL_SIZE_BUS_ID,
     MAX_SAFE_DELTA_S,
-    MAX_STEER,
     STEER_GAIN_K_P,
     WALKER_LATERAL_OFFSET_M,
     WALKER_VERGE_OFFSET_M,
@@ -364,22 +363,32 @@ def test_the_steering_gain_is_gentler_than_carlas_default() -> None:
     """
     CARLA ships K_P 1.95, which full-locks at 23.5 deg of heading error.
 
-    The error is an angle in radians and the command is clipped to
-    MAX_STEER, so the gain sets the angle at which the wheel goes hard over.
-    A campus junction crosses 23.5 deg immediately.
+    The error is an angle in radians and the command is clipped, so the gain
+    sets the angle at which the wheel goes hard over. A campus junction
+    crosses 23.5 deg immediately.
     """
     import math
     assert STEER_GAIN_K_P < 1.95
-    saturates_at = math.degrees(MAX_STEER / STEER_GAIN_K_P)
+    # Against CARLA's own ceiling, which we deliberately do not change.
+    saturates_at = math.degrees(0.8 / STEER_GAIN_K_P)
     assert saturates_at > 30.0, (
         f"full lock at {saturates_at:.0f} deg of heading error is still "
         f"sharp enough to pirouette in a junction"
     )
 
 
-def test_the_steering_ceiling_is_below_carlas_default() -> None:
-    """The gain sets how often it reaches for lock; this caps how far."""
-    assert 0.0 < MAX_STEER < 0.8
+def test_the_steering_ceiling_is_left_at_carlas_default() -> None:
+    """
+    Capping it drives the bus off the road.
+
+    At 0.45 the bus cannot round TAU's tightest junction: it runs wide,
+    leaves the apron a generated map provides and falls out of the world.
+    The agent must therefore be built without a ``max_steering`` override.
+    """
+    import inspect
+    from src.simulation import CarlaBackend as module
+    source = inspect.getsource(module.CarlaBackend._make_agent)
+    assert "max_steering" not in source
 
 
 # ---------------------------------------------------------------------------

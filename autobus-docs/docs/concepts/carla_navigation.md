@@ -79,9 +79,9 @@ is defined against.
 `agents` is **not vendored** — it is installed from the pinned CARLA image by
 `install-carla-agents.sh`. See [Running the Project](../running.md).
 
-### The steering gains are ours, not CARLA's
+### The steering gain is ours, not CARLA's
 
-Two of `BasicAgent`'s defaults are overridden, in `_make_agent`.
+One of `BasicAgent`'s defaults is overridden, in `_make_agent`.
 
 `BasicAgent`'s lateral PID multiplies its gain by the **angle in radians**
 between the bus's nose and the next un-retired waypoint. Because the command
@@ -91,23 +91,44 @@ lock* — and CARLA's `K_P = 1.95` puts that at `0.8 / 1.95 = 0.41 rad`, or
 campus junction the target sits ~6 m ahead and 23.5° is crossed at once. The
 bus slammed to full lock and, on the tightest corners, pirouetted.
 
-`STEER_GAIN_K_P = 0.75` moves that threshold to 61°, and `MAX_STEER = 0.45`
-caps how hard the wheel can go over when it does get there. Measured over a
-four-leg tour against the defaults:
+`STEER_GAIN_K_P = 0.75` moves that threshold to 61°. Measured over a
+four-leg tour against the default:
 
-| town | full-lock ticks | peak yaw rate | off planned path |
-|---|---|---|---|
-| TAU | 37 → **0** | 124 → **99** °/s | 0.10 → **0.07** m |
-| Town01 | 1 → **0** | 77 → **59** °/s | 0.13 → **0.07** m |
-| Town03 | 0 → 0 | 70 → **52** °/s | 0.15 → **0.08** m |
+| town | full-lock ticks | off planned path |
+|---|---|---|
+| TAU | 37 → **16** | 0.10 → **0.06** m |
+| Town01 | 1 → 1 | 0.13 → **0.07** m |
+| Town03 | 0 → 0 | 0.15 → **0.08** m |
 
 Path tracking gets **better**, which is the signature of a gain that was too
 high: the old one overshot and corrected back, reversing the steering command
-on 45% of ticks. Note the full-lock symptom is a *generated-map* one — the
-shipped towns barely saturate at all, because their junctions are wider — but
-every town rotates less sharply and follows the route more closely.
+on 45% of ticks. The full-lock symptom is a *generated-map* one — the shipped
+towns have wider junctions and barely saturate at all.
 
-!!! note "It does not make the bus slower"
+!!! danger "The steering ceiling is left at CARLA's 0.8, and must stay there"
+    Capping it was tried and reverted. On its own, `max_steering = 0.45` cut
+    peak yaw rate on TAU from 124 to 93 °/s — but it is also what the bus
+    needs to get round a tight junction. At 0.45 it runs wide, leaves the
+    4 m apron a generated map provides, and **falls out of the world**.
+
+    Measured on TAU's leg 8 of 25, `n_s04_n0272 → n_s06_n0329`:
+
+    | gain | ceiling | result |
+    |---|---|---|
+    | 1.95 | 0.80 | arrived 99 s, 0 falls |
+    | 0.75 | 0.80 | arrived 100 s, 0 falls |
+    | 1.95 | **0.45** | **failed, 99 falls** |
+    | 0.75 | **0.45** | **failed, 99 falls** |
+
+    0.60 survived that leg without traffic and still timed out with 20 NPCs.
+
+    **A four-leg tour does not test this.** It never reaches leg 8. The
+    change was validated on one, shipped, and the calibration that followed
+    spent an hour timing out every leg after the bus was lost. Validate any
+    steering change against a **full 25-stop TAU tour with NPCs** — 25/25
+    legs, zero timeouts, is the bar.
+
+!!! note "The gain does not make the bus slower"
     A four-leg Town01 tour came out 45 s longer, which reads as an 8% cost
     until it is charged to individual legs: three of the four were identical
     to within 0.25 s, and the fourth spent **34 s more stopped at red

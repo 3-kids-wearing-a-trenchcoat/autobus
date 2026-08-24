@@ -107,16 +107,26 @@ WALKER_LATERAL_OFFSET_M = 1.0
 # every town rotates less sharply and follows the route more closely.
 STEER_GAIN_K_P = 0.75
 
-# Ceiling on the steering command, replacing CARLA's 0.8. The gain decides
-# how often the bus reaches for full lock; this decides how violently it can
-# when it does. Measured on its own it cut peak yaw 124 -> 93 deg/s on TAU.
+# CARLA's steering ceiling (0.8) is deliberately LEFT ALONE.
 #
-# It does NOT slow the bus down. A four-leg Town01 tour came out 45 s longer,
-# which looked like an 8% cost until it was charged to individual legs: three
-# of the four were identical to within 0.25 s, and the fourth spent 34 s more
-# stopped at red lights. The bus reaches one junction a shade later and waits
-# a phase. Calibration averages over 75 legs, so this does not survive there.
-MAX_STEER = 0.45
+# Capping it looked attractive -- on its own it cut peak yaw 124 -> 93 deg/s
+# on TAU -- but it is what the bus needs to get round a tight junction, and
+# taking it away drives the bus off the road. Measured on TAU's leg 8 of 25,
+# n_s04_n0272 -> n_s06_n0329:
+#
+#   K_P 1.95, cap 0.80   arrived  99 s,  0 falls    (CARLA's default)
+#   K_P 0.75, cap 0.80   arrived 100 s,  0 falls    (what we ship)
+#   K_P 1.95, cap 0.45   FAILED,        99 falls    <- the cap alone
+#   K_P 0.75, cap 0.45   FAILED,        99 falls
+#
+# At 0.45 the bus cannot make the turn: it runs wide, leaves the 4 m apron a
+# generated map provides and falls out of the world. 0.60 survived that leg
+# without traffic and still timed out with 20 NPCs. A four-leg tour missed
+# all of this -- it never reached leg 8 -- and the calibration that followed
+# spent an hour timing out every leg after the bus was lost.
+#
+# **Any change here must be validated against a full 25-stop TAU tour with
+# NPCs, not a short one.**
 
 # How far beyond the lane edge a passenger stands when the stop has no
 # shoulder to put them on. A generated map has no shoulder anywhere -- it
@@ -2036,7 +2046,8 @@ class CarlaBackend(SimulationBackend):
             # 1/20 s default while the world ticks at something else would
             # silently mistune them.
             "dt": self._delta,
-            # Calmer steering -- see STEER_GAIN_K_P and MAX_STEER.
+            # Calmer steering -- see STEER_GAIN_K_P. The steering
+            # ceiling is left at CARLA's 0.8 on purpose; see above.
             #
             # ``lateral_control_dict`` REPLACES the whole dict and nothing
             # puts ``dt`` back afterwards, so it has to be repeated here.
@@ -2048,7 +2059,6 @@ class CarlaBackend(SimulationBackend):
                 "K_P": STEER_GAIN_K_P, "K_I": 0.05, "K_D": 0.2,
                 "dt": self._delta,
             },
-            "max_steering": MAX_STEER,
             # Drive at the posted limit rather than the agent's flat 20 km/h
             # default, which is what the traffic manager did and what the
             # calibrated travel model expects.

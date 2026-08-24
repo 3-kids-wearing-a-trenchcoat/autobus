@@ -83,6 +83,41 @@ MAX_SAFE_DELTA_S = 0.1
 # own body. This pushes them properly out of the road.
 WALKER_LATERAL_OFFSET_M = 1.0
 
+# Lateral PID gain for the bus's steering, replacing CARLA's 1.95.
+#
+# The error the gain multiplies is the angle **in radians** between the
+# bus's nose and the next un-retired waypoint, so the gain fixes an angle at
+# which the wheel goes to full lock: 0.8 / 1.95 = 0.41 rad, or **23.5 deg**.
+# A campus junction with the target only ~6 m ahead crosses that at once,
+# which is why the bus slammed to full lock and, on the tightest corners,
+# pirouetted. At 0.75 the same limit needs 61 deg.
+#
+# Measured 2026-08-24 over a four-leg tour, against CARLA's default:
+#
+# | town   | full-lock ticks | peak yaw rate  | off planned path |
+# |--------|-----------------|----------------|------------------|
+# | TAU    | 37 -> 0         | 124 -> 99 deg/s| 0.10 -> 0.07 m   |
+# | Town01 |  1 -> 0         |  77 -> 59 deg/s| 0.13 -> 0.07 m   |
+# | Town03 |  0 -> 0         |  70 -> 52 deg/s| 0.15 -> 0.08 m   |
+#
+# Tracking gets *better*, not worse, which is the signature of a gain that
+# was too high: the old one overshot the path and corrected back, and the
+# steering command reversed direction 45% of ticks. Shipped towns never
+# saturated at all -- the full-lock symptom is a generated-map one -- but
+# every town rotates less sharply and follows the route more closely.
+STEER_GAIN_K_P = 0.75
+
+# Ceiling on the steering command, replacing CARLA's 0.8. The gain decides
+# how often the bus reaches for full lock; this decides how violently it can
+# when it does. Measured on its own it cut peak yaw 124 -> 93 deg/s on TAU.
+#
+# It does NOT slow the bus down. A four-leg Town01 tour came out 45 s longer,
+# which looked like an 8% cost until it was charged to individual legs: three
+# of the four were identical to within 0.25 s, and the fourth spent 34 s more
+# stopped at red lights. The bus reaches one junction a shade later and waits
+# a phase. Calibration averages over 75 legs, so this does not survive there.
+MAX_STEER = 0.45
+
 # How far beyond the lane edge a passenger stands when the stop has no
 # shoulder to put them on. A generated map has no shoulder anywhere -- it
 # is a bare ribbon of driving lanes -- so on TAU this is every stop, and
@@ -2001,6 +2036,19 @@ class CarlaBackend(SimulationBackend):
             # 1/20 s default while the world ticks at something else would
             # silently mistune them.
             "dt": self._delta,
+            # Calmer steering -- see STEER_GAIN_K_P and MAX_STEER.
+            #
+            # ``lateral_control_dict`` REPLACES the whole dict and nothing
+            # puts ``dt`` back afterwards, so it has to be repeated here.
+            # Leaving it out does not raise; the lateral PID quietly falls
+            # back to CARLA's 0.03 s and is mistuned against a 0.05 s world.
+            # K_I and K_D keep CARLA's values: only the proportional term
+            # was measured to be the problem.
+            "lateral_control_dict": {
+                "K_P": STEER_GAIN_K_P, "K_I": 0.05, "K_D": 0.2,
+                "dt": self._delta,
+            },
+            "max_steering": MAX_STEER,
             # Drive at the posted limit rather than the agent's flat 20 km/h
             # default, which is what the traffic manager did and what the
             # calibrated travel model expects.

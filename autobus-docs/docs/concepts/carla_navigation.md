@@ -79,6 +79,53 @@ is defined against.
 `agents` is **not vendored** — it is installed from the pinned CARLA image by
 `install-carla-agents.sh`. See [Running the Project](../running.md).
 
+### The steering gains are ours, not CARLA's
+
+Two of `BasicAgent`'s defaults are overridden, in `_make_agent`.
+
+`BasicAgent`'s lateral PID multiplies its gain by the **angle in radians**
+between the bus's nose and the next un-retired waypoint. Because the command
+is then clipped, the gain fixes an *angle at which the wheel goes to full
+lock* — and CARLA's `K_P = 1.95` puts that at `0.8 / 1.95 = 0.41 rad`, or
+**23.5°**. The planner retires waypoints within `3 + 0.5·v` metres, so on a
+campus junction the target sits ~6 m ahead and 23.5° is crossed at once. The
+bus slammed to full lock and, on the tightest corners, pirouetted.
+
+`STEER_GAIN_K_P = 0.75` moves that threshold to 61°, and `MAX_STEER = 0.45`
+caps how hard the wheel can go over when it does get there. Measured over a
+four-leg tour against the defaults:
+
+| town | full-lock ticks | peak yaw rate | off planned path |
+|---|---|---|---|
+| TAU | 37 → **0** | 124 → **99** °/s | 0.10 → **0.07** m |
+| Town01 | 1 → **0** | 77 → **59** °/s | 0.13 → **0.07** m |
+| Town03 | 0 → 0 | 70 → **52** °/s | 0.15 → **0.08** m |
+
+Path tracking gets **better**, which is the signature of a gain that was too
+high: the old one overshot and corrected back, reversing the steering command
+on 45% of ticks. Note the full-lock symptom is a *generated-map* one — the
+shipped towns barely saturate at all, because their junctions are wider — but
+every town rotates less sharply and follows the route more closely.
+
+!!! note "It does not make the bus slower"
+    A four-leg Town01 tour came out 45 s longer, which reads as an 8% cost
+    until it is charged to individual legs: three of the four were identical
+    to within 0.25 s, and the fourth spent **34 s more stopped at red
+    lights**. The bus reaches one junction a shade later and waits a phase.
+    Calibration drives 3 tours of every stop, so a single light phase does
+    not survive the average.
+
+!!! warning "`lateral_control_dict` replaces the whole dict"
+    Nothing puts `dt` back afterwards. Omitting it does not raise — the
+    lateral PID quietly falls back to CARLA's 0.03 s and is mistuned against
+    a 0.05 s world. `_make_agent` repeats `dt` inside the dict for exactly
+    this reason.
+
+Because both change how the bus drives, they change leg times, and
+`traffic_efficiency` is fitted *by driving*. Changing either means
+re-calibrating every town and bumping the `steering` tag in the run
+identity — see [Running the Project](../running.md).
+
 ### Why this replaced the turn list
 
 Every failure of the two schemes below lived in the **translation** between

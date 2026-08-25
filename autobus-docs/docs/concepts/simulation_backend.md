@@ -360,6 +360,21 @@ which case managing it becomes the caller's job. See
 `start()` loads the town when the wrong one is up. `reload_world=True` makes
 it load unconditionally, so the trial begins in a world nothing has touched.
 
+The load **carries the render mode in** rather than fixing it up afterwards.
+CARLA's `load_world` and `generate_opendrive_world` both reset the new
+world's settings to the server's defaults unless told not to, which switches
+`no_rendering_mode` back *on* for the whole of the load; the backend used to
+re-apply it only several steps later. Every trial therefore rasterised a
+freshly loaded town, and under software Vulkan — `compose.yml`, lavapipe,
+rendering on the CPU — that outlasts UE4's 60 s render-thread watchdog and
+kills the server, reported as a bare `Segmentation fault` with
+`GameThread timed out waiting for RenderThread` above it. The mode is now set
+on the world that is up and the load is made with `reset_settings=False`, so
+a headless run never renders at any point. Only `no_rendering_mode` is
+carried: the synchronous flag and the delta stay with `start()`, so a world
+that never finishes starting is not left looking frozen to every other
+client.
+
 `close()` destroys the actors this backend created, so an ordinary sequence
 of trials does not leak — and neither does a broken one any more. `start()`
 spawns before it can fail, and every caller reaches it *before* its own

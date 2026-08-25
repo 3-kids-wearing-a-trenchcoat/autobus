@@ -186,6 +186,7 @@ def load(
     town: str,
     directory: Path | None = None,
     visible: bool = False,
+    reset_settings: bool = True,
 ) -> "carla.World":
     """
     Load a town, generating it from OpenDRIVE when that is what it is.
@@ -203,14 +204,21 @@ def load(
     :param visible: Whether a generated town's road mesh should be drawn.
         Ignored for a shipped town, which brings its own art. Render-only --
         see ``OPENDRIVE_PARAMETERS``.
+    :param reset_settings: Whether to let CARLA reset the new world's
+        settings to its defaults. Defaults to True, which is CARLA's own
+        behaviour. Pass False to carry the settings that are up into the
+        load -- notably ``no_rendering_mode``, which CARLA otherwise
+        switches back on for the duration of the load. See
+        ``CarlaBackend._carry_render_mode``.
     :return: The loaded world.
     :raises FileNotFoundError: If a generated town's OpenDRIVE is missing.
     """
     path = xodr_path(town, directory)
     if not path.is_file():
-        return client.load_world(town_name(town))
+        return client.load_world(town_name(town), reset_settings)
     return client.generate_opendrive_world(
-        path.read_text(encoding="utf-8"), generation_parameters(visible)
+        path.read_text(encoding="utf-8"), generation_parameters(visible),
+        reset_settings,
     )
 
 

@@ -27,6 +27,7 @@ from src.simulation.CarlaBackend import (
     stop_labels_from,
     stop_positions_from,
 )
+from src.simulation import carla_world
 from src.simulation.SimulationBackend import SimulationBackend
 
 
@@ -429,15 +430,33 @@ class _FakeMap:
         self.name = name
 
 
-class _FakeWorld:
-    """A world that knows which map it is."""
+class _FakeSettings:
+    """Enough of carla.WorldSettings for the render mode to be carried."""
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, no_rendering_mode: bool = False) -> None:
+        self.no_rendering_mode = no_rendering_mode
+
+
+class _FakeWorld:
+    """A world that knows which map it is, and how it renders."""
+
+    def __init__(self, name: str, no_rendering_mode: bool = False) -> None:
         self._map = _FakeMap(name)
+        self.settings = _FakeSettings(no_rendering_mode)
+        self.applied: list[bool] = []
 
     def get_map(self) -> _FakeMap:
         """Return this world's map."""
         return self._map
+
+    def get_settings(self) -> _FakeSettings:
+        """Return this world's settings."""
+        return _FakeSettings(self.settings.no_rendering_mode)
+
+    def apply_settings(self, settings: _FakeSettings) -> None:
+        """Record the render mode this world was put into."""
+        self.settings = settings
+        self.applied.append(settings.no_rendering_mode)
 
 
 class _WorldClient:
@@ -446,15 +465,28 @@ class _WorldClient:
     def __init__(self, current_town: str) -> None:
         self.current = _FakeWorld(f"Carla/Maps/{current_town}")
         self.loaded: list[str] = []
+        self.reset_settings: list[bool] = []
 
     def get_world(self) -> _FakeWorld:
         """Return whatever world is already up."""
         return self.current
 
-    def load_world(self, town: str) -> _FakeWorld:
-        """Record the load and hand back a new world."""
+    def load_world(
+        self, town: str, reset_settings: bool = True
+    ) -> _FakeWorld:
+        """
+        Record the load and hand back a new world.
+
+        Mirrors CARLA: the new world starts on the server's defaults unless
+        ``reset_settings`` is False, in which case it keeps what was up.
+        """
         self.loaded.append(town)
-        return _FakeWorld(f"Carla/Maps/{town}")
+        self.reset_settings.append(reset_settings)
+        carried = (
+            False if reset_settings
+            else self.current.settings.no_rendering_mode
+        )
+        return _FakeWorld(f"Carla/Maps/{town}", carried)
 
 
 def _with_client(current_town: str, **overrides: object) -> tuple:
@@ -499,6 +531,68 @@ def test_reload_world_loads_a_town_already_up() -> None:
 def test_reload_world_defaults_off() -> None:
     """The demo notebook's behaviour must be what an unset flag gives."""
     assert _backend()._reload_world is False
+
+
+def test_a_load_carries_the_render_mode_in() -> None:
+    """
+    A headless run must never render, including during the load itself.
+
+    CARLA resets a new world's settings by default, which switches
+    rendering back on for the whole load. Under software Vulkan that
+    outlasts UE4's 60 s render-thread watchdog and kills the server, so
+    the mode is set before the load and carried across it.
+    """
+    backend, client = _with_client(
+        "Town01", town="Town01", reload_world=True, no_rendering=True
+    )
+    world = backend._acquire_world()
+
+    assert client.current.applied == [True], "set before the load"
+    assert client.reset_settings == [False], "and carried into it"
+    assert world.settings.no_rendering_mode is True
+
+
+def test_a_watched_run_still_gets_a_rendering_world() -> None:
+    """The viewer needs the world rendered, so the carry works both ways."""
+    backend, client = _with_client(
+        "Town10HD_Opt", town="Town01", no_rendering=False
+    )
+    world = backend._acquire_world()
+
+    assert world.settings.no_rendering_mode is False
+
+
+def test_a_generated_town_carries_the_render_mode_too(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    TAU is rebuilt on every start, so it pays the same cost every trial.
+    """
+    backend, client = _with_client(
+        "Town01", town="TAU", no_rendering=True
+    )
+    passed: dict[str, object] = {}
+
+    def fake_load(_client, town, visible=False, reset_settings=True):
+        passed.update(town=town, reset_settings=reset_settings)
+        return _FakeWorld("Carla/Maps/OpenDriveMap", not reset_settings)
+
+    monkeypatch.setattr(carla_world, "is_generated", lambda town: True)
+    monkeypatch.setattr(carla_world, "load", fake_load)
+    backend._acquire_world()
+
+    assert client.current.applied == [True], "set before the rebuild"
+    assert passed["reset_settings"] is False, "and carried into it"
+
+
+def test_the_render_mode_is_left_alone_when_already_right() -> None:
+    """A settings apply costs a round trip; skip it when it is a no-op."""
+    backend, client = _with_client(
+        "Town01", town="Town01", reload_world=True, no_rendering=False
+    )
+    backend._acquire_world()
+
+    assert client.current.applied == []
 
 
 # ---------------------------------------------------------------------------

@@ -698,16 +698,51 @@ class CarlaBackend(SimulationBackend):
         Called before the traffic manager is created, and that ordering is
         load-bearing: a traffic manager caches the road network when it is
         built and never re-caches it. See ``_acquire_traffic_manager``.
+
+        Every load carries the render mode in rather than fixing it up
+        afterwards -- see ``_carry_render_mode``.
         :return: The world, freshly loaded or the one already up.
         """
-        if carla_world.is_generated(self._town):
-            return carla_world.load(
-                self._client, self._town, visible=self._scenery
-            )
         world = self._client.get_world()
+        if carla_world.is_generated(self._town):
+            self._carry_render_mode(world)
+            return carla_world.load(
+                self._client, self._town, visible=self._scenery,
+                reset_settings=False,
+            )
         if self._reload_world or self._town not in world.get_map().name:
-            return self._client.load_world(self._town)
+            self._carry_render_mode(world)
+            return self._client.load_world(self._town, reset_settings=False)
         return world
+
+    def _carry_render_mode(self, world: "carla.World") -> None:
+        """
+        Put the world that is up into this run's render mode, before a load.
+
+        ``load_world`` and ``generate_opendrive_world`` reset the new world's
+        settings to CARLA's defaults unless told not to, and that switches
+        rendering back **on** for the whole of the load. Setting the mode
+        first and loading with ``reset_settings=False`` means a headless run
+        never renders, at any point.
+
+        **This is what stops the server dying under software Vulkan.** On
+        ``compose.yml`` -- lavapipe, rendering on the CPU -- rasterising a
+        freshly loaded town costs more than UE4's 60 s render-thread
+        watchdog allows, and the server aborts with ``GameThread timed out
+        waiting for RenderThread`` and re-raises signal 11. With
+        ``reload_world`` a campaign paid that gamble once per trial.
+
+        Only ``no_rendering_mode`` is carried. The synchronous flag and the
+        delta are left for ``_start`` to apply after the load, so a world
+        this backend never finishes starting is not left looking frozen to
+        every other client.
+        :param world: The world that is currently up, about to be replaced.
+        """
+        settings = world.get_settings()
+        if settings.no_rendering_mode == self._no_rendering:
+            return
+        settings.no_rendering_mode = self._no_rendering
+        world.apply_settings(settings)
 
     def _acquire_traffic_manager(self) -> "carla.TrafficManager":
         """

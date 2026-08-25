@@ -62,9 +62,18 @@ SeededBackendFactory = Callable[[int], BackendFactory]
 
 # Arguments to run_trial that cannot change a KPI, and so have no business in
 # a run's identity: they govern reporting and retention, not the simulation.
+# Arguments to ``run_trial`` that do NOT describe the simulation, and so
+# must not reach a run's identity. This is a denylist over the signature, so
+# **a new argument joins the identity by default** -- which is right for a
+# parameter that changes behaviour and wrong for a hook. ``on_tick`` was
+# added on 2026-08-24 and not listed here, and the resulting identity change
+# made every earlier run invisible to ``is_recorded``: campaigns silently
+# re-simulated work they had already done, and nothing failed while they did
+# it. Adding an argument to ``run_trial`` is a store-format change until
+# shown otherwise.
 _NOT_IN_IDENTITY = frozenset({
     "policy_factory", "graph", "provider", "backend_factory", "seed",
-    "silent", "record_animation", "keep_tick_history",
+    "silent", "record_animation", "keep_tick_history", "on_tick",
 })
 
 

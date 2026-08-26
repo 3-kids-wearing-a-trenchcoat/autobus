@@ -8,34 +8,16 @@ costed, and a whole trial can be simulated against the mock backend. Driving
 the town needs a server, and so does the lane-level waypoint search in
 ``carla_routing`` — it takes a live ``carla.Map``.
 
-## Why segments get split
+Two consequences of that layout are worth knowing before reading
+``_build``, and both are written up in the docs rather than repeated here —
+see *Why segments are split* and *Which edge a stop belongs to* in
+``autobus-docs/docs/concepts/map.md``:
 
-A ``TransitGraph`` node **is** a road edge, and ``_build_map`` keys stops by
-edge — so an edge carries at most one stop and a second would be silently
-overwritten. CARLA's topology segments run junction to junction and are
-routinely hundreds of metres long: four of Town01's fifteen authored stops
-sit in pairs on a single segment.
-
-So a segment carrying stops is split at them, giving every stop its own edge.
-This is what ``RoadNodeRecord`` already describes — *"any point where the bus
-has a decision to make or otherwise needs to change its behavior"*.
-
-## Which edge a stop belongs to
-
-``TransitGraph._calc_weights`` gives edge ``A -> B`` the weight ``length(A)``,
-so a shortest path sums every edge except its destination. Arriving at node
-``B`` therefore means arriving at the **start** of road-edge ``B``.
-
-A stop is consequently attached to the edge that *begins* at its split node,
-never the one that ends there::
-
-    j1 --- e1 ---> n_s08 --- e2 ---> n_s13 --- e3 ---> j2
-          134 m           162 m            10 m
-
-    cost to reach e2 == length(e1) == 134 m along the road, which is s08
-
-Attaching it to ``e1`` is the intuitive reading and is wrong by exactly one
-edge length on every estimate.
+* a topology segment carrying stops is **split** at each of them, because a
+  ``TransitGraph`` node is a road edge and an edge holds at most one stop;
+* a stop attaches to the edge that **begins** at its split node, never the
+  one that ends there — the other reading is wrong by exactly one edge
+  length on every estimate.
 """
 
 import math

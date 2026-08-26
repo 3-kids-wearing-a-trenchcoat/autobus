@@ -2,8 +2,11 @@
 
 Reads two files, both under ``src/map/carla_maps/``: a machine-generated
 topology dump (``carla_dump``) and a hand-authored stop list
-(``carla_stops``). It imports no ``carla``, so a CARLA map can be routed,
-tested and experimented on with no server running.
+(``carla_stops``). It imports no ``carla``, so the map layer works with no
+server running: the transit graph builds, paths and tours between stops are
+costed, and a whole trial can be simulated against the mock backend. Driving
+the town needs a server, and so does the lane-level waypoint search in
+``carla_routing`` — it takes a live ``carla.Map``.
 
 ## Why segments get split
 

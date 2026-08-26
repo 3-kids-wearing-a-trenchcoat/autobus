@@ -157,7 +157,7 @@ Steering is CARLA's own driving, as the design review expected. The bus is
 lane-level, travel-time-shortest route to the stop, those waypoints go to
 `agents.navigation.BasicAgent` via `set_global_plan`, and the backend applies
 `agent.run_step()` every tick. The agent obeys traffic lights and brakes for
-vehicles ahead. See [Navigating in CARLA](carla_navigation.md#direct-drive).
+vehicles ahead. See [Navigating in CARLA](carla_navigation.md#how-the-bus-drives).
 
 !!! warning "The review predicts this; it does not require it"
     §4 lists **CARLA vehicle control** as a risk — *"stop sequences must be

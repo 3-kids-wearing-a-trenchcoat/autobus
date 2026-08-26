@@ -60,12 +60,11 @@ the pip wheel contains client bindings only, so it exists in CARLA's source
 tree and not in the installed package. `plan_route` was validated against it
 and reproduces it, in a fraction of the code.
 
-!!! note "The `agents` package is available, and not by vendoring"
-    An earlier version of this page treated using it as equivalent to copying
-    ~1200 lines into the repository. It is not: `install-carla-agents.sh`
-    installs the package from the pinned CARLA image into the environment's
-    `site-packages`, so it is a dependency like any other and no CARLA code
-    lives here. See [Running the Project](../running.md).
+!!! note "The `agents` package is a dependency, not vendored code"
+    `install-carla-agents.sh` installs it from the pinned CARLA image into the
+    environment's `site-packages`, so it is a dependency like any other and no
+    CARLA code lives in this repository. See
+    [Running the Project](../running.md).
 
 ## How the bus drives
 
@@ -274,9 +273,6 @@ Three lessons outlived the code:
   intended turn hides a systematic per-junction disagreement.
 * **A fix validated only where the failure cannot occur has not been
   validated.** Several of these looked correct in an empty town.
-
-The full account, with the measurements, is in this page's history at commit
-`ffc9919` and earlier.
 
 ## Relationship to other components
 

@@ -60,36 +60,25 @@ travel geometry is what binds.
 
 ## What it actually buys
 
-Measured at 200 paired trials, `commitment=0`, W900, 200 requests
-(`notebooks/reordering-l1-ablation.ipynb`). Every column is a paired
-per-trial difference against L0, and **every one is significant with no
-regression anywhere**:
+Every figure below is a paired per-trial difference against L0 — the same
+seeds, the same map, the same demand, one variable — and every one is
+significant with no regression anywhere.
 
-!!! tip "Superseded on magnitude — the effect is larger than this table"
+The headline measurement pools **1,000 paired (map, seed) pairs across 25
+maps**: mean ride **−111.5 ± 7.4 s**, p ≈ 2e-138; wait −7.3 ± 1.5 s; served
++0.53 ± 0.17 pp. On the campus map alone, over 60 paired seeds at W900, it is
+mean ride **−70 s**, p < 0.0001 — smaller because the campus map is easier
+than typical.
 
-    The table below is a 200-trial ablation at a **single** window. Two
-    larger campaigns have since measured the same effect with far more
-    power, and both put it higher:
+Quote **−111.5 s** for a general claim about the policy and **−70 s** for one
+about the campus map.
 
-    - map 42, 60 paired seeds, W900: mean ride **−70 s**, p < 0.0001.
-    - 25 maps, 1,000 paired (map, seed) pairs: mean ride
-      **−111.5 ± 7.4 s**, p ≈ 2e-138; wait −7.3 ± 1.5 s; served
-      +0.53 ± 0.17 pp. Map 42 is an easier map than typical, which is why
-      the single-map figure understates the effect.
+The advantage **grows as the window tightens**. A tighter deadline constrains
+the schedule harder, which is exactly when repairing its order pays:
 
-    And the advantage **grows as the window tightens** — a dependence a
-    single-window ablation could not have seen. A tighter deadline
-    constrains the schedule harder, which is exactly when repairing its
-    order pays:
-
-    | window | 450 | 600 | 750 | 900 | 1200 | 1800 |
-    |---|---|---|---|---|---|---|
-    | ride, L1 − L0 | **−229 s** | −155 s | −91 s | −70 s | −31 s | −19 s |
-
-    Quote **−111.5 s** for a general claim about the policy and **−70 s**
-    for one about the campus map. What is superseded here is the
-    *magnitude*; the direction, the significance and the mechanism below
-    all stand.
+| window | 450 | 600 | 750 | 900 | 1200 | 1800 |
+|---|---|---|---|---|---|---|
+| ride, L1 − L0 | **−229 s** | −155 s | −91 s | −70 s | −31 s | −19 s |
 
 !!! danger "`stop_density=0.5` is required to reproduce any of this"
 
@@ -100,15 +89,13 @@ regression anywhere**:
     6-stop map everything below collapses: the bus keeps up with any demand,
     fixed route serves 100%, and there is almost nothing left to reorder.
 
-    This cost real time on 2026-08-10. A campaign was run at the default
-    density and concluded that L1 was not worth its cost — the conclusion was
-    an artefact of an over-easy map, and it was wrongly attributed to
-    `commitment` before the density was checked.
+    A campaign run at the default density will conclude that L1 is not worth
+    its cost. That conclusion is an artefact of an over-easy map, and it is
+    easy to misattribute to `commitment` or to the policy itself.
 
-    Re-verified on the correct map at `commitment=0`, 30 paired seeds:
-    fixed route 68.9% served / 448 s wait / 656 s ride against the 68.6% /
-    451 / 654 recorded here, and **L1 − L0 mean ride −75.6 s at p < 0.0001**
-    against the −63.7 s below. **The figures in this section stand.**
+A single-window ablation at 200 paired trials, `commitment=0`, W900, 200
+requests (`notebooks/reordering-l1-ablation.ipynb`) gives the fuller KPI
+picture at one operating point:
 
 | | L0 | L1 | delta |
 |---|---|---|---|

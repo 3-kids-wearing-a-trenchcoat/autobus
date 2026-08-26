@@ -16,6 +16,89 @@ routing algorithm can use. It has three main concerns:
    `MapProvider` output and converts it into the directed graph used by the
    bus routing algorithm at runtime.
 
+## The maps we support
+
+Four sources, seven maps. Everything below arrives through the same
+[`MapProvider`](#map-provider) interface, so nothing above the map layer can
+tell them apart.
+
+### Generated planar maps
+
+`PlanarMapProvider` wraps [`PlanarStreetGraph`](#planarstreetgraph), a random
+road network built by clipping a Voronoi diagram to a bounding box. Some roads
+are made one-way and bus stops are placed on a fraction of the segments.
+
+It is not a real city and does not try to be. It is a world with the
+*properties* that matter — connected, one-way streets, asymmetric travel times,
+unevenly spaced stops — that regenerates identically from a seed and simulates
+thousands of trials a minute. Every statistical result in the project was
+measured here.
+
+The **campus map** is the reference instance, and every figure quoted "on the
+campus map" comes from it:
+
+```python
+PlanarStreetGraph.generate(n_seeds=17, bounds=(0, 0, 2000, 2000),
+                           seed=42, stop_density=0.5)
+```
+
+21 stops in 2 km × 2 km. `stop_density` is load-bearing: the generator's
+default of 0.15 gives **6** stops on this seed, a map so easy that every
+routing policy ties.
+
+### Hand-authored maps
+
+`StaticMapProvider` takes nodes, directed edges and stops as plain records and
+computes edge lengths from the coordinates. It exists for unit tests and for
+explaining the graph conversion on a map small enough to read — not for
+measurement.
+
+### CARLA towns
+
+`CarlaMapProvider` reads a town from two committed JSON files — a machine-made
+topology dump and a hand-authored stop list — so a CARLA map can be routed,
+plotted and tested **with no server running**.
+
+Four of CARLA's shipped towns are prepared:
+
+| Town | Stops | Road segments | Lane changes | `traffic_efficiency` | Character |
+|---|---|---|---|---|---|
+| Town01 | 15 | 139 | 0 | 0.4751 | Small, single-lane, signalised grid. The default and the cheapest to run |
+| Town02 | 15 | 103 | 0 | 0.4645 | Smaller still; short blocks, and the least room for routing to matter |
+| Town03 | 15 | 423 | 210 | 0.5980 | Large and multi-lane, with a roundabout and a tunnel |
+| Town05 | 15 | 497 | 342 | 0.3309 | Large multi-lane grid; the most signal-bound of the four |
+
+`traffic_efficiency` is the fraction of the free-flow travel time the bus
+actually achieves there, measured by driving — see
+[What the bus achieves is not what the sign says](#what-the-bus-achieves-is-not-what-the-sign-says).
+The spread across towns is mostly red lights: Town05's bus spends over half a
+leg stationary.
+
+Multi-lane towns are the reason `get_lane_changes()` exists. Without lane
+changes a route can only reach a stop in the wrong lane by driving round the
+block — measured on Town05, a 164 m hop becomes a 706 m drive.
+
+### Tel Aviv University
+
+| Map | Stops | Road segments | Lane changes | `traffic_efficiency` |
+|---|---|---|---|---|
+| TAU | 25 | 560 | 122 | 0.7032 |
+
+Not a CARLA town: the university campus, built from **OpenStreetMap** data,
+converted to OpenDRIVE and generated into a drivable world at load time. Its
+25 stops are placed by hand at real gates, faculties and dormitories, and
+carry their real names.
+
+It is the strongest evidence that the pipeline is not tuned to the four towns
+CARLA ships, and it is the fastest map of the five to drive — a campus has few
+traffic signals, which is what the 0.70 efficiency reflects.
+
+Two differences to expect. Its road data is rougher: `validate()` reports
+**34 problems** — 27 nodes with no outgoing edge and 7 stops matching two road
+segments — against 3 for Town03 and none for the rest. And it is a
+[generated town](#two-kinds-of-town), so it publishes no speed-limit landmarks
+and no scenery.
+
 ## Map Provider
 
 ### The abstraction layer
@@ -312,15 +395,6 @@ has a decision to make or otherwise needs to change its behavior"*.
 
 #### Speed limits are read from the town
 
-!!! warning "This section said the opposite until 2026-08-11"
-    It claimed CARLA 0.9.16 published no speed limits at all — no type-274
-    landmarks, no actors, no waypoint attribute — and that a town-level
-    default was the best available. **That was wrong.** Town01 publishes 22
-    type-274 landmarks at 30, 60 and 90, and a driving vehicle reads them
-    back. Its arterials are 37.7% of the town's length and were being priced
-    at 30, which made the whole travel model 1.75× optimistic. Every result
-    recorded before that date was discarded.
-
 `carla_dump.read_speed_limits` reads the type-274 landmarks. A road's limit
 changes along its length — Town01's road 8 runs 30, 90, 60, 30 — but a road is
 a single graph edge, so the sections are combined into one number by a
@@ -433,13 +507,14 @@ There are two kinds of edge, priced differently:
 (0, 1]; at the default 1.0 the weights are exactly what they were before it
 was introduced.
 
-`TransitGraph` defines the following methods:  
-| Method | Returns | Description |  
-|--------|---------|-------------|  
-| `get_stops()` | `list[StopRecord]` | All bus stops present in the graph |  
-| `successors(node_id)` | `list[str]` | Immediate successor node IDs of the given node |  
-| `best_path(origin_id, destination_id)` | `list[str]` | Ordered list of node IDs for the most efficient route from origin to destination |  
-| `best_path_cost(origin_id, destination_id)` | `float` | Total travel time in seconds for the most efficient route from origin to destination |  
+`TransitGraph` defines the following methods:
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `get_stops()` | `list[StopRecord]` | All bus stops present in the graph |
+| `successors(node_id)` | `list[str]` | Immediate successor node IDs of the given node |
+| `best_path(origin_id, destination_id)` | `list[str]` | Ordered list of node IDs for the most efficient route from origin to destination |
+| `best_path_cost(origin_id, destination_id)` | `float` | Total travel time in seconds for the most efficient route from origin to destination |
 | `best_tour(start_id, stop_ids)` | `list[str]` | Ordered list of node IDs (starting with `start_id`) representing the cheapest tour that visits all nodes in `stop_ids` |
 
 `best_path_cost` caches its work: the first query from a given origin runs a

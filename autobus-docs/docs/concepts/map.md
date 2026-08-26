@@ -56,8 +56,16 @@ measurement.
 ### CARLA towns
 
 `CarlaMapProvider` reads a town from two committed JSON files — a machine-made
-topology dump and a hand-authored stop list — so a CARLA map can be routed,
-plotted and tested **with no server running**.
+topology dump and a hand-authored stop list — and **imports no `carla`
+itself**. So the whole map layer works with no server running: the transit
+graph is built, shortest paths and tours between stops are computed, the town
+is plotted, and an entire trial can be simulated on it against the mock
+backend.
+
+What needs a server is everything involving the vehicle — driving the route
+(`CarlaBackend`), the lane-level waypoint search that produces its trajectory
+(`carla_routing.plan_route`, which takes a live `carla.Map`), dumping a town
+in the first place, and fitting its `traffic_efficiency`.
 
 Four of CARLA's shipped towns are prepared:
 
@@ -233,8 +241,9 @@ the basis for assertions in tests.
 
 `CarlaMapProvider` turns a CARLA town into a routable map. It reads two of
 the files in `src/map/carla_maps/` — the topology and the stops — and
-**imports no `carla`**, so a CARLA town can be routed, tested and
-experimented on with no server running.
+**imports no `carla`**, so a CARLA town can be planned over, tested and
+simulated against the mock backend with no server running. Driving it is
+another matter; see [The maps we support](#carla-towns).
 
 Four kinds of file live there. The other two are read elsewhere and only by
 a *generated* town: `carla_world` loads the `.xodr` to build the world, and

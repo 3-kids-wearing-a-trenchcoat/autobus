@@ -16,7 +16,7 @@ so the imports work however the file was opened.
 |---|---|---|---|---|
 | `00-overview.ipynb` | The whole system in one run | no | 10 s | 10 s |
 | `01-the-map.ipynb` | Map sources and the transit graph | no | 5 s | 5 s |
-| `02-demand-and-kpis.ipynb` | Requests, patience, and how the KPIs mislead | no | 1 min | 2 min |
+| `02-demand-and-kpis.ipynb` | Requests, patience, and how the KPIs mislead | no | 3 min | 4 min |
 | `03-policy-shootout.ipynb` | All nine routing policies compared | no | 4 min | 20 min |
 | `04-tuning.ipynb` | The knobs, and two ideas that failed | no | 33 min | 2 h+ |
 | `05-campaign.ipynb` | The headline result and its statistics | no | 25 min | ~2 h |

@@ -1,0 +1,42 @@
+# The CARLA server this project talks to, on localhost:2000.
+#
+# Built from docker/carla/Dockerfile rather than pulled. The shipped
+# carlasim/carla:0.9.16 image is Ubuntu 20.04 with Mesa 21.2, which predates
+# both of our GPUs and exits within 30 s on either. This one carries the same
+# CARLA payload on Ubuntu 25.04 with Mesa 25.0, whose RADV supports both, so
+# the host supplies nothing but the kernel and /dev/dri -- and the same image
+# runs on the desktop and on the laptop.
+#
+#   docker compose up -d            build if needed, then start
+#   docker compose logs -f carla    watch it come up
+#   docker compose down             stop and remove it
+#
+# The two configurations this replaces are kept as compose_*.yml and are
+# host-specific: one mounts the host's whole /usr/lib into the container, the
+# other asks for software Vulkan, which puts rendering on the CPU where a map
+# load outlasts UE4's 60 s render-thread watchdog and the server is killed.
+name: carla-autobus
+
+services:
+  carla:
+    build:
+      context: docker/carla
+    image: autobus-carla:0.9.16
+    container_name: carla
+
+    # The client expects the server on localhost:2000 and the traffic manager
+    # on 8000; host networking keeps both where every default looks for them.
+    network_mode: host
+    tty: true
+    stdin_open: true
+
+    # The render node, and the only thing this needs from the host. The image
+    # runs as uid 1000 (set in the Dockerfile), which is why no group_add or
+    # driver bind-mount is required.
+    devices:
+      - /dev/dri:/dev/dri
+
+    # It has to be able to render, because the chase camera is a server-side
+    # sensor -- but it does not have to show anything to anyone, so there is
+    # no X socket here and no DISPLAY.
+    command: ["bash", "CarlaUE4.sh", "-nosound", "-RenderOffScreen"]

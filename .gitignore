@@ -15,6 +15,9 @@ __pycache__/
 # and out of git for the same reason `/results/runs/` is.
 /results/archive/
 
-# CARLA server compose files: GPU passthrough is host-specific, so these
-# are local to each machine rather than shipped. See the README.
-/compose*.yml
+# The older CARLA compose files are host-specific -- one bind-mounts the
+# host's own GPU driver libraries, the other falls back to software Vulkan --
+# so they stay local to each machine. compose.yml is not one of these: it
+# builds docker/carla/Dockerfile, which needs nothing from the host but the
+# kernel and /dev/dri, and is therefore shipped.
+/compose_*.yml

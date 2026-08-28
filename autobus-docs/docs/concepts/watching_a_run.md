@@ -88,10 +88,26 @@ timing. `render_size` decouples the camera's resolution from the window's,
 so a large window need not cost a large render.
 
 `render_size=None` — the default, and `main.py`'s `DEFAULT_RENDER_WIDTH` /
-`DEFAULT_RENDER_HEIGHT` — makes the camera match the window exactly, whatever
-the window is set to, and costs no scaling at all. `main.py --render-size`
-sets it apart from the window: below, to buy back tick rate on a large
-display; above, for a sharper picture than the window alone would give.
+`DEFAULT_RENDER_HEIGHT` — makes the camera match the window as it opens, and
+costs no scaling at all. `main.py --render-size` sets it apart from the
+window: below, to buy back tick rate on a large display; above, for a sharper
+picture than the window alone would give.
+
+**The window is resizable, and the camera's resolution is not.** Drag the
+window and the panels re-place themselves against the new size, while the
+picture is scaled from the resolution the run started at — a camera sensor
+cannot change resolution without being destroyed and respawned, which would
+drop frames and cost a world tick every time an edge was dragged. So a
+window stretched to a different shape stretches the picture with it.
+
+**The window manager has the last word on the opening size.** A compositor
+that remembers window geometry can hand back a size nobody asked for; KDE's
+"Remember Window Positions" script does exactly that, keyed on the window's
+X11 class, which SDL takes from the script name. Measured: with a geometry
+stored for that class, `--viewer-size` is overridden at creation and every
+later `set_mode` in the same process is honoured. The viewer copes either
+way — it lays its panels out from the surface it actually got, never from
+the size it asked for.
 
 Because the camera renders server-side, the server must be able to render —
 but it does not have to render *for you*. A server drawing no viewport of its

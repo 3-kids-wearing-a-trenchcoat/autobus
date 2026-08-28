@@ -424,12 +424,15 @@ class CarlaViewer:
     :param world: The connected CARLA world.
     :param follow: Actor the camera rides behind. The camera is attached, so
         it needs no per-tick repositioning and cannot drift.
-    :param size: Window size in pixels.
+    :param size: Window size in pixels, at the moment it opens. The window
+        is resizable, and the panels follow whatever size it is dragged to.
     :param render_size: Resolution the camera renders at, before the frame
-        is scaled to the window. None matches the window, which is what you
-        want unless the two should differ: render below the window to buy
-        back tick rate on a large display, or above it for a sharper
-        picture than the window costs to show.
+        is scaled to the window. None matches the window **as it opens**,
+        which is what you want unless the two should differ: render below
+        the window to buy back tick rate on a large display, or above it
+        for a sharper picture than the window costs to show. Either way it
+        is fixed for the run: resizing the window rescales the picture, it
+        does not re-render it.
     :param fov: Horizontal field of view, in degrees.
     :param title: Window caption.
     :param minimap: Road graph to draw bottom-right. None draws no panel.
@@ -474,11 +477,16 @@ class CarlaViewer:
 
         pygame.init()
         pygame.font.init()
-        self._screen = pygame.display.set_mode(size)
+        # RESIZABLE so the window can be dragged to any size afterwards.
+        # The camera's resolution is fixed below and does not follow, so a
+        # resize costs nothing but the scale the frame already pays.
+        self._screen = pygame.display.set_mode(size, pygame.RESIZABLE)
         # What SDL actually gave, which is not always what was asked for: a
-        # window manager may cap it, and a scaled desktop may hand back a
-        # smaller surface. Laying panels out against the requested size puts
-        # them off the right and bottom edges, by more the larger the ask.
+        # window manager may cap it, a scaled desktop may hand back a
+        # smaller surface, and a compositor that remembers window geometry
+        # may impose the size this window had last time. Laying panels out
+        # against the requested size puts them off the right and bottom
+        # edges, by more the larger the ask.
         self._size = self._screen.get_size()
         pygame.display.set_caption(title)
         self._font = pygame.font.SysFont("dejavusansmono", HUD_FONT_PT)
@@ -496,6 +504,12 @@ class CarlaViewer:
         # The camera's own resolution, which need not be the window's: the
         # frame is scaled on the way in. Defaults to the surface, so the
         # picture fills the window exactly with no scaling at all.
+        #
+        # **Fixed for the life of the run, deliberately.** Resizing the
+        # window rescales the picture rather than re-rendering it: a camera
+        # sensor cannot change resolution without being destroyed and
+        # respawned, which would drop frames and cost a world tick every
+        # time the window was dragged.
         self._render_size = render_size or self._size
         blueprint.set_attribute("image_size_x", str(self._render_size[0]))
         blueprint.set_attribute("image_size_y", str(self._render_size[1]))
@@ -617,6 +631,11 @@ class CarlaViewer:
                     and event.key == self._pygame.K_ESCAPE):
                 self._closed = True
                 return False
+            if event.type == self._pygame.VIDEORESIZE:
+                # Re-take the surface at the new size; _relayout below then
+                # re-places every panel against it.
+                self._screen = self._pygame.display.set_mode(
+                    event.size, self._pygame.RESIZABLE)
             if event.type == self._pygame.MOUSEBUTTONDOWN:
                 self._click_tab(event.pos)
 

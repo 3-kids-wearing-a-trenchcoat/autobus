@@ -63,7 +63,7 @@ hand; add to `environment.yml` instead so the next person gets it too.
 ### Checking it worked
 
 ```bash
-./run.sh -m pytest         # 748 tests, a few seconds, no server needed
+./run.sh -m pytest         # the whole suite, seconds, no server needed
 ```
 
 If that passes, the graph world is fully working. The suite deliberately

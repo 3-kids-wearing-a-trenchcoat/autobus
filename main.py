@@ -20,6 +20,7 @@ measurement -- reproducible numbers come from the notebooks.
 
 import argparse
 import os
+import socket
 import sys
 import time
 from typing import Callable
@@ -87,6 +88,23 @@ DEFAULT_RENDER_HEIGHT: int | None = None
 DEFAULT_FIXED_DELTA_S = 0.05    # never above 0.1: CARLA's substepping limit
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 2000
+
+# How long to wait for the CARLA port to accept a connection before deciding
+# nobody is there. This is a local TCP handshake against a server that is
+# either listening or not, so it needs no patience -- and every second here
+# is a second the demo looks hung for.
+PREFLIGHT_TIMEOUT_S = 2.0
+
+# Printed whenever the demo cannot reach a server. `docker compose up -d`
+# rather than a `docker run` of the stock carlasim image: that image ships
+# Mesa 21.2, which predates this project's GPUs and exits within 30 s. See
+# compose.yml.
+NO_SERVER_HELP = (
+    "If the server is not running, start one with:\n"
+    "    docker compose up -d\n"
+    "and watch it come up with:\n"
+    "    docker compose logs -f carla\n"
+)
 
 # The synthetic map used by --backend mock. These are the campus map the
 # synthetic campaigns measured, so a mock demo is comparable to them.
@@ -312,6 +330,34 @@ def prefer_x11_on_wayland() -> None:
     if not on_wayland or not os.environ.get("DISPLAY"):
         return
     os.environ["SDL_VIDEODRIVER"] = "x11"
+
+
+def carla_is_listening(
+    host: str, port: int, timeout_s: float = PREFLIGHT_TIMEOUT_S
+) -> bool:
+    """
+    Ask whether anything at all is accepting connections on the CARLA port.
+
+    Deliberately weaker than "is there a healthy CARLA server": it is a TCP
+    handshake and nothing more, so a server that is still loading a map
+    passes and is then waited for normally. It exists to catch the one case
+    that otherwise looks like a crash -- **no server started at all** --
+    where ``carla.Client`` blocks for its full 120 s timeout inside a C++
+    call. Python cannot run a signal handler until that call returns, so the
+    demo ignores Ctrl-C for two minutes and prints nothing, because
+    ``carla_stdout`` holds fd 1 by then.
+    :param host: The CARLA server host.
+    :param port: The CARLA server port.
+    :param timeout_s: How long to allow the handshake.
+    :return: True if the port accepted a connection.
+    """
+    try:
+        with socket.create_connection((host, port), timeout_s):
+            return True
+    except OSError:
+        # Refused, unreachable, unresolvable or too slow -- all of them mean
+        # the same thing to the demo, and none of them is worth a traceback.
+        return False
 
 
 def build_provider(args: argparse.Namespace) -> MapProvider:
@@ -639,6 +685,13 @@ def main() -> None:
 
     unpinned = allow_unpinned_hash()
 
+    # Before the map is loaded, and long before carla.Client blocks: a demo
+    # launched against no server should say so at once.
+    if (args.backend == "carla"
+            and not carla_is_listening(args.host, args.port)):
+        sys.exit(f"no CARLA server at {args.host}:{args.port}.\n\n"
+                 + NO_SERVER_HELP)
+
     provider = build_provider(args)
     backend_factory = None
     if args.backend == "carla":
@@ -675,13 +728,7 @@ def main() -> None:
         # does not say so. Anything else still raises with its traceback.
         if args.backend != "carla":
             raise
-        sys.exit(
-            f"the CARLA run failed: {error}\n\n"
-            "If the server is not running, start one with:\n"
-            "    docker run -d --name carla --network host \\\n"
-            "        carlasim/carla:0.9.16 bash CarlaUE4.sh -nosound "
-            "-RenderOffScreen\n"
-        )
+        sys.exit(f"the CARLA run failed: {error}\n\n" + NO_SERVER_HELP)
     finally:
         progress.close()
     report(result, args, progress.last, time.monotonic() - started)

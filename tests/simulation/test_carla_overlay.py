@@ -526,7 +526,7 @@ def test_the_counters_say_the_time_the_leg_and_the_next_stop() -> None:
     backend._draw_hud(debug, _FakeSpectator())
 
     expected = sum(carla_debug_text.stroke_count(text) for text in (
-        "SIM 1:00", "LEG 1:00", "NEXT n0002_n_s02"))
+        "SIM 1:00", "LEG 1:00", "NEXT s02"))
     assert len(debug.lines) == expected
 
 
@@ -597,7 +597,7 @@ def test_the_counters_say_the_same_thing_on_both_surfaces() -> None:
 
     assert lines[0] == "SIM  2:00"
     assert lines[1] == "LEG  1:00"
-    assert lines[2] == "NEXT n0002_n_s02"
+    assert lines[2] == "NEXT s02"
 
 
 def test_the_counters_report_demand_once_there_is_any() -> None:

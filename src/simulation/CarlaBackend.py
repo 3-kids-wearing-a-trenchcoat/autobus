@@ -1445,10 +1445,12 @@ class CarlaBackend(SimulationBackend):
         now = self._stats["ticks"] * self._delta
         waiting = sum(count for count, _ in self._stop_demand.values())
         aboard = sum(count for _, count in self._stop_demand.values())
+        next_stop = (self._shorten(self._destination)
+                     if self._destination else "-")
         lines = [
             f"SIM  {self._clock(now)}",
             f"LEG  {self._clock(now - self._leg_started_s)}",
-            f"NEXT {self._destination or '-'}",
+            f"NEXT {next_stop}",
         ]
         if self._stop_demand:
             lines.append(f"WAIT {waiting}   ABOARD {aboard}")

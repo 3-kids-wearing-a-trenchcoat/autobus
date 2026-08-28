@@ -132,15 +132,19 @@ generated from docstrings.
 
 ## Running CARLA
 
-The client talks to a CARLA **0.9.16** server on `localhost:2000`. Nothing in
-this repository starts one for you — run the pinned image whichever way suits
-your machine:
+The client talks to a CARLA **0.9.16** server on `localhost:2000`. **How you
+start that server is up to you** — any 0.9.16 server reachable there will do,
+whatever image or installation it comes from, and nothing in this repository
+depends on the choice. It wants host networking, or ports 2000 and 8000
+mapped, so the client and the traffic manager land where every default looks
+for them.
+
+If you have no preference, the repository ships a configuration that works:
 
 ```bash
-docker run -d --name carla --network host \
-    carlasim/carla:0.9.16 bash CarlaUE4.sh -nosound -RenderOffScreen
-
-docker stop carla && docker rm carla        # when finished
+docker compose up -d              # build if needed, then start
+docker compose logs -f carla      # watch it come up
+docker compose down               # when finished
 ```
 
 **GPU passthrough is the part that varies, and the part that fails.** It
@@ -149,6 +153,9 @@ depends on your hardware, not on this project: an NVIDIA host wants
 and may need the host's own Vulkan ICD and driver libraries mounted into the
 container. If the server exits or segfaults within seconds of starting, that
 is almost always what is missing — it is not a problem with the simulation.
+`docker/carla/Dockerfile`, which the configuration above builds, is this
+project's answer to it: the same CARLA 0.9.16 payload on a base whose Mesa is
+new enough for the GPUs it was developed on.
 
 Two things are worth knowing once it is up:
 

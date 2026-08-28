@@ -95,15 +95,14 @@ DEFAULT_PORT = 2000
 # is a second the demo looks hung for.
 PREFLIGHT_TIMEOUT_S = 2.0
 
-# Printed whenever the demo cannot reach a server. `docker compose up -d`
-# rather than a `docker run` of the stock carlasim image: that image ships
-# Mesa 21.2, which predates this project's GPUs and exits within 30 s. See
-# compose.yml.
+# Printed whenever the demo cannot reach a server. Deliberately names no
+# command: the demo neither starts a server nor cares how one was started,
+# and the container configuration this was developed against is specific to
+# the machines it was developed on.
 NO_SERVER_HELP = (
-    "If the server is not running, start one with:\n"
-    "    docker compose up -d\n"
-    "and watch it come up with:\n"
-    "    docker compose logs -f carla\n"
+    "Start a CARLA 0.9.16 server on that address and run this again.\n"
+    "Any server reachable there will do -- the demo does not start one,\n"
+    "and does not care how it was started.\n"
 )
 
 # The synthetic map used by --backend mock. These are the campus map the

@@ -27,8 +27,8 @@ one.
 |---|---|
 | Python | 3.12 (installed by conda, below) |
 | Conda | [Miniforge](https://github.com/conda-forge/miniforge) or Anaconda |
-| Docker | for the CARLA server, and to install CARLA's `agents` package |
-| CARLA | 0.9.16, pulled as a Docker image — nothing to install by hand |
+| Docker | to install CARLA's `agents` package, and to run the server if that is how you run it |
+| CARLA | 0.9.16, reachable on `localhost:2000` — however you choose to run it |
 | GPU | only for CARLA. The graph world needs no graphics at all |
 
 The graph world needs conda alone. Docker and a GPU only matter once you
@@ -47,6 +47,15 @@ drives the bus, exists only inside the CARLA Docker image. The second script
 extracts it from the pinned image into the environment and verifies the
 import. It is idempotent, needs Docker, and is deliberately used instead of
 vendoring ~1,800 lines of someone else's code into this repository.
+
+**Without Docker**, the same directory ships inside a local CARLA
+installation, at `PythonAPI/carla/agents`. Copying it into the environment's
+site-packages does the script's job by hand:
+
+```bash
+./run.sh -c "import site; print(site.getsitepackages()[0])"   # where it goes
+cp -r <CARLA_ROOT>/PythonAPI/carla/agents <that directory>/
+```
 
 Nothing else needs installing. Do not `pip install` into the environment by
 hand; add to `environment.yml` instead so the next person gets it too.
@@ -135,32 +144,15 @@ generated from docstrings.
 The client talks to a CARLA **0.9.16** server on `localhost:2000`. **How you
 start that server is up to you.** The code only ever opens a connection to
 that address — it neither launches the server nor knows how it was launched —
-so any 0.9.16 server reachable there will do. A local installation run
-straight from `CarlaUE4.sh` is as good as a container. The one thing it asks
-is that ports **2000** and **8000** are reachable, so the client and the
-traffic manager land where every default looks for them; a container wants
-host networking, or those two ports mapped.
+so any 0.9.16 server reachable there should do. The one thing it asks is that
+ports **2000** and **8000** are reachable, so the client and the traffic
+manager land where every default looks for them; a container wants host
+networking, or those two ports mapped.
 
-**This project was developed against a server in Docker**, and that is the
-only reason the commands below are Docker commands. The configuration used is
-`compose.yml`, which builds `docker/carla/Dockerfile`:
-
-```bash
-docker compose up -d              # build if needed, then start
-docker compose logs -f carla      # watch it come up
-docker compose down               # when finished
-```
-
-**GPU passthrough is the part that varies, and the part that fails.** It
-depends on your hardware, not on this project: an NVIDIA host wants
-`--gpus all`, others pass the render node through with `--device /dev/dri`
-and may need the host's own Vulkan ICD and driver libraries mounted into the
-container. If the server exits or segfaults within seconds of starting, that
-is almost always what is missing — it is not a problem with the simulation.
-That is what the Dockerfile above is for: the same CARLA 0.9.16 payload on a
-base whose Mesa is new enough for the GPUs this was developed on. A local
-installation sidesteps the question entirely, since it uses the host's own
-driver.
+Everything here was developed and measured against a **containerised** server.
+A local installation run straight from `CarlaUE4.sh` ought to serve just as
+well — the client cannot tell the difference — but it was never tried here, so
+that route is yours to test.
 
 Two things are worth knowing once it is up:
 

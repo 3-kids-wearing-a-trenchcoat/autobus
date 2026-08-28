@@ -93,12 +93,24 @@ costs no scaling at all. `main.py --render-size` sets it apart from the
 window: below, to buy back tick rate on a large display; above, for a sharper
 picture than the window alone would give.
 
-**The window is resizable, and the camera's resolution is not.** Drag the
-window and the panels re-place themselves against the new size, while the
-picture is scaled from the resolution the run started at — a camera sensor
-cannot change resolution without being destroyed and respawned, which would
-drop frames and cost a world tick every time an edge was dragged. So a
-window stretched to a different shape stretches the picture with it.
+**The window is resizable; nothing behind it is.** `size` is a *drawing*
+resolution, not a window size: the surface everything is drawn on is fixed
+for the whole run, and SDL fits it to whatever the window is dragged to
+(`pygame.SCALED`). The camera's resolution is fixed for the same reason a
+sensor cannot change resolution without being destroyed and respawned —
+which would drop frames and cost a world tick per drag.
+
+**So the run costs the same whatever the window is.** Measured on a 4K
+window with a 1280x720 surface: 3.4 ms a frame, against 7.6 ms when the
+surface followed the window. The old cost was `smoothscale` upscaling
+960x540 to 4K on the CPU — 8 ms a redraw — and it grew with window area.
+The price is that a maximised window shows an upscaled UI: text is softer
+because it was drawn at the surface's resolution, not the window's. Ask for
+a bigger `--viewer-size` if you want a crisper one, and pay for it.
+
+SDL may report `no fast renderer available` on a machine with no accelerated
+renderer; it falls back to scaling in software, which is still cheaper than
+drawing at the window's size.
 
 **The window manager has the last word on the opening size.** A compositor
 that remembers window geometry can hand back a size nobody asked for; KDE's

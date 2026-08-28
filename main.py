@@ -257,7 +257,10 @@ def build_parser() -> argparse.ArgumentParser:
     watching.add_argument(
         "--viewer-size", type=int, nargs=2, metavar=("WIDTH", "HEIGHT"),
         default=[DEFAULT_VIEWER_WIDTH, DEFAULT_VIEWER_HEIGHT],
-        help="size of the chase-camera window",
+        help="resolution the viewer draws at, and the window's size when "
+             "it opens. The window can be resized freely afterwards and "
+             "the picture is fitted to it, so this costs the same whatever "
+             "the window ends up being",
     )
     watching.add_argument(
         "--render-size", type=int, nargs=2, metavar=("WIDTH", "HEIGHT"),

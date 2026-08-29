@@ -11,10 +11,11 @@
 #   docker compose logs -f carla    watch it come up
 #   docker compose down             stop and remove it
 #
-# The two configurations this replaces are kept as compose_*.yml and are
-# host-specific: one mounts the host's whole /usr/lib into the container, the
-# other asks for software Vulkan, which puts rendering on the CPU where a map
-# load outlasts UE4's 60 s render-thread watchdog and the server is killed.
+# This is the only compose file: one configuration for every machine. The
+# host-specific ones it replaced are gone -- one mounted the host's whole
+# /usr/lib into the container, the other asked for software Vulkan, which puts
+# rendering on the CPU where a map load outlasts UE4's 60 s render-thread
+# watchdog and the server is killed.
 name: carla-autobus
 
 services:

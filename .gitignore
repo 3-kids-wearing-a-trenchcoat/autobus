@@ -15,9 +15,3 @@ __pycache__/
 # and out of git for the same reason `/results/runs/` is.
 /results/archive/
 
-# compose.yml is shipped: it builds docker/carla/Dockerfile, which needs
-# nothing from the host but the kernel and /dev/dri, so one image serves
-# every machine. Anything named compose_<something>.yml is by convention a
-# host-specific variant -- a driver bind-mount, a software-Vulkan fallback --
-# and stays local to the machine that needs it.
-/compose_*.yml

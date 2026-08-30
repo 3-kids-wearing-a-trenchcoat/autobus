@@ -35,9 +35,9 @@ import pandas as pd
 from src.experiment.trial import TrialResult
 from src.metrics.MetricsTracker import KPISnapshot
 
-# Where runs live unless a caller says otherwise. Tracked in git: these are
-# the measured evidence behind the project's success criteria, and hours of
-# CARLA to regenerate.
+# Where runs live unless a caller says otherwise. These are the measured
+# evidence behind the project's success criteria, and hours of CARLA to
+# regenerate.
 #
 # Anchored to this file rather than to the working directory, because
 # JupyterLab starts a kernel in the *notebook's* directory: a relative path

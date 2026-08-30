@@ -216,11 +216,12 @@ def build_parser() -> argparse.ArgumentParser:
     run = parser.add_argument_group("the run")
     run.add_argument(
         "--seed", type=int, default=DEFAULT_SEED,
-        help="seed for demand and for CARLA traffic",
+        help="seed for demand, for CARLA traffic, and for the mock map",
     )
     run.add_argument(
         "--n-stops", type=int, default=DEFAULT_N_STOPS,
-        help="stops the policy plans ahead each time it re-plans",
+        help="stops the policy plans ahead each re-plan; only the first "
+             "is driven, so this matters only with --commitment",
     )
     run.add_argument(
         "--commitment", type=int, default=DEFAULT_COMMITMENT,

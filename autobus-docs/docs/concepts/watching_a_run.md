@@ -3,7 +3,7 @@
 A campaign answers *did it work*. This answers *what is it doing*, which is
 a different question and needs a different tool: a single parametrised trial
 with everything on screen and nothing written to disk, which is what the demo
-(`./run.sh main.py`) runs.
+(`./autobus.sh`) runs.
 
 Reach for it when a number is strange and you want to see the bus earn it.
 

@@ -96,12 +96,16 @@ a chase-camera window and drives in CARLA, so it needs a running server
 (see below):
 
 ```bash
-./run.sh main.py                                   # Town01, L1 policy
-./run.sh main.py --town TAU --policy fixed         # a different town, baseline
-./run.sh main.py --backend mock                    # no server needed at all
-./run.sh main.py --no-viewer --max-requests 8      # headless and quick
-./run.sh main.py --help                            # every flag
+./autobus.sh                                   # Town01, L1 policy
+./autobus.sh --town TAU --policy fixed         # a different town, baseline
+./autobus.sh --backend mock                    # no server needed at all
+./autobus.sh --no-viewer --max-requests 8      # headless and quick
+./autobus.sh --help                            # every flag
 ```
+
+`autobus.sh` is `run.sh` aimed at `main.py`, so `./run.sh main.py --policy
+fixed` is the same command written the long way. It resolves its own
+directory, so unlike the long form it can be run from anywhere.
 
 | flag | what it changes |
 |---|---|

@@ -54,18 +54,21 @@ the two ways a run can end; the closing block says which of them actually
 stopped it. **The progress line goes to stderr**, so redirecting stdout to
 capture the report leaves it on screen (and vice versa).
 
-Use `run.sh` from the project root, which runs the script inside the correct
-Conda environment:
+Use `autobus.sh`, which runs the demo inside the correct Conda environment:
 
 ```bash
-bash run.sh main.py
+./autobus.sh
 ```
 
+It is `run.sh` aimed at `main.py` and passes every flag straight through, so
+`bash run.sh main.py` is the same command written the long way. It resolves
+its own directory rather than assuming one, so it can be run from anywhere.
+
 `python main.py` works too, as long as the Conda environment is already
-active — the demo does not insist on `run.sh` the way the notebooks and
-campaigns do. The difference is reproducibility: `run.sh` pins
-`PYTHONHASHSEED`, and without it another process may serve the same
-passengers in a different order. The demo says so and runs anyway, which is
+active — the demo does not insist on a launcher the way the notebooks and
+campaigns do. The difference is reproducibility: `autobus.sh` pins
+`PYTHONHASHSEED` by way of `run.sh`, and without it another process may serve
+the same passengers in a different order. The demo says so and runs anyway, which is
 the right trade for a demonstration and the wrong one for a measurement.
 
 That on its own is a complete demo. Every option has a default defined at the
@@ -74,10 +77,10 @@ not pass keeps its default, so this changes the routing policy and nothing
 else:
 
 ```bash
-bash run.sh main.py --policy fixed
+./autobus.sh --policy fixed
 ```
 
-`bash run.sh main.py --help` lists every flag with its default. The ones worth
+`./autobus.sh --help` lists every flag with its default. The ones worth
 knowing:
 
 | flag | what it does |
@@ -223,10 +226,10 @@ The scenery step is a one-off, and its output is committed:
 
 That writes `src/map/carla_maps/TAU.props.json`, which the demo reads with no
 server involvement beyond the one it is already driving in. **Nothing needs
-re-running to see the scenery** — `./run.sh main.py --town TAU` picks it up
+re-running to see the scenery** — `./autobus.sh --town TAU` picks it up
 as it stands. Pass `--no-scenery` to turn it off.
 
-To watch the bus drive, run the demo: `./run.sh main.py` runs a single trial
+To watch the bus drive, run the demo: `./autobus.sh` runs a single trial
 with the [viewer](concepts/watching_a_run.md) on, which is its default.
 
 !!! warning "Load the town before touching the traffic manager"

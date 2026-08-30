@@ -111,9 +111,12 @@ a chase-camera window and drives in CARLA, so it needs a running server
 | `--capacity`, `--window`, `--patience`, `--dwell` | the service being offered |
 | `--no-viewer`, `--no-markers`, `--no-scenery` | what you see while it runs |
 
-**The demo is a demonstration, not a measurement.** It records nothing and
-is not seeded end-to-end, so its numbers vary run to run. Reproducible
-figures come from the notebooks.
+**The demo is a demonstration, not a measurement.** It calls `run_trial`
+directly rather than `run_campaign`, so it records nothing and cannot collide
+with a campaign's run identities. It is seeded — `--seed` drives demand,
+CARLA traffic and the mock map — but a CARLA drive does not reproduce to the
+last digit regardless, so its numbers vary run to run. Reproducible figures
+come from the notebooks.
 
 ### Experiments
 
@@ -121,9 +124,29 @@ figures come from the notebooks.
 ./jupyter-run.sh          # JupyterLab on port 8889, hash seed pinned
 ```
 
-35 notebooks under `notebooks/` hold the experiments and their conclusions.
-`results.ipynb` and `results-explorer.ipynb` read the stored results and run
-nothing, which is the place to start looking.
+The ten notebooks under `notebooks/` reproduce every result quoted in the
+submitted documents. They are meant to be read in order, but each one stands
+alone:
+
+| notebook | subject | needs a server |
+|---|---|---|
+| `00-overview` | the whole system in one run | no |
+| `01-the-map` | map sources and the transit graph | no |
+| `02-demand-and-kpis` | requests, patience, and how the KPIs mislead | no |
+| `03-policy-shootout` | all nine routing policies compared | no |
+| `04-tuning` | the knobs, and two ideas that failed | no |
+| `05-campaign` | the headline result and its statistics | no |
+| `06-scope-condition` | where routing stops paying | no |
+| `07-carla-driving` | how the bus drives a real town | **yes** |
+| `08-carla-campaign` | the headline result on real geometry | **yes** |
+| `09-harness` | reproducibility, storage, parallelism, latency | no |
+
+Every notebook that runs experiments (`02` onward) carries a `SCALE` switch.
+`"quick"` is the default: minutes rather than hours, the same conclusions
+with wider error bars. `"full"` is the sample size behind the submitted
+figures, and on `04`, `05` and `08` that is hours. A second run of any of
+them costs almost nothing — every trial is found in the results store rather
+than repeated.
 
 Completed runs are written once each to `results/runs/`, keyed by a hash of
 what produced them, so re-running a campaign skips what is already recorded.
@@ -196,7 +219,7 @@ src/metrics/        KPIs
 src/experiment/     trials, campaigns, the results store, plots
 src/preparation/    offline tools; need a live server, nothing imports them
 main.py             the demo
-notebooks/          the experiments and their conclusions
+notebooks/          the ten notebooks behind the submitted results
 autobus-docs/       the documentation site
 map_osm/            OpenStreetMap source for the generated TAU map
 ```
@@ -207,7 +230,7 @@ everything and depended on by nothing.
 
 ## Notes worth knowing
 
-* **Two towns, two kinds.** CARLA ships Town01–Town05 baked into the server.
+* **Two kinds of town.** CARLA ships Town01–Town05 baked into the server.
   **TAU** is different: it is built from OpenStreetMap, exists only as an
   OpenDRIVE file, and is generated procedurally on every load. A town is
   "generated" when a `.xodr` sits beside its dump — no list in code.
@@ -226,7 +249,8 @@ Full documentation is in `autobus-docs/`, served by `./docs.sh`:
 
 * **[Running the Project](autobus-docs/docs/running.md)** — setup and
   execution in more detail than this file
-* **Concepts** — the map layer, requests, demand, dispatch policies, the
-  travel model, the bus agent, metrics, the simulation backend, navigating in
+* **Concepts** — the map layer, requests, demand, dispatch policies, window
+  insertion and route reordering, the travel model, the bus agent, metrics,
+  the simulation runner and backend, the experiment harness, navigating in
   CARLA, and watching a run
 * **API Reference** — generated from docstrings

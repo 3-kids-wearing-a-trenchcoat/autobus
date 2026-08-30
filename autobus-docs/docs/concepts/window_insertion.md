@@ -47,11 +47,10 @@ a later plan, when the bus is somewhere more convenient.
     cuts the breach rate from 4.9% to 2.0% at **no cost in coverage**
     (+0.1 pp, not significant) — but pays about +107 s of mean ride for L0,
     and +67 s for L1. Since ride time is a graded KPI and breach rate is not,
-    the default stays 1.0. See `notebooks/execution-noise.ipynb`.
+    the default stays 1.0.
 
-    **Swept properly over three maps on 2026-08-11**
-    (`notebooks/safety-factor-sweep.ipynb`, 3,840 runs), which changes the
-    reading of the lever rather than the decision:
+    **Swept properly over three maps on 2026-08-11** (3,840 runs), which
+    changes the reading of the lever rather than the decision:
 
     | σ | 0.0 | 0.1 | 0.2 | 0.3 |
     |---|---|---|---|---|
@@ -209,8 +208,8 @@ Every interval is under ±2% of its mean, so the ordering is not in doubt.
 Three things to read off it:
 
 - **Coverage rises with the window**, peaking where the window equals the
-  abandonment threshold. Beyond that it falls away sharply — see
-  `notebooks/window-width-sweep-2.ipynb` for why.
+  abandonment threshold. Beyond that it falls away sharply, because a window
+  wider than patience admits riders who cancel before the bus arrives.
 - **The ride tail is worst at the tight end, not the loose end.** `W450` posts
   the best wait figures on the page and by far the worst max ride (4756 s). A
   tight deadline makes the bus chase expiring pickups, which defers dropoffs

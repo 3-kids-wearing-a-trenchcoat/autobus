@@ -161,8 +161,7 @@ moves with the window rather than sitting at a fixed number of stops:
     actually drives — a policy picks nearby stops, not random ones.
 
 Measured on the campus map (21 stops, 2000 m square, median ordered-pair cost
-132 s). See `notebooks/commitment-sweep.ipynb` and
-`notebooks/commitment-confirmation.ipynb`.
+132 s), swept and then confirmed on a second run.
 
 ## Projected state
 

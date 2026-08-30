@@ -112,16 +112,20 @@ bash jupyter-run.sh
 
 The script sets `PYTHONPATH` to the project root before starting Jupyter, so
 `src.*` imports work correctly from any notebook regardless of where it lives in
-the repository. Experiment notebooks are kept in the `notebooks/` directory.
+the repository. Notebooks live in the `notebooks/` directory, and each carries a
+bootstrap cell that finds the repository root itself, so the imports work however
+the file was opened.
 
-Four of them are the entry points — two that produce runs, two that read them:
+Two conventions hold across all of them:
 
-| notebook | what it does |
-|---|---|
-| `synthetic-campaign.ipynb` | Sweeps the policies and their service windows on the campus map, filing every run in the store. Stop it whenever you like; re-running continues rather than restarting. |
-| `carla-campaign-towns.ipynb` | The same comparison driven in real CARLA towns. Needs a live server, and runs per seed so a hiccup costs one trial rather than the night. |
-| `results-explorer.ipynb` | Reads **exactly the runs you ask for**, selected by the constants in its *Filters* cell and faceted by `GROUP_BY`. This is the one to reach for. |
-| `results.ipynb` | Reads the store and draws the tables and graphs for whichever scenario has the most runs. Neither reader runs a simulation or needs a server, so both work while a campaign is still going. |
+* **A notebook that produces runs files them in the store and resumes.** Each
+  completed trial is written to `results/runs` as it goes, so a campaign can be
+  stopped whenever you like and re-running continues rather than restarting. A
+  notebook that only reads the store runs no simulation, so it works while a
+  campaign is still going.
+* **Only the ones that drive a bus need a live server.** Everything on the
+  graph — and everything that reads a CARLA town from its committed JSON — runs
+  with nothing up. See [The CARLA server](#the-carla-server).
 
 ### Reproducibility: set `PYTHONHASHSEED`
 
@@ -185,10 +189,10 @@ c.set_timeout(10.0); print(c.get_server_version(), \
 c.get_world().get_map().name)"
 ```
 
-Section 1 of `notebooks/carla-campaign-towns.ipynb` does the fuller version —
-it loads every installed town and reports road length, junction share, speed
-signs and, decisively, whether the town has Shoulder lanes to author stops
-against.
+A fuller survey is worth doing before authoring stops in a town that has not
+been used before: load every installed town and report its road length, junction
+share, speed signs and — decisively — whether it has Shoulder lanes to author
+stops against.
 
 **Whatever town the server starts on is almost certainly not the one you
 want.** That matters for more than convenience — see the traffic manager
@@ -222,8 +226,8 @@ server involvement beyond the one it is already driving in. **Nothing needs
 re-running to see the scenery** — `./run.sh main.py --town TAU` picks it up
 as it stands. Pass `--no-scenery` to turn it off.
 
-To watch the bus drive, use `notebooks/carla-single-run.ipynb`, which runs one
-trial with the [viewer](concepts/watching_a_run.md) on.
+To watch the bus drive, run the demo: `./run.sh main.py` runs a single trial
+with the [viewer](concepts/watching_a_run.md) on, which is its default.
 
 !!! warning "Load the town before touching the traffic manager"
     A `carla.TrafficManager` caches the road network when it is first created
@@ -254,5 +258,22 @@ trial with the [viewer](concepts/watching_a_run.md) on.
 
 The world has been left in synchronous mode with nobody ticking it, usually by
 an interrupted run — the server is waiting for a tick that is never coming.
-The preflight cell in `notebooks/carla-demo.ipynb` restores asynchronous mode
-and clears stray actors; it is safe to run at any time.
+Putting it back into asynchronous mode and clearing the actors the interrupted
+run stranded is safe at any time:
+
+```bash
+./run.sh -c "
+import carla
+world = carla.Client('localhost', 2000).get_world()
+settings = world.get_settings()
+settings.synchronous_mode = False
+settings.fixed_delta_seconds = None
+world.apply_settings(settings)
+for pattern in ('sensor.*', 'vehicle.*', 'walker.*'):
+    for actor in world.get_actors().filter(pattern):
+        actor.destroy()
+"
+```
+
+Remember that there is one server per machine — this affects whatever else is
+using it, so check nobody is mid-run first.

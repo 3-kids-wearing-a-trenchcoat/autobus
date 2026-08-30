@@ -35,8 +35,7 @@ implements **L1**, the cheapest rung that does real work.
 ## Is there anything to reorder?
 
 Measured before building anything, because a repair pass over a schedule
-holding two requests would have nothing to do
-(`notebooks/reordering-headroom.ipynb`, campus map, 20 trials):
+holding two requests would have nothing to do (campus map, 20 trials):
 
 | | W900 / 200 req | No window | W900 / 500 req |
 |---|---|---|---|
@@ -93,9 +92,8 @@ the schedule harder, which is exactly when repairing its order pays:
     its cost. That conclusion is an artefact of an over-easy map, and it is
     easy to misattribute to `commitment` or to the policy itself.
 
-A single-window ablation at 200 paired trials, `commitment=0`, W900, 200
-requests (`notebooks/reordering-l1-ablation.ipynb`) gives the fuller KPI
-picture at one operating point:
+A single-window ablation at 200 paired trials, `commitment=0`, W900 and 200
+requests gives the fuller KPI picture at one operating point:
 
 | | L0 | L1 | delta |
 |---|---|---|---|
@@ -244,14 +242,13 @@ what fraction of calls found anything to do.
     increase (6.62M → 6.57M → 6.56M s). A better-maintained schedule leaves
     each later plan call less to improve, so the accumulated total shrinks
     while the schedules themselves are equal or better.
-    See `notebooks/reordering-n-passes.ipynb`.
 
 ## Reordering under unreliable driving
 
 Everything above is measured in a simulation where the bus drives exactly as
-predicted. `notebooks/execution-noise.ipynb` breaks that, handing the backend
-a [`NoisyTravelModel`](travel_model.md) while the policy keeps planning
-against the clean graph.
+predicted. Breaking that — handing the backend a
+[`NoisyTravelModel`](travel_model.md) while the policy keeps planning against
+the clean graph — measures how much of the advantage survives.
 
 The prediction going in was that **L1 would be the more fragile of the two**:
 repair works by tightening the schedule, and the slack it removes is also the

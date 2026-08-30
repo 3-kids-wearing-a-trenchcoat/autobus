@@ -50,8 +50,8 @@ Set it in the notebook, or from the environment:
 AUTOBUS_SCALE=full ./jupyter-run.sh
 ```
 
-**The saved outputs were produced at `"full"`.** Re-running gives `"quick"`
-unless you change it.
+**Each notebook prints the `SCALE` its saved outputs came from**, just below
+the switch. Re-running gives `"quick"` unless you change it.
 
 ## Results are regenerated, not shipped
 
@@ -67,11 +67,8 @@ To keep them somewhere else, set `AUTOBUS_RUNS_DIR`.
 
 ## The CARLA notebooks
 
-`07` and `08` need a CARLA server:
-
-```bash
-docker compose up -d
-```
+`07` and `08` need a running CARLA 0.9.16 server, reachable at
+`localhost:2000`. How it is started is up to you.
 
 Every cell that needs it checks first and skips itself with a message, so both
 notebooks can be read end to end without one.

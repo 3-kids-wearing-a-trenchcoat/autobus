@@ -5,8 +5,14 @@ read that back. The arithmetic under test is the sinking of a uniformly
 scaled cube so that a wide, low building draws at the right height.
 """
 
-import carla
 import pytest
+
+# Guarded rather than imported bare: an ImportError at module scope is a
+# *collection* error, and pytest abandons the whole run on the first one --
+# so a missing optional dependency reports this project as entirely broken
+# rather than as one suite that cannot run here.
+pytest.importorskip("carla", reason="the CARLA client wheel is not installed")
+import carla
 
 from src.map.carla_props import SceneryBlock, save_props
 from src.simulation import carla_scenery

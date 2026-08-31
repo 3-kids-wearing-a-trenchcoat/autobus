@@ -15,18 +15,23 @@ between the setup and call phases, so a capture installed in a fixture is
 silently undone before the test body runs.
 """
 
-import ctypes
 import os
 import select
 from collections.abc import Iterator
 from contextlib import contextmanager
+
+import pytest
 
 from src.simulation import carla_stdout
 
 MESSAGE = ("We couldn't find the RoadOption you were looking for. This "
            "route might diverge from the one expected.")
 
-_libc = ctypes.CDLL("libc.so.6")
+# The same handle the module under test uses, rather than a second one of
+# our own: on a platform it cannot open, this is None and every test that
+# needs it skips through ``capturing`` below. Opening our own copy here would
+# put the import-time failure back that the module now avoids.
+_libc = carla_stdout._libc
 
 
 class _Terminal:
@@ -61,6 +66,13 @@ def capturing() -> Iterator[_Terminal]:
 
     :return: The stand-in terminal, for reading back what got through.
     """
+    if not carla_stdout.available():
+        # Not an xfail: these tests assert on a capture that this platform
+        # cannot perform at all. The degraded path has its own tests at the
+        # bottom of this file, and those must still run here.
+        pytest.skip("fd 1 cannot be captured on this platform; "
+                    "see carla_stdout.available()")
+
     read_fd, write_fd = os.pipe()
     os.set_blocking(read_fd, False)
     real_stdout = os.dup(1)

@@ -334,6 +334,16 @@ def test_an_unsafe_world_still_runs_sequentially(
 
 def test_a_carla_backend_declares_itself_unshareable() -> None:
     """The flag has to be on the real class, not only on a test double."""
+    # `CarlaBackend` pulls in the CARLA client and its `agents` package, so
+    # this one assertion is the only thing in this file with an optional
+    # dependency. Skipped rather than failed when they are absent: the flag
+    # is still right, there is just no class here to read it off.
+    pytest.importorskip("carla", reason="the CARLA client is not installed")
+    pytest.importorskip(
+        "agents.navigation.basic_agent",
+        reason="CARLA's `agents` package is not installed; see "
+               "./install-carla-agents.sh",
+    )
     from src.simulation.CarlaBackend import CarlaBackend
     from src.simulation.MockBackend import MockBackend
 

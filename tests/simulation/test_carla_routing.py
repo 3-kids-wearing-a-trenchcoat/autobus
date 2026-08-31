@@ -6,10 +6,16 @@ waypoints is the part that is pure bookkeeping -- lane quantisation and the
 cost the search minimises -- which is where the bugs live anyway.
 """
 
+import pytest
+
+# Guarded rather than imported bare: an ImportError at module scope is a
+# *collection* error, and pytest abandons the whole run on the first one --
+# so a missing optional dependency reports this project as entirely broken
+# rather than as one suite that cannot run here.
+pytest.importorskip("carla", reason="the CARLA client wheel is not installed")
 import carla
 
 from src.simulation.carla_routing import _lane_key, plan_route
-
 
 
 # ---------------------------------------------------------------------------

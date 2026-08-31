@@ -143,6 +143,14 @@ MAX_STEP = 0.04
 # Drawn top-right, under its own panel. Columns are padded to a common width
 # and rendered as plain lines, which only works because the font is
 # monospaced -- with a proportional font this would need per-column blits.
+# The face every panel is drawn in, as a preference list: pygame.font.SysFont
+# takes the first name it can find and falls back to its own *proportional*
+# default when it finds none. That fallback is not cosmetic here -- the table
+# above and the schematic both align columns by padding to a character count,
+# which a proportional face silently ruins. DejaVu Sans Mono covers Linux,
+# Consolas every Windows since Vista, Courier New the rest.
+HUD_FONT = "dejavusansmono,consolas,couriernew,monospace"
+
 TABLE_MARGIN = 18
 TABLE_PAD = 12
 TABLE_FONT_PT = 18
@@ -497,15 +505,14 @@ class CarlaViewer:
         # edges, by more the larger the ask.
         self._size = self._screen.get_size()
         pygame.display.set_caption(title)
-        self._font = pygame.font.SysFont("dejavusansmono", HUD_FONT_PT)
-        self._map_font = pygame.font.SysFont("dejavusansmono", MAP_FONT_PT)
-        self._table_font = pygame.font.SysFont("dejavusansmono",
-                                               TABLE_FONT_PT)
+        self._font = pygame.font.SysFont(HUD_FONT, HUD_FONT_PT)
+        self._map_font = pygame.font.SysFont(HUD_FONT, MAP_FONT_PT)
+        self._table_font = pygame.font.SysFont(HUD_FONT, TABLE_FONT_PT)
         self._clock = pygame.time.Clock()
         self._minimap = minimap
         self._schematic = schematic
         self._view = VIEW_MAP
-        self._tab_font = pygame.font.SysFont("dejavusansmono", TAB_FONT_PT)
+        self._tab_font = pygame.font.SysFont(HUD_FONT, TAB_FONT_PT)
         self._map_rect = self._fit_minimap(minimap, self._size)
 
         blueprint = world.get_blueprint_library().find("sensor.camera.rgb")

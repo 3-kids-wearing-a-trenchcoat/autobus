@@ -4,8 +4,14 @@ No server: ``carla.Location`` and ``carla.Vector3D`` are client-side value
 types, so a glyph can be drawn against a recording stand-in and measured.
 """
 
-import carla
 import pytest
+
+# Guarded rather than imported bare: an ImportError at module scope is a
+# *collection* error, and pytest abandons the whole run on the first one --
+# so a missing optional dependency reports this project as entirely broken
+# rather than as one suite that cannot run here.
+pytest.importorskip("carla", reason="the CARLA client wheel is not installed")
+import carla
 
 from src.simulation import carla_debug_text
 from src.simulation.carla_debug_text import (

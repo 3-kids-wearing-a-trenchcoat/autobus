@@ -7,8 +7,19 @@ is left to pygame.
 
 import math
 
-import carla
 import pytest
+
+# Guarded rather than imported bare: an ImportError at module scope is a
+# *collection* error, and pytest abandons the whole run on the first one --
+# so a missing optional dependency reports this project as entirely broken
+# rather than as one suite that cannot run here.
+pytest.importorskip("carla", reason="the CARLA client wheel is not installed")
+pytest.importorskip(
+    "agents.navigation.basic_agent",
+    reason="CARLA's `agents` package is not installed; it arrives via the "
+           "second setup step, ./install-carla-agents.sh",
+)
+import carla
 
 from src.algorithm.RequestPool import Request, RequestPool, RequestState
 from src.simulation.CarlaBackend import (

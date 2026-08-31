@@ -21,12 +21,13 @@ ninety would be worse than one that stopped.
 import os
 import subprocess
 import time
+import warnings
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from inspect import signature
-from multiprocessing import get_context
+from multiprocessing import get_all_start_methods, get_context
 from pathlib import Path
 
 from tqdm.auto import tqdm
@@ -223,6 +224,43 @@ def _execute(label: str, seed: int) -> bool:
     return True
 
 
+def _can_fork() -> bool:
+    """
+    Say whether this platform offers the start method the pool requires.
+
+    Only ``fork`` will do, and not as a preference — see ``_in_parallel``
+    for why ``spawn`` cannot stand in without redesigning how work crosses
+    the process boundary. Windows offers ``spawn`` alone, so this is False
+    there and parallelism is simply not on the menu.
+    :return: True where ``get_context("fork")`` will succeed.
+    """
+    return "fork" in get_all_start_methods()
+
+
+def _scheduling_jobs(n_jobs: int) -> int:
+    """
+    Settle how many workers this run will really use.
+
+    Downgrades a parallel request to sequential where the platform cannot
+    fork, rather than failing the campaign: ``n_jobs`` is a scheduling
+    choice that provably cannot change a result, so running the same work
+    on one core is the *right* answer to "you asked for eight and cannot
+    have them" — just a slower one. Warned rather than printed, because
+    this module is otherwise silent and the caller may be timing it.
+    :param n_jobs: Workers the caller asked for, already resolved from -1.
+    :return: Workers to actually use.
+    """
+    if n_jobs == 1 or _can_fork():
+        return n_jobs
+    warnings.warn(
+        f"n_jobs={n_jobs} needs the 'fork' start method, which this "
+        f"platform does not have; running sequentially instead. The "
+        f"results are identical — only the wall time changes.",
+        RuntimeWarning, stacklevel=3,
+    )
+    return 1
+
+
 def _in_parallel(
     tasks: Sequence[tuple[str, int]], n_jobs: int
 ) -> Iterable[tuple[tuple[str, int], bool]]:
@@ -364,7 +402,10 @@ def run_campaign(
         and ordering is rebuilt from the store rather than from completion —
         so this is a scheduling choice and nothing more. **Refused for a
         world that declares itself not parallel-safe**, which CARLA does:
-        one server cannot host a campaign per core.
+        one server cannot host a campaign per core. **Downgraded to 1 with a
+        warning** on a platform without ``fork`` (Windows), for the same
+        reason it is a scheduling choice: the campaign still produces every
+        run it was asked for, on one core.
     :param trial_kwargs: Forwarded to run_trial (max_requests, capacity, dt,
         max_time, ...). These are resolved against run_trial's own defaults
         before being recorded, so the identity describes the simulation rather
@@ -404,6 +445,10 @@ def run_campaign(
     _refuse_unsafe_parallelism(
         backend_factory_for, transit_graph, seeds[0], n_jobs
     )
+    # After the refusal, never before it: asking a shared-resource world for
+    # eight cores is a mistake about the campaign, and it should be reported
+    # as the same mistake whatever platform it is made on.
+    n_jobs = _scheduling_jobs(n_jobs)
 
     # Populated before any worker is forked; children inherit it.
     _CONTEXT.clear()

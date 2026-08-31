@@ -6,11 +6,14 @@ of (parameters, seed) runs, and the store already knows which exist; running
 one again would count a single run twice into its own sample.
 """
 
+import warnings
+
 import pytest
 
 from src.algorithm.WindowInsertionPolicy import WindowInsertionPolicy
 from src.experiment.campaign import (
     _effective_trial_params,
+    _scheduling_jobs,
     run_campaign,
 )
 from src.experiment.store import load_runs
@@ -342,3 +345,88 @@ def test_a_carla_backend_declares_itself_unshareable() -> None:
 def test_a_nonsense_worker_count_is_rejected(tmp_path, street_graph) -> None:
     with pytest.raises(ValueError, match="n_jobs"):
         _campaign(tmp_path, street_graph, n_jobs=0)
+
+
+# ---------------------------------------------------------------------------
+# ...including on a platform that cannot fork
+# ---------------------------------------------------------------------------
+#
+# Windows offers `spawn` alone, and `spawn` cannot stand in here: the workers
+# inherit their whole context through the fork rather than being handed a
+# picklable payload, and the policy factories are lambdas. So parallelism is
+# genuinely unavailable there, and the question is only how that is reported.
+
+
+def _without_fork(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hide fork the way Windows does — the method is simply not offered."""
+    monkeypatch.setattr(
+        "src.experiment.campaign.get_all_start_methods",
+        lambda: ["spawn", "forkserver"])
+
+
+def test_a_forkless_platform_falls_back_to_sequential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _without_fork(monkeypatch)
+    with pytest.warns(RuntimeWarning, match="fork"):
+        assert _scheduling_jobs(8) == 1
+
+
+def test_a_sequential_request_is_never_warned_about(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """n_jobs=1 asks for nothing the platform cannot give."""
+    _without_fork(monkeypatch)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert _scheduling_jobs(1) == 1
+
+
+def test_forking_platforms_are_left_alone() -> None:
+    """This machine can fork, so nothing may be downgraded on it."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert _scheduling_jobs(4) == 4
+
+
+def test_the_fallback_still_runs_the_whole_campaign(
+    tmp_path, street_graph, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    The claim the fallback rests on: same runs, same numbers, one core.
+
+    Without this the warning is just an excuse — it has to be true that the
+    examiner on Windows gets the identical result, only slower.
+    """
+    expected = _campaign(
+        tmp_path / "forking", street_graph, seeds=[0, 1, 2, 3],
+        policies=[("A", _policy), ("B", _policy)], n_jobs=4,
+    )
+
+    _without_fork(monkeypatch)
+    with pytest.warns(RuntimeWarning, match="fork"):
+        fallen_back = _campaign(
+            tmp_path / "forkless", street_graph, seeds=[0, 1, 2, 3],
+            policies=[("A", _policy), ("B", _policy)], n_jobs=4,
+        )
+
+    assert fallen_back.ran == expected.ran == 8
+    assert ([_comparable(r) for r in fallen_back.records]
+            == [_comparable(r) for r in expected.records])
+
+
+def test_an_unshareable_world_is_still_refused_before_the_fallback(
+    tmp_path, street_graph, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Asking CARLA for eight cores is a mistake about the campaign, not the
+    platform, so it must read as the same mistake on Windows as here.
+    """
+    _without_fork(monkeypatch)
+    with pytest.raises(ValueError, match="parallel_safe"):
+        _campaign(
+            tmp_path, street_graph, n_jobs=4,
+            backend_factory_for=lambda seed: (
+                lambda graph, start: _UnsharedBackend(start)
+            ),
+        )

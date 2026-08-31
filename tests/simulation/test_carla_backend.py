@@ -27,7 +27,7 @@ from src.simulation.CarlaBackend import (
     stop_labels_from,
     stop_positions_from,
 )
-from src.simulation import carla_world
+from src.simulation import carla_stdout, carla_world
 from src.simulation.SimulationBackend import SimulationBackend
 
 
@@ -779,3 +779,28 @@ def test_a_viewer_that_cannot_open_does_not_take_the_trial_down(
     backend._open_viewer()
 
     assert backend._viewer is None
+
+
+# ---------------------------------------------------------------------------
+# route_drops is only claimed where it can be measured
+# ---------------------------------------------------------------------------
+
+def test_route_drops_is_reported_where_the_tap_works() -> None:
+    """The ordinary case: glibc is here, so the counter is real."""
+    assert carla_stdout.available()
+    assert _backend().stats()["route_drops"] == 0
+
+
+def test_route_drops_is_absent_where_the_tap_cannot_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Absent, not zero.
+
+    A zero would read as "measured, and the drive was clean" -- a claim
+    about the run that nobody made. The notebooks put these straight into a
+    table, so the difference is the difference between a missing cell and a
+    false one.
+    """
+    monkeypatch.setattr(carla_stdout, "_libc", None)
+    assert "route_drops" not in _backend().stats()

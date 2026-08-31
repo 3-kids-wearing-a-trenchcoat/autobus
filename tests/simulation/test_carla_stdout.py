@@ -273,3 +273,58 @@ def test_a_removed_listener_hears_nothing_more() -> None:
 def test_removing_a_listener_that_was_never_added_is_harmless() -> None:
     """Teardown never has to know whether setup got that far."""
     carla_stdout.remove_listener(lambda name, line: None)
+
+
+# ----------------------------------------------------------------------
+# Platforms the capture cannot work on
+# ----------------------------------------------------------------------
+#
+# Everything above needs glibc and a POSIX ``select``. Windows has neither,
+# and used to fail at *import* -- taking ``CarlaBackend`` with it, since that
+# imports this module at its top. These pin the degraded path instead: the
+# tap reports itself unavailable and every entry point becomes a no-op.
+
+
+def test_an_unavailable_tap_reports_itself(monkeypatch) -> None:
+    """``available`` is what callers ask before trusting a counter."""
+    monkeypatch.setattr(carla_stdout, "_libc", None)
+    assert carla_stdout.available() is False
+
+
+def test_the_lifecycle_is_inert_without_a_libc(monkeypatch) -> None:
+    """
+    The three calls ``CarlaBackend`` makes must all be safe no-ops.
+
+    Asserting on ``_saved_fd`` rather than only on the return values,
+    because the failure that matters is a *partial* install: fd 1 taken over
+    by a module that then cannot read it back would lose the process its
+    stdout entirely.
+    """
+    monkeypatch.setattr(carla_stdout, "_libc", None)
+
+    carla_stdout.install()
+    assert carla_stdout._saved_fd is None
+    assert carla_stdout.drain(lambda: "TAG") == {}
+    carla_stdout.restore()                  # must not raise
+    assert carla_stdout._saved_fd is None
+
+
+def test_a_libc_without_the_stdout_symbol_is_refused(monkeypatch) -> None:
+    """
+    The probe covers the symbol, not just the library.
+
+    A library that opens but does not export ``stdout`` as data is exactly
+    the Windows UCRT's shape, and finding out inside ``install`` would mean
+    raising from the middle of a trial.
+    """
+    class _Bare:
+        """Opens fine; has no ``stdout`` to hand out."""
+        setvbuf = type("_F", (), {"argtypes": None})()
+
+    monkeypatch.setattr(carla_stdout.ctypes, "CDLL", lambda name: _Bare())
+    monkeypatch.setattr(
+        carla_stdout.ctypes.c_void_p, "in_dll",
+        staticmethod(lambda lib, name: (_ for _ in ()).throw(
+            ValueError("symbol 'stdout' not found"))))
+
+    assert carla_stdout._load_libc() is None

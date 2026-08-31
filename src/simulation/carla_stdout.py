@@ -35,6 +35,16 @@ describe.
 **This module hijacks a process-wide resource.** ``install`` is idempotent
 and ``restore`` is registered with ``atexit``, because a trial that dies
 part-way must not leave the process without a stdout.
+
+**It is glibc-only, and says so rather than failing.** Every technique here
+-- the ``libc.so.6`` handle, the ``setvbuf`` on glibc's exported ``stdout``,
+the non-blocking ``select`` over a pipe -- is POSIX and specifically glibc.
+None of it ports to Windows, where ``select`` takes sockets alone. So
+``available`` reports whether the tap can work and ``install`` quietly does
+nothing when it cannot, because this is a **diagnostic**: losing it costs
+attribution on a message CARLA prints anyway, and that is never worth
+refusing to drive a bus over. Callers must not read a zero from an
+un-installed tap as a measurement -- see ``available``.
 """
 
 import atexit
@@ -57,9 +67,30 @@ _READ_CHUNK = 65536
 # _IONBF from stdio.h: no buffering, so every write reaches the pipe.
 _UNBUFFERED = 2
 
-_libc = ctypes.CDLL("libc.so.6")
-_libc.setvbuf.argtypes = [ctypes.c_void_p, ctypes.c_char_p,
-                          ctypes.c_int, ctypes.c_size_t]
+def _load_libc() -> ctypes.CDLL | None:
+    """
+    Open the C library this module drives fd 1 through, if there is one.
+
+    Everything here is glibc-specific, and deliberately so: the buffering
+    problem it solves is glibc's. Windows has no ``libc.so.6``, and renaming
+    it would not help -- the UCRT keeps ``stdout`` behind
+    ``__acrt_iob_func()`` rather than exporting it as data, so ``in_dll``
+    has nothing to find. The symbol is therefore probed here rather than at
+    the point of use, so "can this platform be tapped" is one question
+    answered once, at import, instead of an exception from inside a trial.
+    :return: The library, or None where the capture cannot work.
+    """
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+        libc.setvbuf.argtypes = [ctypes.c_void_p, ctypes.c_char_p,
+                                 ctypes.c_int, ctypes.c_size_t]
+        ctypes.c_void_p.in_dll(libc, "stdout")
+    except (OSError, ValueError):
+        return None
+    return libc
+
+
+_libc = _load_libc()
 
 # fd 1 as it was before the hijack, and the read end of the pipe now
 # standing in for it. Both None while not installed.
@@ -76,16 +107,33 @@ Listener = Callable[[str, str], None]
 _listeners: list[Listener] = []
 
 
+def available() -> bool:
+    """
+    Say whether this platform can be tapped at all.
+
+    Callers need this to tell "measured, and there were none" apart from
+    "never measured": a counter that reads zero on a platform where nothing
+    was ever counted is a false statement about the run, not a missing
+    convenience.
+    :return: True where ``install`` will actually capture fd 1.
+    """
+    return _libc is not None
+
+
 def install() -> None:
     """
     Route fd 1 through a pipe this module can read, and stop it buffering.
 
     Idempotent, because a campaign builds one backend per trial while fd 1
-    is a process-wide resource that must be taken over exactly once.
+    is a process-wide resource that must be taken over exactly once. Where
+    the platform cannot be tapped this does nothing at all, leaving the
+    module in its uninstalled state, which ``drain`` and ``restore`` already
+    handle -- the messages then reach stdout untagged, which is what would
+    have happened anyway had this module never existed.
     :return: None.
     """
     global _saved_fd, _read_fd
-    if _saved_fd is not None:
+    if _libc is None or _saved_fd is not None:
         return
 
     _libc.fflush(None)

@@ -565,7 +565,12 @@ class CarlaBackend(SimulationBackend):
             # it was told to make, and so threw the route away. See
             # ``carla_stdout``: the message itself carries no context, and
             # the tagged line on stdout is where the detail lives.
-            "route_drops": 0,
+            #
+            # Seeded only where the capture can actually run. On a platform
+            # ``carla_stdout`` cannot tap, the key is absent rather than
+            # zero, because a zero here would read as "measured, and the
+            # drive was clean" -- a claim about the run that nobody made.
+            **({"route_drops": 0} if carla_stdout.available() else {}),
             # Times the bus had to be physically lifted back onto its lane
             # because re-planning could not free it. Any non-zero value is
             # worth looking at: it means the map has somewhere a vehicle
@@ -1462,7 +1467,7 @@ class CarlaBackend(SimulationBackend):
             lines.append("PLAN " + " > ".join(self._shorten(stop)
                                               for stop in shown)
                          + (f" (+{more})" if more else ""))
-        drops = int(self._stats["route_drops"])
+        drops = int(self._stats.get("route_drops", 0))
         unroutable = int(self._stats["unroutable_legs"])
         if drops or unroutable:
             lines.append(f"DROPS {drops}   UNROUTABLE {unroutable}")

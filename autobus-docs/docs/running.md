@@ -171,6 +171,79 @@ showing `null` is one whose exact reproduction cannot be guaranteed. Averages
 over many seeds remain meaningful either way; individual seeded numbers do
 not.
 
+## Running on Windows
+
+Everything above is written for a shell, because every entry point in this
+project is one. **Git Bash or WSL runs them unchanged** and is the shortest
+route. From PowerShell or `cmd`, the launchers have to be unpacked by hand —
+they are thin, and the only part that really matters is the hash seed:
+
+In PowerShell:
+
+```powershell
+$env:PYTHONHASHSEED = "0"
+$env:PYTHONUNBUFFERED = "1"
+conda run --no-capture-output -n autobus python main.py
+conda run --no-capture-output -n autobus python -m pytest
+conda run -n autobus jupyter lab --no-browser --port=8889
+```
+
+In `cmd`, the same three variables are set with `set NAME=value`:
+
+```bat
+set PYTHONHASHSEED=0
+set PYTHONUNBUFFERED=1
+conda run --no-capture-output -n autobus python main.py
+```
+
+The ten submission notebooks find the repository root themselves, so
+`PYTHONPATH` is only needed for the older notebooks in `notebooks/`; set it
+to the project root as `jupyter-run.sh` does.
+
+!!! danger "Never satisfy the hash-seed check from inside Python"
+    Setting `os.environ["PYTHONHASHSEED"]` in a notebook cell makes
+    [the refusal](#reproducibility-set-pythonhashseed) go away without making
+    anything reproducible. The interpreter reads that variable once, at
+    startup; assigning to it later changes no hashing at all. That converts a
+    loud, correct refusal into a silently wrong answer — which is precisely
+    the failure the check was built to prevent. Set it **before** the
+    interpreter starts, or use `AUTOBUS_ALLOW_UNPINNED_HASH=1` and do not
+    file the results.
+
+`install-carla-agents.sh` needs bash and `docker cp`, so on Windows do its job
+directly — the `agents` directory also ships inside a local CARLA install:
+
+```bat
+copy /E /I "<CARLA_ROOT>\PythonAPI\carla\agents" "<site-packages>\agents"
+```
+
+`conda run -n autobus python -c "import site; print(site.getsitepackages()[0])"`
+prints where that second path is.
+
+### What is degraded, and why
+
+Two things do not work on Windows. Both fail *softly* and by design; neither
+touches a KPI.
+
+* **Campaigns run on one core.** `run_campaign`'s worker pool requires the
+  `fork` start method, which Windows does not offer. `spawn` cannot replace
+  it: the workers inherit their whole context through the fork instead of
+  being handed a picklable payload, and the policy factories are lambdas,
+  which do not pickle. So a request for `n_jobs > 1` is downgraded to 1 with
+  a `RuntimeWarning`. Because `n_jobs` is a scheduling choice that cannot
+  reach a result, the campaign still produces every run it was asked for and
+  the numbers are identical — it just takes longer.
+
+* **`route_drops` is not measured.** Attributing the traffic manager's
+  diagnostics means capturing file descriptor 1 through glibc — see
+  [navigating in CARLA](concepts/carla_navigation.md) — and there is no
+  Windows equivalent: the UCRT does not export `stdout` as data, and
+  `select` there accepts sockets alone. `carla_stdout` reports itself
+  unavailable and the messages reach the terminal untagged, exactly as they
+  would have without the module. The counter is then **absent** from the
+  run's `backend_stats` rather than reported as zero, so a table shows a gap
+  rather than claiming a clean drive nobody measured.
+
 ## The CARLA server
 
 **How the server is started is out of scope for this project.** Nothing here

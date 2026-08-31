@@ -25,6 +25,7 @@ one.
 
 | | |
 |---|---|
+| OS | Linux throughout. Windows works with two documented degradations — see [On Windows](#on-windows) |
 | Python | 3.12 (installed by conda, below) |
 | Conda | [Miniforge](https://github.com/conda-forge/miniforge) or Anaconda |
 | Docker | to install CARLA's `agents` package, and to run the server if that is how you run it |
@@ -88,6 +89,54 @@ Pass it whatever you would pass `python`:
 ./run.sh -m pytest                     # the tests
 ./run.sh -m src.preparation.carla_dump --town Town01
 ```
+
+### On Windows
+
+Every entry point here is a shell script, so the shortest route is **Git Bash
+or WSL**, where `./run.sh` and the rest work unchanged. Running them from
+PowerShell or `cmd` means doing by hand the two things `run.sh` does for you:
+
+| | PowerShell | `cmd` |
+|---|---|---|
+| pin the hash seed | `$env:PYTHONHASHSEED = "0"` | `set PYTHONHASHSEED=0` |
+| see output as it happens | `$env:PYTHONUNBUFFERED = "1"` | `set PYTHONUNBUFFERED=1` |
+| then | `conda run --no-capture-output -n autobus python main.py` | same |
+
+**The first row is not optional.** Several policies break ties by iterating a
+`set[str]`, so an unpinned hash seed makes the same seed produce a different
+route in a different process. `run_trial` *refuses to start* without it rather
+than return a number it cannot reproduce, so a run launched any other way
+stops with a `RuntimeError`. JupyterLab needs it set the same way before
+launching, and `jupyter lab --no-browser --port=8889` is the rest of
+`jupyter-run.sh`. The ten submission notebooks put the repository root on the
+import path themselves, so `PYTHONPATH` matters only for the older notebooks
+in `notebooks/`.
+
+⚠ **Do not set `PYTHONHASHSEED` from inside Python** to get past the check.
+The value is read once when the interpreter starts; assigning to
+`os.environ` afterwards changes nothing about hashing and only silences the
+guard — which turns a loud refusal into a quietly wrong answer, the exact
+failure it exists to prevent.
+
+`install-carla-agents.sh` needs bash and `docker cp`. The manual route in
+[Installation](#installation) is the same job done by hand:
+
+```
+copy /E /I "<CARLA_ROOT>\PythonAPI\carla\agents" "<site-packages>\agents"
+```
+
+Two things genuinely do not work on Windows, both by design rather than
+oversight:
+
+* **`n_jobs` runs sequentially.** The worker pool needs the `fork` start
+  method, which Windows does not have. `run_campaign` warns and runs on one
+  core; the results are identical, because `n_jobs` cannot reach an answer —
+  notebooks `05`, `06` and `09` simply take longer.
+* **`route_drops` is not measured.** Attributing CARLA's traffic-manager
+  diagnostics means capturing file descriptor 1 through glibc, which has no
+  Windows equivalent. The counter is *absent* from the run's stats rather
+  than reported as zero, and the messages still reach the terminal untagged.
+  Nothing else about a CARLA run changes.
 
 ### The demo
 

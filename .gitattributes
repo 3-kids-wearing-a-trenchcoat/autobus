@@ -1,0 +1,16 @@
+# Line endings, for the one case where they are load-bearing.
+#
+# Git for Windows installs with core.autocrlf=true, which rewrites LF to CRLF
+# on checkout for anything it decides is text. A shell script survives that
+# badly: the shebang becomes `#!/usr/bin/env bash\r`, the CR is taken as part
+# of the interpreter's name, and Git Bash or WSL answers
+# `bash\r: No such file or directory`. Every entry point this project has is
+# a shell script, so the checkout would arrive unusable.
+#
+# These files hold LF on every platform. Everything else is left to Git's own
+# judgement, which is right for it.
+*.sh text eol=lf
+
+# The OpenDRIVE maps are handed to CARLA's parser as one string. It has never
+# been asked to read a CRLF map and there is no reason to be the first.
+*.xodr text eol=lf
